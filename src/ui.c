@@ -58,6 +58,7 @@ struct ui_tab {
   int order : 4;               // USERLIST, SEARCH, FL (has different interpretation per tab)
   gboolean o_reverse : 1;      // USERLIST, SEARCH
   gboolean details : 1;        // USERLIST, CONN, DL
+  time_t t_open;               // FL, SEARCH
   // USERLIST
   gboolean user_opfirst : 1;
   gboolean user_hide_desc : 1;
@@ -83,7 +84,6 @@ struct ui_tab {
   struct ui_listing *dl_users;
   // SEARCH
   struct search_q *search_q;
-  time_t search_t;
   gboolean search_hide_hub : 1;
   // MSG
   int msg_replyto;
@@ -1368,6 +1368,7 @@ struct ui_tab *ui_fl_create(guint64 uid, const char *sel) {
   tab->uid = uid;
   tab->fl_dirfirst = TRUE;
   tab->order = UIFL_NAME;
+  time(&tab->t_open);
 
   // get file list
   if(!uid) {
@@ -1380,6 +1381,9 @@ struct ui_tab *ui_fl_create(guint64 uid, const char *sel) {
   } else {
     char *tmp = g_strdup_printf("%016"G_GINT64_MODIFIER"x.xml.bz2", uid);
     char *fn = g_build_filename(db_dir, "fl", tmp, NULL);
+    struct stat st;
+    if(stat(fn, &st) >= 0)
+      tab->t_open = st.st_mtime;
     fl_load_async(fn, ui_fl_loaddone, tab);
     g_free(tmp);
     g_free(fn);
@@ -1414,9 +1418,12 @@ void ui_fl_close(struct ui_tab *tab) {
 
 
 static char *ui_fl_title(struct ui_tab *tab) {
-  return  !tab->uid ? g_strdup_printf("Browsing own file list.")
+  char *t = !tab->uid ? g_strdup_printf("Browsing own file list.")
     : tab->fl_uname ? g_strdup_printf("Browsing file list of %s (%016"G_GINT64_MODIFIER"x)", tab->fl_uname, tab->uid)
     : g_strdup_printf("Browsing file list of %016"G_GINT64_MODIFIER"x (user offline)", tab->uid);
+  char *tn = g_strdup_printf("%s [%s]", t, str_formatinterval(60*((time(NULL)-tab->t_open)/60)));
+  g_free(t);
+  return tn;
 }
 
 
@@ -2072,7 +2079,7 @@ struct ui_tab *ui_search_create(struct hub *hub, struct search_q *q) {
   tab->hub = hub;
   tab->search_hide_hub = hub ? TRUE : FALSE;
   tab->order = UISCH_FILE;
-  time(&tab->search_t);
+  time(&tab->t_open);
 
   // figure out a suitable tab->name
   if(q->type == 9) {
@@ -2186,7 +2193,7 @@ static void ui_search_draw(struct ui_tab *tab) {
     mvprintw(bottom, 0, "%s (%s bytes)", tth, str_fullsize(sel->size));
   }
   mvprintw(bottom, wincols-29, "%5d results in%4ds - %3d%%",
-    g_sequence_get_length(tab->list->list), time(NULL)-tab->search_t, pos);
+    g_sequence_get_length(tab->list->list), time(NULL)-tab->t_open, pos);
   attroff(UIC(separator));
   if(sel)
     mvaddnstr(bottom+1, 3, sel->file, str_offset_from_columns(sel->file, wincols-3));

@@ -305,7 +305,9 @@ char *str_formatinterval(int sec) {
     sec %= 60;
   }
   if(sec || !l)
-    g_snprintf(buf+l, 99-l, "%ds", sec);
+    l += g_snprintf(buf+l, 99-l, "%ds", sec);
+  if(buf[l-1] == ' ')
+    buf[l-1] = 0;
   return buf;
 }
 
