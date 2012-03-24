@@ -545,7 +545,7 @@ static void fl_load_error(void *arg, const char *msg, xmlParserSeverities severi
 }
 
 
-static int fl_load_handle(xmlTextReaderPtr reader, gboolean *havefl, gboolean *newdir, struct fl_list **cur, gboolean local) {
+static int fl_load_handle(xmlTextReaderPtr reader, gboolean *havefl, gboolean *newdir, gboolean *flo, struct fl_list **cur, gboolean local) {
   struct fl_list *tmp;
   char *attr[3];
   char name[50], *tmpname;
@@ -558,6 +558,9 @@ static int fl_load_handle(xmlTextReaderPtr reader, gboolean *havefl, gboolean *n
   switch(xmlTextReaderNodeType(reader)) {
 
   case XML_READER_TYPE_ELEMENT:
+    // No open elements in a <File> allowed
+    if(*flo)
+      return -1;
     // <FileListing ..>
     // We ignore its attributes (for now)
     if(strcmp(name, "FileListing") == 0) {
@@ -585,7 +588,7 @@ static int fl_load_handle(xmlTextReaderPtr reader, gboolean *havefl, gboolean *n
       free(attr[1]);
     // <File .. />
     } else if(strcmp(name, "File") == 0) {
-      if(!*havefl || !xmlTextReaderIsEmptyElement(reader))
+      if(!*havefl)
         return -1;
       if(!(attr[0] = (char *)xmlTextReaderGetAttribute(reader, (xmlChar *)"Name")))
         return -1;
@@ -611,12 +614,17 @@ static int fl_load_handle(xmlTextReaderPtr reader, gboolean *havefl, gboolean *n
       free(attr[0]);
       free(attr[1]);
       free(attr[2]);
+      if(!xmlTextReaderIsEmptyElement(reader))
+        *flo = TRUE;
     }
     break;
 
   case XML_READER_TYPE_END_ELEMENT:
+    // </File>
+    if(strcmp(name, "File") == 0)
+      *flo = FALSE;
     // </Directory>
-    if(strcmp(name, "Directory") == 0) {
+    else if(strcmp(name, "Directory") == 0) {
       if(!*newdir)
         *cur = (*cur)->parent;
       else
@@ -684,7 +692,7 @@ struct fl_list *fl_load(const char *file, GError **err, gboolean local) {
 
   // parse & read
   struct fl_list *cur, *root;
-  gboolean havefl = FALSE, newdir = TRUE;
+  gboolean havefl = FALSE, newdir = TRUE, flo = FALSE;
   int ret;
 
   root = fl_list_create("", FALSE);
@@ -692,7 +700,7 @@ struct fl_list *fl_load(const char *file, GError **err, gboolean local) {
   cur = root;
 
   while((ret = xmlTextReaderRead(reader)) == 1)
-    if((ret = fl_load_handle(reader, &havefl, &newdir, &cur, local)) <= 0)
+    if((ret = fl_load_handle(reader, &havefl, &newdir, &flo, &cur, local)) <= 0)
       break;
 
   if(ret < 0 || !havefl) {
