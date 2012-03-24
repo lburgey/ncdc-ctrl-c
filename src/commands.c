@@ -894,10 +894,15 @@ static void c_browse(char *args) {
       ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
       return;
     }
-    if(strncmp(args, "-f ", 3) == 0) {
-      force = TRUE;
-      args += 3;
-      g_strstrip(args);
+    char *sep = strchr(args, ' ');
+    if(sep) {
+      *(sep++) = 0;
+      g_strstrip(sep);
+      if(strcmp(args, "-f") == 0) {
+        args = sep;
+        force = TRUE;
+      } else if(strcmp(sep, "-f") == 0)
+        force = TRUE;
     }
     u = hub_user_get(tab->hub, args);
     if(!u) {
