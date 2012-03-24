@@ -153,7 +153,7 @@ static const struct doc_cmd {
   NULL
 },
 { "quit", NULL, "Quit ncdc.",
-  "Quit ncdc. You can also just hit ctrl+c, which is equivalent."
+  "Quit ncdc."
 },
 { "reconnect", NULL, "Shortcut for /disconnect and /connect",
   "Reconnect to the hub. When your nick or the hub encoding have been changed,"
@@ -568,7 +568,6 @@ static const struct doc_key {
   "Alt+q        Open the download queue tab.\n"
   "Alt+o        Open own file list.\n"
   "Alt+r        Refresh file list.\n"
-  "Ctrl+c       Quit ncdc.\n"
   "\n"
   "Keys for tabs with a log window:\n"
   "Ctrl+l       Clear current log window.\n"
