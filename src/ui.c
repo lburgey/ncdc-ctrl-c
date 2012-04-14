@@ -2674,7 +2674,7 @@ void ui_draw() {
     curtab->type == UIT_SEARCH   ? ui_search_title(curtab) : g_strdup("");
   attron(UIC(title));
   mvhline(0, 0, ' ', wincols);
-  mvaddstr(0, 0, title);
+  mvaddnstr(0, 0, title, str_offset_from_columns(title, wincols));
   attroff(UIC(title));
   g_free(title);
 
