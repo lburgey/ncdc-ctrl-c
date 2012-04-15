@@ -94,7 +94,7 @@ struct hub {
 
   // Timers
   guint nfo_timer;         // hub_send_nfo() timer
-  guint reconnect_timer;   // reconnect timer (30 sec.)
+  guint reconnect_timer;   // reconnect timer
 
   // ADC login info
   char *gpa_salt;
@@ -1641,10 +1641,15 @@ static void handle_error(struct net *n, int action, GError *err) {
 #endif
 
   switch(action) {
-  case NETERR_CONN:
-    ui_mf(hub->tab, 0, "Could not connect to hub: %s. Waiting 30 seconds before retrying.", err->message);
-    hub->reconnect_timer = g_timeout_add_seconds(30, reconnect_timer, hub);
+  case NETERR_CONN: {
+    int timeout = var_get_int(hub->id, VAR_reconnect_timeout);
+    if(timeout) {
+      ui_mf(hub->tab, 0, "Could not connect to hub: %s. Waiting %s before retrying.", err->message, str_formatinterval(timeout));
+      hub->reconnect_timer = g_timeout_add_seconds(timeout, reconnect_timer, hub);
+    } else
+      ui_mf(hub->tab, 0, "Could not connect to hub: %s.", err->message);
     break;
+  }
   case NETERR_RECV:
     ui_mf(hub->tab, 0, "Read error: %s", err->message);
     hub_disconnect(hub, TRUE);
@@ -1822,8 +1827,12 @@ void hub_disconnect(struct hub *hub, gboolean recon) {
   if(!recon)
     ui_m(hub->tab, 0, "Disconnected.");
   else {
-    ui_m(hub->tab, 0, "Connection lost. Waiting 30 seconds before reconnecting.");
-    hub->reconnect_timer = g_timeout_add_seconds(30, reconnect_timer, hub);
+    int timeout = var_get_int(hub->id, VAR_reconnect_timeout);
+    if(timeout) {
+      ui_mf(hub->tab, 0, "Connection lost. Waiting %s before reconnecting.", str_formatinterval(timeout));
+      hub->reconnect_timer = g_timeout_add_seconds(timeout, reconnect_timer, hub);
+    } else
+      ui_m(hub->tab, 0, "Connection lost.");
   }
 }
 

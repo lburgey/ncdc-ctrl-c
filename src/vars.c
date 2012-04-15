@@ -840,8 +840,8 @@ struct var {
   V(email,            1,1, f_id,           p_id,            su_old,        NULL,         s_hubinfo,       NULL)\
   V(encoding,         1,1, f_id,           p_encoding,      su_encoding,   NULL,         NULL,            "UTF-8")\
   V(filelist_maxage,  1,0, f_interval,     p_interval,      su_old,        NULL,         NULL,            "604800")\
-  V(flush_file_cache, 1,0, f_ffc,          p_ffc,           su_ffc,        g_ffc,        s_ffc,           i_ffc())\
   V(fl_done,          0,0, NULL,           NULL,            NULL,          NULL,         NULL,            "false")\
+  V(flush_file_cache, 1,0, f_ffc,          p_ffc,           su_ffc,        g_ffc,        s_ffc,           i_ffc())\
   V(hash_rate,        1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)\
   V(hubaddr,          0,0, NULL,           NULL,            NULL,          NULL,         NULL,            NULL)\
   V(hubkp,            0,0, NULL,           NULL,            NULL,          NULL,         NULL,            NULL)\
@@ -856,6 +856,7 @@ struct var {
   V(nick,             1,1, f_id,           p_nick,          su_old,        NULL,         s_nick,          i_nick())\
   V(password,         0,1, f_password,     p_id,            NULL,          NULL,         s_password,      NULL)\
   V(pid,              0,0, NULL,           NULL,            NULL,          NULL,         NULL,            i_cid_pid())\
+  V(reconnect_timeout,1,1, f_interval,     p_interval,      su_old,        NULL,         NULL,            "30")\
   V(sendfile,         1,0, f_sendfile,     p_sendfile,      su_bool,       NULL,         NULL,            "true")\
   V(share_exclude,    1,0, f_id,           p_regex,         su_old,        NULL,         NULL,            NULL)\
   V(share_hidden,     1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\

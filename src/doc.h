@@ -479,6 +479,10 @@ static const struct doc_set {
   " `/password' command instead. Passwords are saved unencrypted in the config"
   " file."
 },
+{ "reconnect_timeout", 1, "<interval>",
+  "The time to wait before automatically reconnecting to a hub. Set to 0 to"
+  " disable automatic reconnect."
+},
 { "sendfile", 0, "<boolean>",
   "Whether or not to use the sendfile() system call to upload files, if"
   " supported. Using sendfile() allows less resource usage while uploading, but"
