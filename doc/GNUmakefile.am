@@ -1,5 +1,5 @@
 man_MANS=ncdc.1 ncdc-gen-cert.1
-if HAVE_GDBM
+if ENABLE_DB_UPGRADE
 man_MANS+=ncdc-db-upgrade.1
 endif
 
