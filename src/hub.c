@@ -643,7 +643,7 @@ void hub_send_nfo(struct hub *hub) {
       h_norm++;
   }
   if(!hub->nick_valid) {
-    if(hub->isreg)
+    if(hub->isreg || var_get(hub->id, VAR_password))
       h_reg++;
     else
       h_norm++;
