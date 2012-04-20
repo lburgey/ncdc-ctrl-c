@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <libxml/xmlversion.h>
+#include <gnutls/gnutls.h>
 #include <sqlite3.h>
 
 
@@ -40,7 +41,8 @@
 // global variables
 GMainLoop *main_loop;
 
-gboolean have_tls_support;
+// TODO: get rid of this variable when the networking backend has been rewritten for gnutls.
+gboolean have_tls_support = FALSE;
 
 
 // input handling declarations
@@ -209,6 +211,7 @@ char *ncdc_version() {
 #endif
     "Libraries:\n"
     "  GLib %d.%d.%d (%d.%d.%d)\n"
+    "  GnuTLS %s (%s)\n"
     "  SQLite %s (%s)\n"
 #ifdef NCURSES_VERSION
     "  ncurses %s\n"
@@ -225,6 +228,7 @@ char *ncdc_version() {
     "BSD",
 #endif
     GLIB_MAJOR_VERSION, GLIB_MINOR_VERSION, GLIB_MICRO_VERSION, glib_major_version, glib_minor_version, glib_micro_version,
+    GNUTLS_VERSION, gnutls_check_version(NULL),
     SQLITE_VERSION, sqlite3_libversion(),
 #ifdef NCURSES_VERSION
     NCURSES_VERSION,
@@ -395,14 +399,6 @@ int main(int argc, char **argv) {
 
   // Create main loop
   main_loop = g_main_loop_new(NULL, FALSE);
-
-  // Detect whether we can use TLS
-#if TLS_SUPPORT
-  GTlsBackend *backend = g_tls_backend_get_default();
-  have_tls_support = g_tls_backend_supports_tls(backend);
-#else
-  have_tls_support = FALSE;
-#endif
 
   // setup logging
   g_log_set_handler(NULL, G_LOG_FATAL_MASK | G_LOG_FLAG_FATAL | G_LOG_LEVEL_ERROR, log_fatal, NULL);

@@ -154,11 +154,7 @@ PKG_CHECK_EXISTS([sqlite3],[
 PKG_CHECK_MODULES([GLIB],   [glib-2.0 >= 2.24])
 PKG_CHECK_MODULES([GIO],    [gthread-2.0 gio-unix-2.0])
 PKG_CHECK_MODULES([LIBXML], [libxml-2.0])
-
-have_tls=no
-PKG_CHECK_EXISTS([gio-unix-2.0 >= 2.28], [have_tls=yes])
-
-
+PKG_CHECK_MODULES([GNUTLS], [gnutls]) # TODO: figure out minimum required version
 
 
 # Check whether we should use the version string from AC_INIT(), or use
@@ -200,13 +196,6 @@ if test "x$enable_db_upgrade" = "xyes"; then
 else
   echo "db-upgrade  : disabled."
   echo "  The ncdc-db-upgrade utility will not be built."
-fi
-
-if test "x$have_tls" = "xyes"; then
-  echo "TLS support : enabled."
-  echo "  Install glib-networking to make use of it."
-else
-  echo "TLS support : disabled (too old glib version)."
 fi
 echo ""
 
