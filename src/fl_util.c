@@ -498,6 +498,16 @@ struct fl_loadsave_context {
 
 // Read filelist from an xml file
 
+// Tries to "fix" invalid byte UTF-8 sequences, as present in some FlylinkDC++
+// generated lists.
+static void fl_load_fixinput(char *buf, int len) {
+  while(len > 1) {
+    if(*buf == 0x1d)
+      *buf = '?';
+    buf++;
+    len--;
+  }
+}
 
 static int fl_load_input(void *context, char *buf, int len) {
   struct fl_loadsave_context *xc = context;
@@ -511,12 +521,14 @@ static int fl_load_input(void *context, char *buf, int len) {
       return -1;
     } else {
       xc->stream_end = bzerr == BZ_STREAM_END;
+      fl_load_fixinput(buf, r);
       return r;
     }
   } else if(xc->fh_f) {
     int r = fread(buf, 1, len, xc->fh_f);
     if(r < 0)
       g_set_error(xc->err, 1, 0, "Read error: %s", g_strerror(errno));
+    fl_load_fixinput(buf, r);
     xc->stream_end = r <= 0;
     return r;
   } else
@@ -550,7 +562,8 @@ static int fl_load_handle(xmlTextReaderPtr reader, gboolean *havefl, gboolean *n
   char *attr[3];
   char name[50], *tmpname;
 
-  tmpname = (char *)xmlTextReaderName(reader);
+  if(!(tmpname = (char *)xmlTextReaderName(reader)))
+    return -1;
   strncpy(name, tmpname, 50);
   name[49] = 0;
   free(tmpname);
