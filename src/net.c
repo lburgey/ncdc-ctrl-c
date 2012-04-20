@@ -394,7 +394,7 @@ void net_recvraw(
   n->recv_left = length;
 
   // read stuff from the message buffer in case it's not empty.
-  if(n->in_msg->len >= 0) {
+  if(n->in_msg->len > 0) {
     int w = MIN(n->in_msg->len, length);
     n->recv_left -= w;
     cb(n, n->in_msg->str, w, n->recv_left, dat);
