@@ -1706,7 +1706,8 @@ static gboolean handle_accept_cert(GTlsConnection *conn, GTlsCertificate *cert, 
 
   // Get keyprint
   char raw[32];
-  certificate_sha256(cert, raw);
+  // TODO: fix for GnuTLS
+  //certificate_sha256(cert, raw);
   char enc[53] = {};
   base32_encode_dat(raw, enc, 32);
 

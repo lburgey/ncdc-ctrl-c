@@ -494,25 +494,15 @@ gboolean tiger_hash_equal(gconstpointer a, gconstpointer b) {
 }
 
 
-#if TLS_SUPPORT
-
 // Calculates the SHA-256 digest of a certificate. This digest can be used for
 // the KEYP ADC extension and general verification.
-void certificate_sha256(GTlsCertificate *cert, char *digest) {
-  GValue val = {};
-  g_value_init(&val, G_TYPE_BYTE_ARRAY);
-  g_object_get_property(G_OBJECT(cert), "certificate", &val);
-  GByteArray *dat = g_value_get_boxed(&val);
-
+void certificate_sha256(gnutls_datum_t cert, char *digest) {
   GChecksum *ctx = g_checksum_new(G_CHECKSUM_SHA256);
-  g_checksum_update(ctx, dat->data, dat->len);
+  g_checksum_update(ctx, cert.data, cert.size);
   gsize len = 32;
   g_checksum_get_digest(ctx, (guchar *)digest, &len);
   g_checksum_free(ctx);
-  g_boxed_free(G_TYPE_BYTE_ARRAY, dat);
 }
-
-#endif
 
 
 // like realpath(), but also expands ~

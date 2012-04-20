@@ -33,7 +33,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <libxml/xmlversion.h>
-#include <gnutls/gnutls.h>
 #include <sqlite3.h>
 
 
@@ -394,6 +393,7 @@ int main(int argc, char **argv) {
   }
 
   // init stuff
+  gnutls_global_init();
   g_thread_init(NULL);
   g_type_init();
 

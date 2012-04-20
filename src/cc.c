@@ -1372,7 +1372,8 @@ static gboolean handle_accept_cert(GTlsConnection *conn, GTlsCertificate *cert, 
   struct cc *c = n->handle;
   if(!c->kp_real)
     c->kp_real = g_slice_alloc(32);
-  certificate_sha256(cert, c->kp_real);
+  // TODO: Fix this for GnuTLS.
+  // certificate_sha256(cert, c->kp_real);
   return TRUE;
 }
 

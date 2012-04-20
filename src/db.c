@@ -1113,24 +1113,18 @@ char **db_vars_hubs() {
 
 const char *db_dir = NULL;
 
+gnutls_certificate_credentials_t db_certificate;
+
 // Base32-encoded keyprint of our own certificate
 char *db_certificate_kp = NULL;
 
-// The char * is a fallback, if TLS_SUPPORT is false then no certificates are
-// used and this variable is never dereferenced. It is, however, checked
-// against NULL in some places to detect support for client-to-client TLS.
-#if TLS_SUPPORT
-GTlsCertificate *db_certificate = NULL;
-#else
-char *db_certificate = NULL;
-#endif
-
-
-#if TLS_SUPPORT
 
 // Tries to generate the certificate, returns TRUE on success or FALSE when it
 // failed and the user ignored the error.
 static gboolean db_gen_cert(char *cert_file, char *key_file) {
+  return TRUE;
+
+  /* TODO: rewrite to gnutls
   if(g_file_test(cert_file, G_FILE_TEST_EXISTS) && g_file_test(key_file, G_FILE_TEST_EXISTS))
     return TRUE;
 
@@ -1168,6 +1162,34 @@ static gboolean db_gen_cert(char *cert_file, char *key_file) {
   g_error_free(err);
   getchar();
   return FALSE;
+  */
+}
+
+
+// Convenience function based on
+// http://www.gnu.org/software/gnutls/manual/html_node/Using-a-callback-to-select-the-certificate-to-use.html
+static gnutls_datum_t load_file(const char *file, const char **err) {
+  FILE *f;
+  gnutls_datum_t d = { NULL, 0 };
+  long len;
+  void *ptr = NULL;
+
+  if (!(f = fopen(file, "r"))
+      || fseek(f, 0, SEEK_END) != 0
+      || (len = ftell(f)) < 0
+      || fseek(f, 0, SEEK_SET) != 0
+      || !(ptr = g_malloc((size_t)len))
+      || fread(ptr, 1, (size_t)len, f) < (size_t)len)
+    *err = g_strerror(errno);
+  if(f)
+    fclose(f);
+  if(*err && ptr)
+    g_free(ptr);
+  if(!*err) {
+    d.data = ptr;
+    d.size = (unsigned int)len;
+  }
+  return d;
 }
 
 
@@ -1182,9 +1204,39 @@ static void db_load_cert() {
     return;
   }
 
-  // Try to load them
-  GError *err = NULL;
-  db_certificate = g_tls_certificate_new_from_files(cert_file, key_file, &err);
+  // Load cert
+  const char *err = NULL;
+  int n;
+  gnutls_datum_t crtdat = load_file(cert_file, &err);
+  if(err)
+    goto error;
+
+  gnutls_x509_crt_t cert;
+  gnutls_x509_crt_init(&cert);
+  if((n = gnutls_x509_crt_import(cert, &crtdat, GNUTLS_X509_FMT_PEM)) < 0) {
+    err = gnutls_strerror(n);
+    goto error;
+  }
+  g_free(crtdat.data);
+
+  // Load key
+  gnutls_datum_t keydat = load_file(key_file, &err);
+  if(err)
+    goto error;
+
+  gnutls_x509_privkey_t key;
+  gnutls_x509_privkey_init(&key);
+  if((n = gnutls_x509_privkey_import(key, &keydat, GNUTLS_X509_FMT_PEM)) < 0) {
+    err = gnutls_strerror(n);
+    goto error;
+  }
+  g_free(keydat.data);
+
+  // Set credentials
+  gnutls_certificate_allocate_credentials(&db_certificate);
+  gnutls_certificate_set_x509_key(db_certificate, &cert, 1, key);
+
+error:
   if(err) {
     printf(
       "ERROR: Could not load the client certificate files.\n"
@@ -1192,21 +1244,27 @@ static void db_load_cert() {
       "Please check that a valid client certificate is stored in the following two files:\n"
       "  %s\n  %s\n"
       "Or remove the files to automatically generate a new certificate.\n",
-      err->message, cert_file, key_file);
+      err, cert_file, key_file);
     exit(1);
-    g_error_free(err);
-  } else {
-    db_certificate_kp = g_malloc0(53);
-    char raw[32];
-    certificate_sha256(db_certificate, raw);
-    base32_encode_dat(raw, db_certificate_kp, 32);
   }
 
+  // Generate keyprint
+  size_t len = 8*1024; // should be enough
+  unsigned char crtder[len];
+  char raw[32];
+  n = gnutls_x509_crt_export(cert, GNUTLS_X509_FMT_DER, (void *)crtder, &len);
+  g_assert(n == 0);
+  crtdat.data = crtder;
+  crtdat.size = len;
+  db_certificate_kp = g_malloc0(53);
+  certificate_sha256(crtdat, raw);
+  base32_encode_dat(raw, db_certificate_kp, 32);
+
+  gnutls_x509_crt_deinit(cert);
+  gnutls_x509_privkey_deinit(key);
   g_free(cert_file);
   g_free(key_file);
 }
-
-#endif // TLS_SUPPORT
 
 
 // Checks or creates the initial session directory, including subdirectories
@@ -1356,10 +1414,7 @@ void db_init() {
     g_error("Incompatible database version. You may want to upgrade ncdc.");
 
   // load client certificate
-#if TLS_SUPPORT
-  if(have_tls_support)
-    db_load_cert();
-#endif
+  db_load_cert();
 
   // start database thread
   db_queue = g_async_queue_new();
