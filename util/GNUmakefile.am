@@ -1,6 +1,3 @@
-dist_bin_SCRIPTS=ncdc-gen-cert
-
-
 if ENABLE_DB_UPGRADE
 bin_PROGRAMS=ncdc-db-upgrade
 endif

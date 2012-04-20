@@ -1119,14 +1119,10 @@ gnutls_certificate_credentials_t db_certificate;
 char *db_certificate_kp = NULL;
 
 
-// Tries to generate the certificate, returns TRUE on success or FALSE when it
-// failed and the user ignored the error.
-static gboolean db_gen_cert(char *cert_file, char *key_file) {
-  return TRUE;
-
-  /* TODO: rewrite to gnutls
-  if(g_file_test(cert_file, G_FILE_TEST_EXISTS) && g_file_test(key_file, G_FILE_TEST_EXISTS))
-    return TRUE;
+static const char *cert_gen(const char *cert_file, const char *key_file, gnutls_x509_crt_t cert, gnutls_x509_privkey_t key) {
+  unsigned char dat[32*1024];
+  size_t len;
+  FILE *f;
 
   printf("Generating certificates...");
   fflush(stdout);
@@ -1135,34 +1131,37 @@ static gboolean db_gen_cert(char *cert_file, char *key_file) {
   unlink(cert_file);
   unlink(key_file);
 
-  // Now try to run `ncdc-gen-cert' to create them
-  GError *err = NULL;
-  char *argv[] = { "ncdc-gen-cert", (char *)db_dir, NULL };
-  int ret;
-  g_spawn_sync(NULL, argv, NULL,
-    G_SPAWN_SEARCH_PATH|G_SPAWN_SEARCH_PATH|G_SPAWN_STDERR_TO_DEV_NULL,
-    NULL, NULL, NULL, NULL, &ret, &err);
-  if(!err) {
-    printf(" Done!\n");
-    return TRUE;
-  }
+  // Private key
+  gnutls_x509_privkey_generate(key, GNUTLS_PK_RSA, gnutls_sec_param_to_pk_bits(GNUTLS_PK_RSA, GNUTLS_SEC_PARAM_NORMAL), 0);
+  len = sizeof(dat);
+  g_assert(gnutls_x509_privkey_export(key, GNUTLS_X509_FMT_PEM, dat, &len) == 0);
+  if(!(f = fopen(key_file, "w"))
+      || fwrite(dat, 1, len, f) != len
+      || fclose(f))
+    return g_strerror(errno);
 
-  printf(" Error!\n\n");
+  // Certificate (self-signed)
+  time_t t = time(NULL);
+  gnutls_x509_crt_set_dn_by_oid(cert, GNUTLS_OID_X520_ORGANIZATION_NAME,        0, "Unknown", strlen("Unknown"));
+  gnutls_x509_crt_set_dn_by_oid(cert, GNUTLS_OID_X520_ORGANIZATIONAL_UNIT_NAME, 0, "Unknown", strlen("Unknown"));
+  gnutls_x509_crt_set_dn_by_oid(cert, GNUTLS_OID_X520_COMMON_NAME,              0, "Unknown", strlen("Unknown"));
+  gnutls_x509_crt_set_dn_by_oid(cert, GNUTLS_OID_X520_LOCALITY_NAME,            0, "Unknown", strlen("Unknown"));
+  gnutls_x509_crt_set_dn_by_oid(cert, GNUTLS_OID_X520_STATE_OR_PROVINCE_NAME,   0, "Unknown", strlen("Unknown"));
+  gnutls_x509_crt_set_dn_by_oid(cert, GNUTLS_OID_X520_COUNTRY_NAME,             0, "UN", strlen("UN"));
+  gnutls_x509_crt_set_key(cert, key);
+  gnutls_x509_crt_set_serial(cert, &t, sizeof(t));
+  gnutls_x509_crt_set_activation_time(cert, t);
+  gnutls_x509_crt_set_expiration_time(cert, t+(3560*24*3600));
+  gnutls_x509_crt_set_ca_status(cert, 0);
+  gnutls_x509_crt_sign(cert, cert, key);
+  len = sizeof(dat);
+  g_assert(gnutls_x509_crt_export(cert, GNUTLS_X509_FMT_PEM, dat, &len) == 0);
+  if(!(f = fopen(cert_file, "w"))
+      || fwrite(dat, 1, len, f) != len
+      || fclose(f))
+    return g_strerror(errno);
 
-  printf(
-    "ERROR: Could not generate the client certificate files.\n"
-    "  %s\n\n"
-    "This certificate is not required, but client-to-client encryption will be\n"
-    "disabled without it.\n\n"
-    "To diagnose the problem, please run the `ncdc-gen-cert` utility. This\n"
-    "script should have been installed along with ncdc, but is available in the\n"
-    "util/ directory of the ncdc distribution in case it hasn't.\n\n"
-    "Hit Ctrl+c to abort ncdc, or the return key to continue without a certificate.",
-    err->message);
-  g_error_free(err);
-  getchar();
-  return FALSE;
-  */
+  return NULL;
 }
 
 
@@ -1193,50 +1192,46 @@ static gnutls_datum_t load_file(const char *file, const char **err) {
 }
 
 
-static void db_load_cert() {
-  char *cert_file = g_build_filename(db_dir, "cert", "client.crt", NULL);
-  char *key_file = g_build_filename(db_dir, "cert", "client.key", NULL);
-
-  // If they don't exist, try to create them
-  if(!db_gen_cert(cert_file, key_file)) {
-    g_free(cert_file);
-    g_free(key_file);
-    return;
-  }
-
-  // Load cert
+static const char *cert_load(const char *cert_file, const char *key_file, gnutls_x509_crt_t cert, gnutls_x509_privkey_t key) {
   const char *err = NULL;
+  // Load cert
   int n;
   gnutls_datum_t crtdat = load_file(cert_file, &err);
   if(err)
-    goto error;
+    return err;
 
-  gnutls_x509_crt_t cert;
-  gnutls_x509_crt_init(&cert);
-  if((n = gnutls_x509_crt_import(cert, &crtdat, GNUTLS_X509_FMT_PEM)) < 0) {
-    err = gnutls_strerror(n);
-    goto error;
-  }
+  if((n = gnutls_x509_crt_import(cert, &crtdat, GNUTLS_X509_FMT_PEM)) < 0)
+    return gnutls_strerror(n);
   g_free(crtdat.data);
 
   // Load key
   gnutls_datum_t keydat = load_file(key_file, &err);
   if(err)
-    goto error;
+    return err;
 
-  gnutls_x509_privkey_t key;
-  gnutls_x509_privkey_init(&key);
-  if((n = gnutls_x509_privkey_import(key, &keydat, GNUTLS_X509_FMT_PEM)) < 0) {
-    err = gnutls_strerror(n);
-    goto error;
-  }
+  if((n = gnutls_x509_privkey_import(key, &keydat, GNUTLS_X509_FMT_PEM)) < 0)
+    return gnutls_strerror(n);
   g_free(keydat.data);
 
-  // Set credentials
-  gnutls_certificate_allocate_credentials(&db_certificate);
-  gnutls_certificate_set_x509_key(db_certificate, &cert, 1, key);
+  return NULL;
+}
 
-error:
+
+static void cert_init() {
+  char *cert_file = g_build_filename(db_dir, "cert", "client.crt", NULL);
+  char *key_file = g_build_filename(db_dir, "cert", "client.key", NULL);
+
+  gnutls_x509_crt_t cert;
+  gnutls_x509_privkey_t key;
+  gnutls_x509_crt_init(&cert);
+  gnutls_x509_privkey_init(&key);
+
+  const char *err = NULL;
+  if(g_file_test(cert_file, G_FILE_TEST_EXISTS) && g_file_test(key_file, G_FILE_TEST_EXISTS))
+    err = cert_load(cert_file, key_file, cert, key);
+  else
+    err = cert_gen(cert_file, key_file, cert, key);
+
   if(err) {
     printf(
       "ERROR: Could not load the client certificate files.\n"
@@ -1248,16 +1243,20 @@ error:
     exit(1);
   }
 
+  // Set credentials
+  gnutls_certificate_allocate_credentials(&db_certificate);
+  gnutls_certificate_set_x509_key(db_certificate, &cert, 1, key);
+
   // Generate keyprint
   size_t len = 8*1024; // should be enough
   unsigned char crtder[len];
   char raw[32];
-  n = gnutls_x509_crt_export(cert, GNUTLS_X509_FMT_DER, (void *)crtder, &len);
-  g_assert(n == 0);
-  crtdat.data = crtder;
-  crtdat.size = len;
+  g_assert(gnutls_x509_crt_export(cert, GNUTLS_X509_FMT_DER, (void *)crtder, &len) == 0);
+  gnutls_datum_t dat;
+  dat.data = crtder;
+  dat.size = len;
   db_certificate_kp = g_malloc0(53);
-  certificate_sha256(crtdat, raw);
+  certificate_sha256(dat, raw);
   base32_encode_dat(raw, db_certificate_kp, 32);
 
   gnutls_x509_crt_deinit(cert);
@@ -1414,7 +1413,7 @@ void db_init() {
     g_error("Incompatible database version. You may want to upgrade ncdc.");
 
   // load client certificate
-  db_load_cert();
+  cert_init();
 
   // start database thread
   db_queue = g_async_queue_new();
