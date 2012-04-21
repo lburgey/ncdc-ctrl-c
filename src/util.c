@@ -1222,3 +1222,40 @@ void fadv_purge(struct fadv *a, int length) {
 
 #endif
 
+
+
+
+
+// A GSource implementation to attach raw fds as a source to the main loop.
+
+struct fdsrc_obj {
+  GSource src;
+  GPollFD fd;
+};
+
+static gboolean fdsrc_prepare(GSource *src, gint *timeout) {
+  *timeout = -1;
+  return FALSE;
+}
+
+static gboolean fdsrc_check(GSource *src) {
+  return ((struct fdsrc_obj *)src)->fd.revents > 0 ? TRUE : FALSE;
+}
+
+static gboolean fdsrc_dispatch(GSource *src, GSourceFunc cb, gpointer dat) {
+  return cb(dat);
+}
+
+static void fdsrc_finalize(GSource *src) {
+}
+
+static GSourceFuncs fdsrc_funcs = { fdsrc_prepare, fdsrc_check, fdsrc_dispatch, fdsrc_finalize };
+
+GSource *fdsrc_new(int fd, gboolean write) {
+  struct fdsrc_obj *src = (struct fdsrc_obj *)g_source_new(&fdsrc_funcs, sizeof(struct fdsrc_obj));
+  src->fd.fd = fd;
+  src->fd.events = write ? G_IO_OUT | G_IO_ERR : G_IO_IN | G_IO_HUP | G_IO_ERR;
+  src->fd.revents = 0;
+  g_source_add_poll((GSource *)src, &src->fd);
+  return (GSource *)src;
+}

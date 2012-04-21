@@ -206,7 +206,7 @@ static gboolean listen_udp_handle(gpointer dat) {
     return FALSE;
   }
 
-  // Raw (IPv4) sockets
+  // Get address in a readable string, for debugging
   char addr_str[100];
   g_snprintf(addr_str, 100, "%s:%d", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
 
@@ -298,31 +298,6 @@ static void bind_add(struct listen_hub_bind *b, int type, guint32 ip, guint16 po
 }
 
 
-// Sigh, attaching a raw socket fd to the glib main loop is quite a hassle.
-struct src_obj {
-  GSource src;
-  GPollFD fd;
-};
-
-static gboolean src_prepare(GSource *src, gint *timeout) {
-  *timeout = -1;
-  return FALSE;
-}
-
-static gboolean src_check(GSource *src) {
-  return ((struct src_obj *)src)->fd.revents > 0 ? TRUE : FALSE;
-}
-
-static gboolean src_dispatch(GSource *src, GSourceFunc cb, gpointer dat) {
-  return cb(dat);
-}
-
-static void src_finalize(GSource *src) {
-}
-
-static GSourceFuncs src_funcs = { src_prepare, src_check, src_dispatch, src_finalize };
-
-
 static void bind_create(struct listen_bind *b) {
   g_debug("Listen: binding %s %s:%d", LBT_STR(b->type), ip4_unpack(b->ip4), b->port);
   int err = 0;
@@ -361,11 +336,7 @@ static void bind_create(struct listen_bind *b) {
   b->sock = sock;
 
   // Start accepting incoming connections or handling incoming messages
-  struct src_obj *src = (struct src_obj *)g_source_new(&src_funcs, sizeof(GSource));
-  src->fd.fd = sock;
-  src->fd.events = G_IO_IN | G_IO_HUP | G_IO_ERR;
-  src->fd.revents = 0;
-  g_source_add_poll((GSource *)src, &src->fd);
+  GSource *src = fdsrc_new(sock, FALSE);
   g_source_set_callback((GSource *)src, b->type == LBT_UDP ? listen_udp_handle : listen_tcp_handle, b, NULL);
   b->src = g_source_attach((GSource *)src, NULL);
   g_source_unref((GSource *)src);
