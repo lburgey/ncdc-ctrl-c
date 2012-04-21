@@ -401,6 +401,26 @@ void str_arg2_split(char *str, char **first, char **second) {
 }
 
 
+// Get the host and port from a "host[:port]" string. This function does not
+// validate that the string contains a valid address. Returned string should be
+// freed.
+char *str_portsplit(const char *addr, int defport, int *port) {
+  char *c = g_strdup(addr);
+  char *port_str = strrchr(c, ':');
+  *port = defport;
+  if(port_str) {
+    *port_str = 0;
+    port_str++;
+    int p = strtol(port_str, NULL, 10);
+    if(p < 0 || p > 0xFFFF)
+      *(port_str-1) = ':';
+    else
+      *port = p;
+  }
+  return c;
+}
+
+
 // Perform a binary search on a GPtrArray, returning the index of the found
 // item. The result is undefined if the array is not sorted according to `cmp'.
 // Returns -1 when nothing is found.

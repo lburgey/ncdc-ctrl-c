@@ -1627,38 +1627,14 @@ static void handle_cmd(struct net *n, char *cmd) {
 }
 
 
-static void handle_error(struct net *n, int action, GError *err) {
+static void handle_error(struct net *n, int action, const char *err) {
   struct hub *hub = n->handle;
 
-  if(err->code == G_IO_ERROR_CANCELLED)
-    return;
+  ui_mf(hub->tab, 0, "%s: %s",
+    action == NETERR_CONN ? "Could not connect to hub" :
+    action == NETERR_RECV ? "Read error" : "Write error", err);
 
-#if TLS_SUPPORT
-  if(hub->kp) {
-    hub_disconnect(hub, FALSE);
-    return;
-  }
-#endif
-
-  switch(action) {
-  case NETERR_CONN: {
-    int timeout = var_get_int(hub->id, VAR_reconnect_timeout);
-    if(timeout) {
-      ui_mf(hub->tab, 0, "Could not connect to hub: %s. Waiting %s before retrying.", err->message, str_formatinterval(timeout));
-      hub->reconnect_timer = g_timeout_add_seconds(timeout, reconnect_timer, hub);
-    } else
-      ui_mf(hub->tab, 0, "Could not connect to hub: %s.", err->message);
-    break;
-  }
-  case NETERR_RECV:
-    ui_mf(hub->tab, 0, "Read error: %s", err->message);
-    hub_disconnect(hub, TRUE);
-    break;
-  case NETERR_SEND:
-    ui_mf(hub->tab, 0, "Write error: %s", err->message);
-    hub_disconnect(hub, TRUE);
-    break;
-  }
+  hub_disconnect(hub, TRUE);
 }
 
 
@@ -1673,7 +1649,8 @@ struct hub *hub_create(struct ui_tab *tab) {
   }
 
   // actual separator is set in handle_connect()
-  hub->net = net_create('|', hub, TRUE, handle_cmd, handle_error);
+  hub->net = net_new(hub);
+  hub->net->cb_err = handle_error;
   hub->tab = tab;
   hub->users = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, user_free);
   hub->sessions = g_hash_table_new(g_direct_hash, g_direct_equal);
@@ -1682,8 +1659,13 @@ struct hub *hub_create(struct ui_tab *tab) {
 }
 
 
-static void handle_connect(struct net *n) {
+static void handle_connect(struct net *n, const char *addr) {
   struct hub *hub = n->handle;
+  if(addr) {
+    ui_mf(hub->tab, 0, "Trying %s...", addr);
+    return;
+  }
+
   ui_mf(hub->tab, 0, "Connected to %s.", net_remoteaddr(n));
   // we can safely change the separator here, since command processing only
   // starts *after* this callback.
@@ -1792,7 +1774,8 @@ void hub_connect(struct hub *hub) {
 #if TLS_SUPPORT
     hub->net->conn_accept_cert = handle_accept_cert;
 #endif
-    net_connect(hub->net, addr, var_get(hub->id, VAR_local_address), 411, tls, handle_connect);
+    // TODO: indicate tls support
+    net_connect2(hub->net, addr, 411, var_get(hub->id, VAR_local_address), handle_connect);
   }
 
 #if TLS_SUPPORT
