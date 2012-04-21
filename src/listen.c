@@ -25,6 +25,14 @@
 
 #include "ncdc.h"
 
+#include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+
 
 #if INTERFACE
 
@@ -40,7 +48,7 @@ struct listen_bind {
   guint16 port;
   guint32 ip4;
   int src; // glib event source
-  GSocket *sock;
+  int sock;
   GSList *hubs; // hubs that use this bind
 };
 
@@ -113,10 +121,8 @@ static void listen_stop() {
     struct listen_bind *lb = b->data;
     if(lb->src)
       g_source_remove(lb->src);
-    if(lb->sock) {
-      g_socket_close(lb->sock, NULL);
-      g_object_unref(lb->sock);
-    }
+    if(lb->sock)
+      close(lb->sock);
     g_slist_free(lb->hubs);
     g_free(lb);
     g_list_free_1(b);
@@ -126,28 +132,26 @@ static void listen_stop() {
 }
 
 
-static gboolean listen_tcp_handle(GSocket *sock, GIOCondition cond, gpointer dat) {
+static gboolean listen_tcp_handle(gpointer dat) {
   struct listen_bind *b = dat;
-  GError *err = NULL;
-  GSocket *c = g_socket_accept(sock, NULL, &err);
+  struct sockaddr_in a = {};
+  socklen_t len = sizeof(a);
+  int c = accept(b->sock, (struct sockaddr *)&a, &len);
 
   // handle error
-  if(!c) {
-    if(err->code == G_IO_ERROR_WOULD_BLOCK) {
-      g_error_free(err);
+  if(c < 0) {
+    if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
-    }
     ui_mf(ui_main, 0, "TCP accept error on %s:%d: %s. Switching to passive mode.",
-      ip4_unpack(b->ip4), b->port, err->message);
+      ip4_unpack(b->ip4), b->port, g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
-    g_error_free(err);
     return FALSE;
   }
 
   // Create connection
-  cc_incoming(cc_create(NULL), b->port, g_socket_connection_factory_create_connection(c), b->type == LBT_TLS);
-  g_object_unref(c);
+  // TODO: cc_incoming()/net_setconn() should accept a socket fd + peer address info
+  //cc_incoming(cc_create(NULL), b->port, c, b->type == LBT_TLS);
   return TRUE;
 }
 
@@ -183,38 +187,28 @@ static void listen_udp_handle_msg(char *addr, char *msg, gboolean adc) {
 }
 
 
-static gboolean listen_udp_handle(GSocket *sock, GIOCondition cond, gpointer dat) {
+static gboolean listen_udp_handle(gpointer dat) {
   static char buf[5000]; // can be static, this function is only called in the main thread.
   struct listen_bind *b = dat;
-  GError *err = NULL;
-  GSocketAddress *addr = NULL;
-  int r = g_socket_receive_from(sock, &addr, buf, 5000, NULL, &err);
+
+  struct sockaddr_in a = {};
+  socklen_t len = sizeof(a);
+  int r = recvfrom(b->sock, buf, sizeof(buf), 0, (struct sockaddr *)&a, &len);
 
   // handle error
   if(r < 0) {
-    if(err->code == G_IO_ERROR_WOULD_BLOCK) {
-      g_error_free(err);
+    if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
-    }
     ui_mf(ui_main, 0, "UDP read error on %s:%d: %s. Switching to passive mode.",
-      ip4_unpack(b->ip4), b->port, err->message);
+      ip4_unpack(b->ip4), b->port, g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
-    g_error_free(err);
     return FALSE;
   }
 
-  // get source ip:port in a readable fashion, for debugging
+  // Raw (IPv4) sockets
   char addr_str[100];
-  GInetSocketAddress *socka = G_INET_SOCKET_ADDRESS(addr);
-  if(!socka)
-    strcat(addr_str, "(addr error)");
-  else {
-    char *ip = g_inet_address_to_string(g_inet_socket_address_get_address(socka));
-    g_snprintf(addr_str, 100, "%s:%d", ip, g_inet_socket_address_get_port(socka));
-    g_free(ip);
-  }
-  g_object_unref(addr);
+  g_snprintf(addr_str, 100, "%s:%d", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
 
   // check for ADC or NMDC
   gboolean adc = FALSE;
@@ -304,50 +298,77 @@ static void bind_add(struct listen_hub_bind *b, int type, guint32 ip, guint16 po
 }
 
 
+// Sigh, attaching a raw socket fd to the glib main loop is quite a hassle.
+struct src_obj {
+  GSource src;
+  GPollFD fd;
+};
+
+static gboolean src_prepare(GSource *src, gint *timeout) {
+  *timeout = -1;
+  return FALSE;
+}
+
+static gboolean src_check(GSource *src) {
+  return ((struct src_obj *)src)->fd.revents > 0 ? TRUE : FALSE;
+}
+
+static gboolean src_dispatch(GSource *src, GSourceFunc cb, gpointer dat) {
+  return cb(dat);
+}
+
+static void src_finalize(GSource *src) {
+}
+
+static GSourceFuncs src_funcs = { src_prepare, src_check, src_dispatch, src_finalize };
+
+
 static void bind_create(struct listen_bind *b) {
   g_debug("Listen: binding %s %s:%d", LBT_STR(b->type), ip4_unpack(b->ip4), b->port);
-  GError *err = NULL;
+  int err = 0;
 
-  // Get local address object
-  GInetAddress *laddr = b->ip4
-    ? g_inet_address_new_from_string(ip4_unpack(b->ip4))
-    : g_inet_address_new_any(G_SOCKET_FAMILY_IPV4);
-  g_return_if_fail(laddr != NULL);
+  // Create socket
+  int sock = socket(AF_INET, b->type == LBT_UDP ? SOCK_STREAM : SOCK_DGRAM, 0);
+  g_return_if_fail(sock < 0);
 
-  // create the socket
-  GSocket *s = b->type == LBT_UDP
-    ? g_socket_new(G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, NULL)
-    : g_socket_new(G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_STREAM, G_SOCKET_PROTOCOL_TCP, NULL);
-  g_socket_set_blocking(s, FALSE);
+  int set = 1;
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (void *)&set, sizeof(set));
 
-  // bind
-  GSocketAddress *saddr = G_SOCKET_ADDRESS(g_inet_socket_address_new(laddr, b->port));
-  g_socket_bind(s, saddr, TRUE, &err);
-  g_object_unref(laddr);
-  g_object_unref(saddr);
+  fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0)|O_NONBLOCK);
+
+  // Bind
+  struct sockaddr_in a = {};
+  a.sin_family = AF_INET;
+  a.sin_port = htons(b->port);
+  inet_aton(ip4_unpack(b->ip4), &a.sin_addr); // also works if b->ip4 == 0
+  if(bind(sock, (struct sockaddr *)&a, sizeof(a)) < 0)
+    err = errno;
 
   // listen
-  if(!err && b->type != LBT_UDP)
-    g_socket_listen(s, &err);
+  if(!err && b->type != LBT_UDP && listen(sock, 5) < 0)
+    err = errno;
 
-  // Bind failed? Abandon ship! (This may be a bit extreme, but at least it
-  // avoids any other problems that may arise from a partially activated
-  // configuration).
+  // Bind or listen failed? Abandon ship! (This may be a bit extreme, but at
+  // least it avoids any other problems that may arise from a partially
+  // activated configuration).
   if(err) {
     ui_mf(ui_main, UIP_MED, "Error binding to %s %s:%d, %s. Switching to passive mode.",
-      b->type == LBT_UDP ? "UDP" : "TCP", ip4_unpack(b->ip4), b->port, err->message);
-    g_error_free(err);
-    g_object_unref(s);
+      b->type == LBT_UDP ? "UDP" : "TCP", ip4_unpack(b->ip4), b->port, g_strerror(err));
+    close(sock);
     listen_stop();
     return;
   }
-  b->sock = s;
+  b->sock = sock;
 
   // Start accepting incoming connections or handling incoming messages
-  GSource *src = g_socket_create_source(s, G_IO_IN, NULL);
-  g_source_set_callback(src, (GSourceFunc)(b->type == LBT_UDP ? listen_udp_handle : listen_tcp_handle), b, NULL);
-  b->src = g_source_attach(src, NULL);
-  g_source_unref(src);
+  struct src_obj *src = (struct src_obj *)g_source_new(&src_funcs, sizeof(GSource));
+  src->fd.fd = sock;
+  src->fd.events = G_IO_IN | G_IO_HUP | G_IO_ERR;
+  src->fd.revents = 0;
+  g_source_add_poll((GSource *)src, &src->fd);
+  g_source_set_callback((GSource *)src, b->type == LBT_UDP ? listen_udp_handle : listen_tcp_handle, b, NULL);
+  b->src = g_source_attach((GSource *)src, NULL);
+  g_source_unref((GSource *)src);
 }
 
 
