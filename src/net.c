@@ -78,6 +78,9 @@ struct net {
   int socksrc; // state CON,ASY,DIS. Glib event source on 'sock'.
   char addr[64]; // state ASY,SYN,DIS
 
+  gnutls_session_t tls; // state ASY,SYN,DIS (only if tls is enabled)
+  gboolean tls_handshake; // state ASY, whether we're handshaking.
+
   GString *rbuf; // state ASY. Read buffer.
   GString *wbuf; // state ASY. Write buffer.
   gboolean writing; // state ASY. Whether 'socksrc' is write poll event.
@@ -98,7 +101,6 @@ struct net {
 
   // OLD STUFF
   int conn;
-  int tls;
   gboolean connecting;
   unsigned short conn_defport;
 #if TLS_SUPPORT
@@ -185,16 +187,18 @@ static gboolean asy_read(struct net *n) {
     return FALSE;
   }
 
-  int r = recv(n->sock, n->rbuf->str + n->rbuf->len, len, 0);
+  int r = n->tls
+    ? gnutls_record_recv(n->tls, n->rbuf->str + n->rbuf->len, len)
+    : recv(n->sock,              n->rbuf->str + n->rbuf->len, len, 0);
 
   // No data? Just return.
-  if(r < 0 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN))
+  if(r < 0 && (n->tls ? !gnutls_error_is_fatal(r) : errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN))
     return TRUE;
 
   // Handle error and disconnect
   if(r <= 0) {
     if(n->cb_err) {
-      char *e = g_strdup_printf("Read error: %s", g_strerror(r ? errno : ECONNRESET));
+      char *e = g_strdup_printf("Read error: %s", !r || !n->tls ? g_strerror(!r ? ECONNRESET : errno) : gnutls_strerror(r));
       n->cb_err(n, NETERR_RECV, e);
       g_free(e);
     }
@@ -208,8 +212,11 @@ static gboolean asy_read(struct net *n) {
   n->rbuf->str[n->rbuf->len] = 0;
   ratecalc_add(&net_in, r);
   ratecalc_add(n->rate_in, r);
+  net_ref(n);
   asy_handlerbuf(n);
-  return TRUE;
+  gboolean ret = n->state == NETST_ASY;
+  net_unref(n);
+  return ret;
 }
 
 
@@ -217,16 +224,18 @@ static gboolean asy_write(struct net *n) {
   if(!n->wbuf->len)
     return TRUE;
 
-  int r = send(n->sock, n->wbuf->str, n->wbuf->len, 0);
+  int r = n->tls
+    ? gnutls_record_send(n->tls, n->wbuf->str, n->wbuf->len)
+    : send(n->sock,              n->wbuf->str, n->wbuf->len, 0);
 
   // No data? Just return. (Note: r == 0 is seen as a temporary error)
-  if(!r || (r < 0 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)))
+  if(!r || (r < 0 && (n->tls ? !gnutls_error_is_fatal(r) : errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)))
     return TRUE;
 
   // Handle error
   if(r < 0) {
     if(n->cb_err) {
-      char *e = g_strdup_printf("Write error: %s", g_strerror(errno));
+      char *e = g_strdup_printf("Write error: %s", n->tls ? gnutls_strerror(errno) : g_strerror(errno));
       n->cb_err(n, NETERR_SEND, e);
       g_free(e);
     }
@@ -241,16 +250,42 @@ static gboolean asy_write(struct net *n) {
 }
 
 
+static gboolean asy_handshake(struct net *n) {
+  if(!n->tls_handshake)
+    return TRUE;
+
+  int r = gnutls_handshake(n->tls);
+
+  if(!r) { // Successful handshake
+    g_debug("%s: TLS Handshake successful.", net_remoteaddr(n));
+    n->tls_handshake = FALSE;
+  } else if(gnutls_error_is_fatal(r)) { // Error
+    if(n->cb_err) {
+      char *e = g_strdup_printf("TLS error: %s", gnutls_strerror(r));
+      n->cb_err(n, NETERR_RECV, e);
+      g_free(e);
+    }
+    net_disconnect(n);
+    return FALSE;
+  }
+  return TRUE;
+}
+
+
 static gboolean asy_pollresult(gpointer dat) {
   struct net *n = dat;
   n->socksrc = 0;
 
+  // Handshake
+  if(n->tls_handshake && !asy_handshake(n))
+    return FALSE;
+
   // Fill rbuf
-  if(!asy_read(n))
+  if(!n->tls_handshake && !asy_read(n))
     return FALSE;
 
   // Flush wbuf
-  if(!asy_write(n))
+  if(!n->tls_handshake && !asy_write(n))
     return FALSE;
 
   asy_setuppoll(n);
@@ -260,7 +295,7 @@ static gboolean asy_pollresult(gpointer dat) {
 
 static void asy_setuppoll(struct net *n) {
   // If we already have the right poll source active, ignore this.
-  gboolean wantwrite = !!n->wbuf->len;
+  gboolean wantwrite = n->tls ? gnutls_record_get_direction(n->tls) : !!n->wbuf->len;
   if(n->socksrc && (!wantwrite || n->writing))
     return;
 
@@ -268,8 +303,6 @@ static void asy_setuppoll(struct net *n) {
     g_source_remove(n->socksrc);
 
   n->writing = wantwrite;
-  // TODO: In the case of TLS, we're probably not always interested in reading
-  // if the last operation was a write.
   GSource *src = fdsrc_new(n->sock, G_IO_IN | (n->writing ? G_IO_OUT : 0));
   g_source_set_callback(src, asy_pollresult, n, NULL);
   n->socksrc = g_source_attach(src, NULL);
@@ -290,11 +323,13 @@ void net_readmsg(struct net *n, char eom, void(*cb)(struct net *, char *)) {
 }
 
 
+#define flush if(n->tls_handshake || asy_write(n)) asy_setuppoll(n)
+
 // This is often used to write a raw byte strings, so is not logged for debugging.
 void net_write(struct net *n, const char *buf, int len) {
   g_return_if_fail(n->state == NETST_ASY);
   g_string_append_len(n->wbuf, buf, len);
-  asy_setuppoll(n);
+  flush;
 }
 
 
@@ -302,7 +337,7 @@ void net_writestr(struct net *n, const char *msg) {
   g_return_if_fail(n->state == NETST_ASY);
   g_debug("%s> %s", net_remoteaddr(n), msg);
   g_string_append(n->wbuf, msg);
-  asy_setuppoll(n);
+  flush;
 }
 
 
@@ -314,7 +349,27 @@ void net_writef(struct net *n, const char *fmt, ...) {
   g_string_append_vprintf(n->wbuf, fmt, va);
   va_end(va);
   g_debug("%s> %s", net_remoteaddr(n), n->wbuf->str+old);
-  asy_setuppoll(n);
+  flush;
+}
+
+#undef flush
+
+
+// Enables TLS-mode and initates the handshake. May not be called when there's
+// something in the read or write buffer.
+// TODO: Probably want to allow something in the read buffer in the future.
+// TODO: Callback for certificate checking.
+void net_settls(struct net *n, gboolean serv) {
+  g_return_if_fail(n->state == NETST_ASY);
+  g_return_if_fail(!n->rbuf->len && !n->wbuf->len);
+  g_return_if_fail(!n->tls);
+  gnutls_init(&n->tls, serv ? GNUTLS_SERVER : GNUTLS_CLIENT);
+  gnutls_credentials_set(n->tls, GNUTLS_CRD_CERTIFICATE, db_certificate);
+  gnutls_priority_set_direct(n->tls, "NORMAL", NULL); // TODO: Make this configurable. No, really.
+  // TODO: Set custom read/write functions, necessary for correct rate calculation.
+  gnutls_transport_set_ptr(n->tls, (gnutls_transport_ptr_t)(long)n->sock);
+  n->tls_handshake = TRUE;
+  asy_handshake(n);
 }
 
 
@@ -565,15 +620,26 @@ void net_disconnect(struct net *n) {
   }
 
   // This is a force disconnect, not a graceful shutdown.
-  if(n->sock)
+  if(n->tls) {
+    gnutls_deinit(n->tls);
+    n->tls = NULL;
+  }
+  if(n->sock) {
     close(n->sock);
-  if(n->socksrc)
+    n->sock = 0;
+  }
+  if(n->socksrc) {
     g_source_remove(n->socksrc);
+    n->socksrc = 0;
+  }
 
   ratecalc_unregister(n->rate_in);
   ratecalc_unregister(n->rate_out);
 
+  if(n->state == NETST_ASY || n->state == NETST_SYN || n->state == NETST_DIS)
+    g_debug("%s: Disconnected (forced).", net_remoteaddr(n));
   n->addr[0] = 0;
+  n->tls_handshake = FALSE;
   n->state = NETST_IDL;
 }
 

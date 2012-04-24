@@ -484,6 +484,7 @@ int main(int argc, char **argv) {
   fl_flush(NULL);
   dl_close_global();
   db_close();
+  gnutls_global_deinit();
   if(!main_noterm)
     printf(" Done!\n");
 

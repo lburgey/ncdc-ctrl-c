@@ -64,7 +64,8 @@ struct hub_user {
 
 
 struct hub {
-  gboolean adc;            // TRUE = ADC, FALSE = NMDC protocol.
+  gboolean adc : 16;       // TRUE = ADC, FALSE = NMDC protocol.
+  gboolean tls : 16;
   int state;               // (ADC) ADC_S_*
   struct ui_tab *tab;
   struct net *net;
@@ -1674,9 +1675,10 @@ static void handle_connect(struct net *n, const char *addr) {
   }
 
   ui_mf(hub->tab, 0, "Connected to %s.", net_remoteaddr(n));
-  // we can safely change the separator here, since command processing only
-  // starts *after* this callback.
-  hub->net->eom[0] = hub->adc ? '\n' : '|';
+
+  // TODO: Fix the certification validation thing
+  if(hub->tls)
+    net_settls(hub->net, FALSE);
 
   if(hub->adc)
     net_writestr(hub->net, "HSUP ADBASE ADTIGR\n");
@@ -1744,7 +1746,7 @@ void hub_connect(struct hub *hub) {
   // need to handle both. No protocol indicator is assumed to be NMDC. No port
   // is assumed to indicate 411.
   hub->adc = FALSE;
-  gboolean tls = FALSE;
+  hub->tls = FALSE;
 
   if(strncmp(addr, "dchub://", 8) == 0)
     addr += 8;
@@ -1752,13 +1754,13 @@ void hub_connect(struct hub *hub) {
     addr += 7;
   else if(strncmp(addr, "nmdcs://", 8) == 0) {
     addr += 8;
-    tls = TRUE;
+    hub->tls = TRUE;
   } else if(strncmp(addr, "adc://", 6) == 0) {
     addr += 6;
     hub->adc = TRUE;
   } else if(strncmp(addr, "adcs://", 7) == 0) {
     addr += 7;
-    hub->adc = tls = TRUE;
+    hub->adc = hub->tls = TRUE;
   }
 
   if(addr[strlen(addr)-1] == '/')
@@ -1773,27 +1775,13 @@ void hub_connect(struct hub *hub) {
     hub->joincomplete_timer = 0;
   }
 
-  if(tls && !have_tls_support) {
-#if TLS_SUPPORT
-    ui_m(hub->tab, 0, "Can't connect to TLS hubs. Make sure you have glib-networking and gnutls installed.");
-#else
-    ui_m(hub->tab, 0, "This version of ncdc does not support TLS. Recompile with a newer glib version to enable.");
-#endif
-  } else {
-    ui_mf(hub->tab, 0, "Connecting to %s...", addr);
-#if TLS_SUPPORT
-    hub->net->conn_accept_cert = handle_accept_cert;
-#endif
-    // TODO: indicate tls support
-    net_connect2(hub->net, addr, 411, var_get(hub->id, VAR_local_address), handle_connect);
-  }
+  ui_mf(hub->tab, 0, "Connecting to %s...", addr);
+  net_connect2(hub->net, addr, 411, var_get(hub->id, VAR_local_address), handle_connect);
 
-#if TLS_SUPPORT
   if(hub->kp) {
     g_slice_free1(32, hub->kp);
     hub->kp = NULL;
   }
-#endif
 }
 
 
