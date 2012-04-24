@@ -297,7 +297,7 @@ static void c_connect(char *args) {
   struct ui_tab *tab = ui_tab_cur->data;
   if(tab->type != UIT_HUB)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
-  else if(tab->hub->net->connecting || tab->hub->net->conn)
+  else if(tab->hub->net->state != NETST_IDL)
     ui_m(NULL, 0, "Already connected (or connecting). You may want to /disconnect first.");
   else {
     if(args[0] && !c_connect_set_hubaddr(args))
@@ -336,7 +336,7 @@ static void c_disconnect(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type == UIT_HUB) {
-    if(!tab->hub->net->conn && !tab->hub->reconnect_timer && !tab->hub->net->connecting)
+    if(tab->hub->state == NETST_IDL)
       ui_m(NULL, 0, "Not connected.");
     else
       hub_disconnect(tab->hub, FALSE);
@@ -345,7 +345,7 @@ static void c_disconnect(char *args) {
     GList *n = ui_tabs;
     for(; n; n=n->next) {
       tab = n->data;
-      if(tab->type == UIT_HUB && (tab->hub->net->conn || tab->hub->net->connecting || tab->hub->reconnect_timer))
+      if(tab->type == UIT_HUB && (tab->hub->net->state != NETST_IDL || tab->hub->reconnect_timer))
         hub_disconnect(tab->hub, FALSE);
     }
   } else
@@ -358,7 +358,7 @@ static void c_reconnect(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type == UIT_HUB) {
-    if(tab->hub->net->conn || tab->hub->net->connecting || tab->hub->reconnect_timer)
+    if(tab->hub->net->state != NETST_IDL || tab->hub->reconnect_timer)
       hub_disconnect(tab->hub, FALSE);
     c_connect(""); // also checks for the existence of "hubaddr"
   } else if(tab->type == UIT_MAIN) {
@@ -368,7 +368,7 @@ static void c_reconnect(char *args) {
       tab = n->data;
       if(tab->type != UIT_HUB)
         continue;
-      if(tab->hub->net->conn || tab->hub->net->connecting || tab->hub->reconnect_timer)
+      if(tab->hub->net->state != NETST_IDL || tab->hub->reconnect_timer)
         hub_disconnect(tab->hub, FALSE);
       ui_tab_cur = n;
       c_connect("");
@@ -836,7 +836,7 @@ static void c_password(char *args) {
   struct ui_tab *tab = ui_tab_cur->data;
   if(tab->type != UIT_HUB)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
-  else if(!tab->hub->net->conn)
+  else if(tab->hub->net->state != NETST_ASY)
     ui_m(NULL, 0, "Not connected to a hub. Did you want to use '/hset password' instead?");
   else if(tab->hub->nick_valid)
     ui_m(NULL, 0, "Already logged in. Did you want to use '/hset password' instead?");

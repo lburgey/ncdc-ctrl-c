@@ -1271,10 +1271,10 @@ static void fdsrc_finalize(GSource *src) {
 
 static GSourceFuncs fdsrc_funcs = { fdsrc_prepare, fdsrc_check, fdsrc_dispatch, fdsrc_finalize };
 
-GSource *fdsrc_new(int fd, gboolean write) {
+GSource *fdsrc_new(int fd, int ev) {
   struct fdsrc_obj *src = (struct fdsrc_obj *)g_source_new(&fdsrc_funcs, sizeof(struct fdsrc_obj));
   src->fd.fd = fd;
-  src->fd.events = write ? G_IO_OUT | G_IO_ERR : G_IO_IN | G_IO_HUP | G_IO_ERR;
+  src->fd.events = ev;
   src->fd.revents = 0;
   g_source_add_poll((GSource *)src, &src->fd);
   return (GSource *)src;

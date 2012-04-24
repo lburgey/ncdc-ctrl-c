@@ -349,9 +349,9 @@ static void ui_hub_draw(struct ui_tab *tab) {
 
   attron(UIC(separator));
   mvhline(winrows-4, 0, ' ', wincols);
-  if(tab->hub->net->connecting)
+  if(tab->hub->net->state == NETST_CON || tab->hub->net->state == NETST_DNS)
     mvaddstr(winrows-4, wincols-15, "Connecting...");
-  else if(!tab->hub->net->conn)
+  else if(tab->hub->net->state != NETST_ASY)
     mvaddstr(winrows-4, wincols-16, "Not connected.");
   else if(!tab->hub->nick_valid)
     mvaddstr(winrows-4, wincols-15, "Logging in...");
@@ -381,8 +381,8 @@ static void ui_hub_draw(struct ui_tab *tab) {
 
 static char *ui_hub_title(struct ui_tab *tab) {
   return g_strdup_printf("%s: %s", tab->name,
-    tab->hub->net->connecting  ? "Connecting..." :
-    !tab->hub->net->conn       ? "Not connected." :
+    tab->hub->net->state == NETST_CON || tab->hub->net->state == NETST_DNS ? "Connecting..." :
+    tab->hub->net->state != NETST_ASY ? "Not connected." :
     !tab->hub->nick_valid      ? "Logging in..." :
     tab->hub->hubname          ? tab->hub->hubname : "Connected.");
 }

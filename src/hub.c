@@ -501,10 +501,10 @@ void hub_password(struct hub *hub, char *pass) {
     tiger_update(&t, hub->gpa_salt, hub->gpa_salt_len);
     tiger_final(&t, res);
     base32_encode(res, enc);
-    net_sendf(hub->net, "HPAS %s", enc);
+    net_writef(hub->net, "HPAS %s\n", enc);
     hub->isreg = TRUE;
   } else {
-    net_sendf(hub->net, "$MyPass %s", pass); // Password is sent raw, not encoded. Don't think encoding really matters here.
+    net_writef(hub->net, "$MyPass %s|", pass); // Password is sent raw, not encoded. Don't think encoding really matters here.
     hub->isreg = TRUE;
   }
 }
@@ -512,7 +512,7 @@ void hub_password(struct hub *hub, char *pass) {
 
 void hub_kick(struct hub *hub, struct hub_user *u) {
   g_return_if_fail(!hub->adc && hub->nick_valid && u);
-  net_sendf(hub->net, "$Kick %s", u->name_hub);
+  net_writef(hub->net, "$Kick %s|", u->name_hub);
 }
 
 
@@ -532,21 +532,21 @@ void hub_opencc(struct hub *hub, struct hub_user *u) {
   if(tcpport) {
     if(hub->adc) {
       GString *c = adc_generate('D', ADCC_CTM, hub->sid, u->sid);
-      g_string_append_printf(c, " %s %d %s", adcproto, port, token);
-      net_send(hub->net, c->str);
+      g_string_append_printf(c, " %s %d %s\n", adcproto, port, token);
+      net_writef(hub->net, c->str);
       g_string_free(c, TRUE);
     } else
-      net_sendf(hub->net, "$ConnectToMe %s %s:%d%s", u->name_hub, ip4_unpack(hub_ip4(hub)), port, usetls ? "S" : "");
+      net_writef(hub->net, "$ConnectToMe %s %s:%d%s|", u->name_hub, ip4_unpack(hub_ip4(hub)), port, usetls ? "S" : "");
 
   // we're passive, send RCM
   } else {
     if(hub->adc) {
       GString *c = adc_generate('D', ADCC_RCM, hub->sid, u->sid);
-      g_string_append_printf(c, " %s %s", adcproto, token);
-      net_send(hub->net, c->str);
+      g_string_append_printf(c, " %s %s\n", adcproto, token);
+      net_writestr(hub->net, c->str);
       g_string_free(c, TRUE);
     } else // Can't specify TLS preference in $RevConnectToMe :(
-      net_sendf(hub->net, "$RevConnectToMe %s %s", hub->nick_hub, u->name_hub);
+      net_writef(hub->net, "$RevConnectToMe %s %s|", hub->nick_hub, u->name_hub);
   }
 
   cc_expect_add(hub, u, port, hub->adc ? token : NULL, TRUE);
@@ -580,7 +580,8 @@ void hub_search(struct hub *hub, struct search_q *q) {
       for(; *s; s++)
         g_string_append_printf(cmd, " AN%s", *s);
     }
-    net_send(hub->net, cmd->str);
+    g_string_append_c(cmd, '\n');
+    net_writestr(hub->net, cmd->str);
     g_string_free(cmd, TRUE);
 
   // NMDC
@@ -592,7 +593,7 @@ void hub_search(struct hub *hub, struct search_q *q) {
     if(q->type == 9) {
       char tth[40] = {};
       base32_encode(q->tth, tth);
-      net_sendf(hub->net, "$Search %s F?T?0?9?TTH:%s", dest, tth);
+      net_writef(hub->net, "$Search %s F?T?0?9?TTH:%s|", dest, tth);
     } else {
       char *str = g_strjoinv(" ", q->query);
       char *enc = nmdc_encode_and_escape(hub, str);
@@ -600,7 +601,7 @@ void hub_search(struct hub *hub, struct search_q *q) {
       for(str=enc; *str; str++)
         if(*str == ' ')
           *str = '$';
-      net_sendf(hub->net, "$Search %s %c?%c?%"G_GUINT64_FORMAT"?%d?%s",
+      net_writef(hub->net, "$Search %s %c?%c?%"G_GUINT64_FORMAT"?%d?%s|",
         dest, q->size ? 'T' : 'F', q->ge ? 'F' : 'T', q->size, q->type, enc);
       g_free(enc);
     }
@@ -614,7 +615,7 @@ void hub_search(struct hub *hub, struct search_q *q) {
 #define beq(a) (!!a == !!hub->nfo_##a)
 
 void hub_send_nfo(struct hub *hub) {
-  if(!hub->net->conn)
+  if(hub->net->state != NETST_ASY)
     return;
 
   // get info, to be compared with hub->nfo_
@@ -706,6 +707,7 @@ void hub_send_nfo(struct hub *hub) {
       adc_append(cmd, "EM", mail?mail:"");
     if((f || !streq(conn)) && connection_to_speed(conn))
       g_string_append_printf(cmd, " US%"G_GUINT64_FORMAT, connection_to_speed(conn));
+    g_string_append_c(cmd, '\n');
     nfo = g_string_free(cmd, FALSE);
 
   // NMDC
@@ -713,7 +715,7 @@ void hub_send_nfo(struct hub *hub) {
     char *ndesc = nmdc_encode_and_escape(hub, desc?desc:"");
     char *nconn = nmdc_encode_and_escape(hub, conn?conn:"");
     char *nmail = nmdc_encode_and_escape(hub, mail?mail:"");
-    nfo = g_strdup_printf("$MyINFO $ALL %s %s<ncdc V:%s,M:%c,H:%d/%d/%d,S:%d>$ $%s%c$%s$%"G_GUINT64_FORMAT"$",
+    nfo = g_strdup_printf("$MyINFO $ALL %s %s<ncdc V:%s,M:%c,H:%d/%d/%d,S:%d>$ $%s%c$%s$%"G_GUINT64_FORMAT"$|",
       hub->nick_hub, ndesc, VERSION, ip4 ? 'A' : 'P', h_norm, h_reg, h_op,
       slots, nconn, 1 | (sup_tls ? 0x10 : 0), nmail, share);
     g_free(ndesc);
@@ -722,7 +724,7 @@ void hub_send_nfo(struct hub *hub) {
   }
 
   // send
-  net_send(hub->net, nfo);
+  net_writestr(hub->net, nfo);
   g_free(nfo);
 
   // update
@@ -751,11 +753,12 @@ void hub_say(struct hub *hub, const char *str, gboolean me) {
     adc_append(c, NULL, str);
     if(me)
       g_string_append(c, " ME1");
-    net_send(hub->net, c->str);
+    g_string_append_c(c, '\n');
+    net_writestr(hub->net, c->str);
     g_string_free(c, TRUE);
   } else {
     char *msg = nmdc_encode_and_escape(hub, str);
-    net_sendf(hub->net, me ? "<%s> /me %s" : "<%s> %s", hub->nick_hub, msg);
+    net_writef(hub->net, me ? "<%s> /me %s|" : "<%s> %s|", hub->nick_hub, msg);
     g_free(msg);
   }
 }
@@ -770,11 +773,12 @@ void hub_msg(struct hub *hub, struct hub_user *user, const char *str, gboolean m
     g_string_append_printf(c, " PM%s", enc);
     if(me)
       g_string_append(c, " ME1");
-    net_send(hub->net, c->str);
+    g_string_append_c(c, '\n');
+    net_writestr(hub->net, c->str);
     g_string_free(c, TRUE);
   } else {
     char *msg = nmdc_encode_and_escape(hub, str);
-    net_sendf(hub->net, me ? "$To: %s From: %s $<%s> /me %s" : "$To: %s From: %s $<%s> %s",
+    net_writef(hub->net, me ? "$To: %s From: %s $<%s> /me %s|" : "$To: %s From: %s $<%s> %s|",
       user->name_hub, hub->nick_hub, hub->nick_hub, msg);
     g_free(msg);
     // emulate protocol echo
@@ -899,13 +903,13 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
       g_string_append_printf(r, " TR%s", tth);
     } else
       g_string_append_c(r, '/'); // make sure a directory path ends with a slash
+    g_string_append_c(r, '\n');
 
     // send
-    if(u->hasudp4) {
-      g_string_append_c(r, '\n');
+    if(u->hasudp4)
       net_udp_send(dest, r->str);
-    } else
-      net_send(hub->net, r->str);
+    else
+      net_writestr(hub->net, r->str);
     g_string_free(r, TRUE);
   }
 
@@ -924,7 +928,10 @@ adc_search_cleanup:
 #define is_adc_proto(p)   (strcmp(p, "ADC/1.0") == 0  || strcmp(p, "ADC/0.10") == 0)
 #define is_valid_proto(p) (is_adc_proto(p) || is_adcs_proto(p))
 
-static void adc_handle(struct hub *hub, char *msg) {
+static void adc_handle(struct net *net, char *msg) {
+  struct hub *hub = net->handle;
+  net_readmsg(net, '\n', adc_handle);
+
   struct adc_cmd cmd;
   GError *err = NULL;
 
@@ -1063,7 +1070,8 @@ static void adc_handle(struct hub *hub, char *msg) {
       g_string_append(r, " 141 Unknown\\protocol");
       adc_append(r, "PR", cmd.argv[0]);
       adc_append(r, "TO", cmd.argv[2]);
-      net_send(hub->net, r->str);
+      g_string_append_c(r, '\n');
+      net_writestr(hub->net, r->str);
       g_string_free(r, TRUE);
     } else {
       struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
@@ -1075,8 +1083,8 @@ static void adc_handle(struct hub *hub, char *msg) {
       else if(!u->active || !u->ip4) {
         g_warning("CTM from user who is not active (%s): %s", net_remoteaddr(hub->net), msg);
         GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
-        g_string_append(r, " 140 No\\sIP\\sto\\sconnect\\sto.");
-        net_send(hub->net, r->str);
+        g_string_append(r, " 140 No\\sIP\\sto\\sconnect\\sto.\n");
+        net_writestr(hub->net, r->str);
         g_string_free(r, TRUE);
       } else
         cc_adc_connect(cc_create(hub), u, var_get(hub->id, VAR_local_address), port, is_adcs_proto(cmd.argv[0]), cmd.argv[2]);
@@ -1091,14 +1099,16 @@ static void adc_handle(struct hub *hub, char *msg) {
       g_string_append(r, " 141 Unknown\\protocol");
       adc_append(r, "PR", cmd.argv[0]);
       adc_append(r, "TO", cmd.argv[1]);
-      net_send(hub->net, r->str);
+      g_string_append_c(r, '\n');
+      net_writestr(hub->net, r->str);
       g_string_free(r, TRUE);
     } else if(!listen_hub_active(hub->id)) {
       GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
       g_string_append(r, " 142 Not\\sactive");
       adc_append(r, "PR", cmd.argv[0]);
       adc_append(r, "TO", cmd.argv[1]);
-      net_send(hub->net, r->str);
+      g_string_append_c(r, '\n');
+      net_writestr(hub->net, r->str);
       g_string_free(r, TRUE);
     } else {
       struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
@@ -1110,7 +1120,8 @@ static void adc_handle(struct hub *hub, char *msg) {
         adc_append(r, NULL, cmd.argv[0]);
         g_string_append_printf(r, " %d", port);
         adc_append(r, NULL, cmd.argv[1]);
-        net_send(hub->net, r->str);
+        g_string_append_c(r, '\n');
+        net_writestr(hub->net, r->str);
         g_string_free(r, TRUE);
         cc_expect_add(hub, u, port, cmd.argv[1], FALSE);
       }
@@ -1254,7 +1265,7 @@ static void nmdc_search(struct hub *hub, char *from, int size_m, guint64 size, i
     char *msg = g_strdup_printf("$SR %s %s%s %d/%d\05%s (%s)",
       hub->nick_hub, tmp, size ? size : "", slots_free, slots, res[i]->isfile ? tth : hub->hubname_hub, hubaddr);
     if(from[0] == 'H')
-      net_sendf(hub->net, "%s\05%s", msg, from+4);
+      net_writef(hub->net, "%s\05%s|", msg, from+4);
     else
       net_udp_sendf(from, "%s|", msg);
     g_free(fl);
@@ -1265,7 +1276,12 @@ static void nmdc_search(struct hub *hub, char *from, int size_m, guint64 size, i
 }
 
 
-static void nmdc_handle(struct hub *hub, char *cmd) {
+static void nmdc_handle(struct net *net, char *cmd) {
+  struct hub *hub = net->handle;
+  // Immediately queue next read. It will be cancelled when net_disconnect() is
+  // called anyway.
+  net_readmsg(net, '|', nmdc_handle);
+
   GMatchInfo *nfo;
 
   // create regexes (declared statically, allocated/compiled on first call)
@@ -1292,13 +1308,13 @@ static void nmdc_handle(struct hub *hub, char *cmd) {
   if(g_regex_match(lock, cmd, 0, &nfo)) { // 1 = lock
     char *lock = g_match_info_fetch(nfo, 1);
     if(strncmp(lock, "EXTENDEDPROTOCOL", 16) == 0)
-      net_send(hub->net, "$Supports NoGetINFO NoHello UserIP2");
+      net_writestr(hub->net, "$Supports NoGetINFO NoHello UserIP2|");
     char *key = nmdc_lock2key(lock);
-    net_sendf(hub->net, "$Key %s", key);
+    net_writef(hub->net, "$Key %s|", key);
     hub->nick = g_strdup(var_get(hub->id, VAR_nick));
     hub->nick_hub = charset_convert(hub, FALSE, hub->nick);
     ui_hub_setnick(hub->tab);
-    net_sendf(hub->net, "$ValidateNick %s", hub->nick_hub);
+    net_writef(hub->net, "$ValidateNick %s|", hub->nick_hub);
     g_free(key);
     g_free(lock);
   }
@@ -1323,9 +1339,9 @@ static void nmdc_handle(struct hub *hub, char *cmd) {
       if(!hub->nick_valid) {
         hub->nick_valid = TRUE;
         ui_m(hub->tab, 0, "Nick validated.");
-        net_send(hub->net, "$Version 1,0091");
+        net_writestr(hub->net, "$Version 1,0091|");
         hub_send_nfo(hub);
-        net_send(hub->net, "$GetNickList");
+        net_writestr(hub->net, "$GetNickList|");
         // Most hubs send the user list after our nick has been validated (in
         // contrast to ADC), but it doesn't hurt to call this function at this
         // point anyway.
@@ -1334,7 +1350,7 @@ static void nmdc_handle(struct hub *hub, char *cmd) {
     } else {
       struct hub_user *u = user_add(hub, nick, NULL);
       if(!u->hasinfo && !hub->supports_nogetinfo)
-        net_sendf(hub->net, "$GetINFO %s", nick);
+        net_writef(hub->net, "$GetINFO %s|", nick);
     }
     g_free(nick);
   }
@@ -1366,7 +1382,7 @@ static void nmdc_handle(struct hub *hub, char *cmd) {
     for(cur=list; *cur&&**cur; cur++) {
       struct hub_user *u = user_add(hub, *cur, NULL);
       if(!u->hasinfo && !hub->supports_nogetinfo)
-        net_sendf(hub->net, "$GetINFO %s %s", *cur, hub->nick_hub);
+        net_writef(hub->net, "$GetINFO %s %s|", *cur, hub->nick_hub);
     }
     hub->received_first = TRUE;
     g_strfreev(list);
@@ -1515,7 +1531,7 @@ static void nmdc_handle(struct hub *hub, char *cmd) {
       guint16 tlsport = listen_hub_tls(hub->id);
       int usetls = u->hastls && tlsport && var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER;
       int port = usetls ? tlsport : listen_hub_tcp(hub->id);
-      net_sendf(hub->net, "$ConnectToMe %s %s:%d%s", other, ip4_unpack(hub_ip4(hub)),
+      net_writef(hub->net, "$ConnectToMe %s %s:%d%s|", other, ip4_unpack(hub_ip4(hub)),
         port, usetls ? "S" : "");
       cc_expect_add(hub, u, port, NULL, FALSE);
     } else
@@ -1618,15 +1634,6 @@ static gboolean joincomplete_timer(gpointer dat) {
 }
 
 
-static void handle_cmd(struct net *n, char *cmd) {
-  struct hub *hub = n->handle;
-  if(hub->adc)
-    adc_handle(hub, cmd);
-  else
-    nmdc_handle(hub, cmd);
-}
-
-
 static void handle_error(struct net *n, int action, const char *err) {
   struct hub *hub = n->handle;
 
@@ -1672,11 +1679,14 @@ static void handle_connect(struct net *n, const char *addr) {
   hub->net->eom[0] = hub->adc ? '\n' : '|';
 
   if(hub->adc)
-    net_send(hub->net, "HSUP ADBASE ADTIGR");
+    net_writestr(hub->net, "HSUP ADBASE ADTIGR\n");
 
   // In the case that the joincomplete detection fails, consider the join to be
   // complete anyway after a 2-minute timeout.
   hub->joincomplete_timer = g_timeout_add_seconds(120, joincomplete_timer, hub);
+
+  // Start handling incoming messages
+  net_readmsg(hub->net, hub->adc ? '\n' : '|', hub->adc ? adc_handle : nmdc_handle);
 }
 
 

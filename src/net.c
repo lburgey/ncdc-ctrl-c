@@ -46,6 +46,11 @@
 // global network stats
 struct ratecalc net_in, net_out;
 
+#define NET_RECV_SIZE (8*1024)
+#define NET_MAX_RBUF (1024*1024)
+
+#if INTERFACE
+
 // Network states
 #define NETST_IDL 0 // idle, disconnected
 #define NETST_DNS 1 // resolving DNS
@@ -54,12 +59,11 @@ struct ratecalc net_in, net_out;
 #define NETST_SYN 4 // connected, handling a synchronous send/receive
 #define NETST_DIS 5 // disconnecting (cleanly)
 
-#if INTERFACE
-
 // actions that can fail
 #define NETERR_CONN 0
 #define NETERR_RECV 1
 #define NETERR_SEND 2
+
 
 struct dnscon;
 
@@ -72,11 +76,20 @@ struct net {
   struct dnscon *dnscon; // state DNS,CON. Setting ->net to NULL 'cancels' DNS resolving.
   int sock; // state CON,ASY,SYN,DIS
   int socksrc; // state CON,ASY,DIS. Glib event source on 'sock'.
+  char addr[64]; // state ASY,SYN,DIS
+
+  GString *rbuf; // state ASY. Read buffer.
+  GString *wbuf; // state ASY. Write buffer.
+  gboolean writing; // state ASY. Whether 'socksrc' is write poll event.
 
   // Called when an error has occured. Second argument is NETERR_*, third a
   // string representing the error. The net struct is always in NETST_IDL after
   // this has been called.
   void (*cb_err)(struct net *, int, const char *);
+
+  // Message reading. Callback will be called only once. (Both state ASY)
+  void (*msg_read)(struct net *, char *);
+  char msg_eom;
 
   // some pointer for use by the user
   void *handle;
@@ -103,8 +116,9 @@ struct net {
 
 #define net_ref(n) g_atomic_int_inc(&((n)->ref))
 
+#define net_remoteaddr(n) ((n)->addr)
+
 // OLD STUFF
-#define net_remoteaddr(n) ""
 #define net_file_left(n) 0
 #define net_recv_left(n) 0
 #define net_recvraw(a,b,c,d,e)
@@ -117,6 +131,210 @@ struct net {
 #define net_sendfile(a,b,c,d,e,f)
 
 #endif
+
+
+
+
+
+// Asynchronous message handling
+
+static void asy_setuppoll(struct net *n);
+
+
+// Checks rbuf against any queued read events and handles those. (Can be called
+// as a glib idle function)
+static gboolean asy_handlerbuf(gpointer dat) {
+  struct net *n = dat;
+  // The callbacks itself may in turn call other net_* functions, and thus
+  // immediately queue another read action. Hence the while loop. Note that no
+  // net_* function that remains in the ASY state is allowed to modify rbuf,
+  // otherwise we need to make a copy of rbuf before passing it to the
+  // callback.
+  net_ref(n);
+  while(n->state == NETST_ASY && n->rbuf->len && n->msg_read) {
+    char *eom = memchr(n->rbuf->str, (unsigned char)n->msg_eom, n->rbuf->len);
+    if(!eom)
+      break;
+    void(*cb)(struct net *, char *) = n->msg_read;
+    n->msg_read = NULL;
+    *eom = 0;
+    g_debug("%s< %s%c", net_remoteaddr(n), n->rbuf->str, n->msg_eom != '\n' ? n->msg_eom : ' ');
+    cb(n, n->rbuf->str);
+    if(n->state == NETST_ASY)
+      g_string_erase(n->rbuf, 0, eom - n->rbuf->str + 1);
+  }
+  net_unref(n);
+  return FALSE;
+}
+
+
+// Tries a read. Returns FALSE if there was an error other than "please try
+// again later".
+static gboolean asy_read(struct net *n) {
+  // Make sure we have enough buffer space
+  if(n->rbuf->allocated_len < NET_MAX_RBUF && n->rbuf->allocated_len - n->rbuf->len < NET_RECV_SIZE) {
+    gsize oldlen = n->rbuf->len;
+    g_string_set_size(n->rbuf, MIN(NET_MAX_RBUF, n->rbuf->len+NET_RECV_SIZE));
+    n->rbuf->len = oldlen;
+  }
+  int len = n->rbuf->allocated_len - n->rbuf->len - 1;
+  if(len <= 10) { // Some arbitrary low number.
+    if(n->cb_err)
+      n->cb_err(n, NETERR_RECV, "Read buffer full");
+    net_disconnect(n);
+    return FALSE;
+  }
+
+  int r = recv(n->sock, n->rbuf->str + n->rbuf->len, len, 0);
+
+  // No data? Just return.
+  if(r < 0 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN))
+    return TRUE;
+
+  // Handle error and disconnect
+  if(r <= 0) {
+    if(n->cb_err) {
+      char *e = g_strdup_printf("Read error: %s", g_strerror(r ? errno : ECONNRESET));
+      n->cb_err(n, NETERR_RECV, e);
+      g_free(e);
+    }
+    net_disconnect(n);
+    return FALSE;
+  }
+
+  // Otherwise, update buffer info
+  g_return_val_if_fail(n->rbuf->len + r < n->rbuf->allocated_len, FALSE);
+  n->rbuf->len += r;
+  n->rbuf->str[n->rbuf->len] = 0;
+  ratecalc_add(&net_in, r);
+  ratecalc_add(n->rate_in, r);
+  asy_handlerbuf(n);
+  return TRUE;
+}
+
+
+static gboolean asy_write(struct net *n) {
+  if(!n->wbuf->len)
+    return TRUE;
+
+  int r = send(n->sock, n->wbuf->str, n->wbuf->len, 0);
+
+  // No data? Just return. (Note: r == 0 is seen as a temporary error)
+  if(!r || (r < 0 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)))
+    return TRUE;
+
+  // Handle error
+  if(r < 0) {
+    if(n->cb_err) {
+      char *e = g_strdup_printf("Write error: %s", g_strerror(errno));
+      n->cb_err(n, NETERR_SEND, e);
+      g_free(e);
+    }
+    net_disconnect(n);
+    return FALSE;
+  }
+
+  g_string_erase(n->wbuf, 0, r);
+  ratecalc_add(&net_out, r);
+  ratecalc_add(n->rate_out, r);
+  return TRUE;
+}
+
+
+static gboolean asy_pollresult(gpointer dat) {
+  struct net *n = dat;
+  n->socksrc = 0;
+
+  // Fill rbuf
+  if(!asy_read(n))
+    return FALSE;
+
+  // Flush wbuf
+  if(!asy_write(n))
+    return FALSE;
+
+  asy_setuppoll(n);
+  return FALSE;
+}
+
+
+static void asy_setuppoll(struct net *n) {
+  // If we already have the right poll source active, ignore this.
+  gboolean wantwrite = !!n->wbuf->len;
+  if(n->socksrc && (!wantwrite || n->writing))
+    return;
+
+  if(n->socksrc)
+    g_source_remove(n->socksrc);
+
+  n->writing = wantwrite;
+  // TODO: In the case of TLS, we're probably not always interested in reading
+  // if the last operation was a write.
+  GSource *src = fdsrc_new(n->sock, G_IO_IN | (n->writing ? G_IO_OUT : 0));
+  g_source_set_callback(src, asy_pollresult, n, NULL);
+  n->socksrc = g_source_attach(src, NULL);
+  g_source_unref(src);
+}
+
+
+// Will run the specified callback once a full message has been received. A
+// "message" meaning any bytes before reading the EOM character. The EOM
+// character is not passed to the callback.
+// Only a single net_readmsg() can be queued at one time.
+void net_readmsg(struct net *n, char eom, void(*cb)(struct net *, char *)) {
+  g_return_if_fail(n->state == NETST_ASY);
+  g_return_if_fail(!n->msg_read);
+  n->msg_eom = eom;
+  n->msg_read = cb;
+  g_idle_add(asy_handlerbuf, n);
+}
+
+
+// This is often used to write a raw byte strings, so is not logged for debugging.
+void net_write(struct net *n, const char *buf, int len) {
+  g_return_if_fail(n->state == NETST_ASY);
+  g_string_append_len(n->wbuf, buf, len);
+  asy_setuppoll(n);
+}
+
+
+void net_writestr(struct net *n, const char *msg) {
+  g_return_if_fail(n->state == NETST_ASY);
+  g_debug("%s> %s", net_remoteaddr(n), msg);
+  g_string_append(n->wbuf, msg);
+  asy_setuppoll(n);
+}
+
+
+void net_writef(struct net *n, const char *fmt, ...) {
+  g_return_if_fail(n->state == NETST_ASY);
+  int old = n->wbuf->len;
+  va_list va;
+  va_start(va, fmt);
+  g_string_append_vprintf(n->wbuf, fmt, va);
+  va_end(va);
+  g_debug("%s> %s", net_remoteaddr(n), n->wbuf->str+old);
+  asy_setuppoll(n);
+}
+
+
+void net_connected(struct net *n, int sock, const char *addr) {
+  g_return_if_fail(n->state == NETST_IDL || n->state == NETST_CON);
+  g_debug("%s: Connected.", addr);
+  n->state = NETST_ASY;
+  n->sock = sock;
+  strncpy(n->addr, addr, sizeof(n->addr));
+  n->wbuf = g_string_sized_new(1024);
+  n->rbuf = g_string_sized_new(1024);
+
+  ratecalc_reset(n->rate_in);
+  ratecalc_reset(n->rate_out);
+  ratecalc_register(n->rate_in, RCC_DOWN);
+  ratecalc_register(n->rate_out, RCC_UP);
+
+  asy_setuppoll(n); // Always make sure we're polling for read, to catch an async disconnect.
+}
+
 
 
 
@@ -152,11 +370,15 @@ static void dnscon_tryconn(struct net *n);
 static void dnsconn_handleconn(struct net *n, int err) {
   // Successful.
   if(err == 0) {
+    char a[100];
+    struct sockaddr_in *sa = (struct sockaddr_in *)n->dnscon->next->ai_addr;
+    g_snprintf(a, 100, "%s:%d", inet_ntoa(sa->sin_addr), ntohs(sa->sin_port));
+    net_connected(n, n->sock, a);
+
     if(n->dnscon->cb)
       n->dnscon->cb(n, NULL);
     dnscon_free(n->dnscon);
     n->dnscon = NULL;
-    // TODO: setup ASY state etc.
     return;
   }
 
@@ -219,7 +441,7 @@ static void dnscon_tryconn(struct net *n) {
 
   // The common case, I guess
   if(r && errno == EINPROGRESS) {
-    GSource *src = fdsrc_new(n->sock, TRUE);
+    GSource *src = fdsrc_new(n->sock, G_IO_OUT);
     g_source_set_callback(src, dnscon_conresult, n, NULL);
     n->socksrc = g_source_attach(src, NULL);
     g_source_unref(src);
@@ -332,12 +554,26 @@ void net_disconnect(struct net *n) {
   case NETST_CON:
     dnscon_free(n->dnscon);
     n->dnscon = NULL;
-    if(n->sock)
-      close(n->sock);
-    if(n->socksrc)
-      g_source_remove(n->socksrc);
+    break;
+
+  case NETST_ASY:
+    n->msg_read = NULL;
+    g_string_free(n->rbuf, TRUE);
+    g_string_free(n->wbuf, TRUE);
+    n->rbuf = n->wbuf = NULL;
     break;
   }
+
+  // This is a force disconnect, not a graceful shutdown.
+  if(n->sock)
+    close(n->sock);
+  if(n->socksrc)
+    g_source_remove(n->socksrc);
+
+  ratecalc_unregister(n->rate_in);
+  ratecalc_unregister(n->rate_out);
+
+  n->addr[0] = 0;
   n->state = NETST_IDL;
 }
 
@@ -397,7 +633,7 @@ void net_udp_send_raw(const char *dest, const char *msg, int len) {
 
   g_queue_push_tail(net_udp_queue, m);
   if(net_udp_queue->head == net_udp_queue->tail) {
-    GSource *src = fdsrc_new(net_udp_sock, TRUE);
+    GSource *src = fdsrc_new(net_udp_sock, G_IO_OUT);
     g_source_set_callback(src, udp_handle_out, NULL, NULL);
     g_source_attach(src, NULL);
     g_source_unref(src);

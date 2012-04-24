@@ -336,7 +336,7 @@ static void bind_create(struct listen_bind *b) {
   b->sock = sock;
 
   // Start accepting incoming connections or handling incoming messages
-  GSource *src = fdsrc_new(sock, FALSE);
+  GSource *src = fdsrc_new(sock, G_IO_IN);
   g_source_set_callback((GSource *)src, b->type == LBT_UDP ? listen_udp_handle : listen_tcp_handle, b, NULL);
   b->src = g_source_attach((GSource *)src, NULL);
   g_source_unref((GSource *)src);
