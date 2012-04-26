@@ -130,6 +130,91 @@ struct net {
 
 
 
+
+// Low-level recv/send wrappers
+
+static ssize_t tls_pull(gnutls_transport_ptr_t dat, void *buf, size_t len) {
+  struct net *n = dat;
+  int r = recv(n->sock, buf, len, 0);
+  if(r < 0)
+    gnutls_transport_set_errno(n->tls, errno == EWOULDBLOCK ? EAGAIN : errno);
+  else {
+    ratecalc_add(&net_in, r);
+    ratecalc_add(n->rate_in, r);
+  }
+  return r;
+}
+
+
+// Behaves similarly to a normal recv(), but writes a readable error message to
+// *err. If the error is temporary (e.g. EAGAIN), returns -1 but with *err=NULL.
+// Does not return 0, disconnect is considered a fatal error.
+static int low_recv(struct net *n, char *buf, int len, const char **err) {
+  int r = n->tls
+    ? gnutls_record_recv(n->tls, buf, len)
+    : recv(n->sock,              buf, len, 0);
+
+  if(r < 0 && (n->tls ? !gnutls_error_is_fatal(r) : errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)) {
+    *err = NULL;
+    return -1;
+  }
+
+  if(r <= 0) {
+    *err = !r || !n->tls ? g_strerror(!r ? ECONNRESET : errno) : gnutls_strerror(r);
+    return -1;
+  }
+
+  if(!n->tls) {
+    ratecalc_add(&net_in, r);
+    ratecalc_add(n->rate_in, r);
+  }
+  return r;
+}
+
+
+static ssize_t tls_push(gnutls_transport_ptr_t dat, const void *buf, size_t len) {
+  struct net *n = dat;
+  int r = send(n->sock, buf, len, 0);
+  if(r < 0)
+    gnutls_transport_set_errno(n->tls, errno == EWOULDBLOCK ? EAGAIN : errno);
+  else {
+    ratecalc_add(&net_out, r);
+    ratecalc_add(n->rate_out, r);
+  }
+  return r;
+}
+
+
+// Same as low_recv(), but for send().
+static int low_send(struct net *n, const char *buf, int len, const char **err) {
+  int r = n->tls
+    ? gnutls_record_send(n->tls, buf, len)
+    : send(n->sock,              buf, len, 0);
+
+  // Note: r == 0 is seen as a temporary error
+  if(!r || (r < 0 && (n->tls ? !gnutls_error_is_fatal(r) : errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN))) {
+    *err = NULL;
+    return -1;
+  }
+
+  if(r < 0) {
+    *err = n->tls ? gnutls_strerror(errno) : g_strerror(errno);
+    return -1;
+  }
+
+  if(!n->tls) {
+    ratecalc_add(&net_out, r);
+    ratecalc_add(n->rate_out, r);
+  }
+  return r;
+}
+
+
+
+
+
+
+
 // Asynchronous message handling
 
 static void asy_setuppoll(struct net *n);
@@ -190,18 +275,15 @@ static gboolean asy_read(struct net *n) {
     return FALSE;
   }
 
-  int r = n->tls
-    ? gnutls_record_recv(n->tls, n->rbuf->str + n->rbuf->len, len)
-    : recv(n->sock,              n->rbuf->str + n->rbuf->len, len, 0);
-
-  // No data? Just return.
-  if(r < 0 && (n->tls ? !gnutls_error_is_fatal(r) : errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN))
+  const char *err = NULL;
+  int r = low_recv(n, n->rbuf->str + n->rbuf->len, len, &err);
+  if(r < 0 && !err)
     return TRUE;
 
   // Handle error and disconnect
-  if(r <= 0) {
+  if(r < 0) {
     if(n->cb_err) {
-      char *e = g_strdup_printf("Read error: %s", !r || !n->tls ? g_strerror(!r ? ECONNRESET : errno) : gnutls_strerror(r));
+      char *e = g_strdup_printf("Read error: %s", err);
       n->cb_err(n, NETERR_RECV, e);
       g_free(e);
     }
@@ -213,8 +295,6 @@ static gboolean asy_read(struct net *n) {
   g_return_val_if_fail(n->rbuf->len + r < n->rbuf->allocated_len, FALSE);
   n->rbuf->len += r;
   n->rbuf->str[n->rbuf->len] = 0;
-  ratecalc_add(&net_in, r);
-  ratecalc_add(n->rate_in, r);
   net_ref(n);
   asy_handlerbuf(n);
   gboolean ret = n->state == NETST_ASY;
@@ -227,18 +307,15 @@ static gboolean asy_write(struct net *n) {
   if(!n->wbuf->len)
     return TRUE;
 
-  int r = n->tls
-    ? gnutls_record_send(n->tls, n->wbuf->str, n->wbuf->len)
-    : send(n->sock,              n->wbuf->str, n->wbuf->len, 0);
-
-  // No data? Just return. (Note: r == 0 is seen as a temporary error)
-  if(!r || (r < 0 && (n->tls ? !gnutls_error_is_fatal(r) : errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)))
+  const char *err = NULL;
+  int r = low_send(n, n->wbuf->str, n->wbuf->len, &err);
+  if(r < 0 && !err)
     return TRUE;
 
   // Handle error
   if(r < 0) {
     if(n->cb_err) {
-      char *e = g_strdup_printf("Write error: %s", n->tls ? gnutls_strerror(errno) : g_strerror(errno));
+      char *e = g_strdup_printf("Write error: %s", err);
       n->cb_err(n, NETERR_SEND, e);
       g_free(e);
     }
@@ -247,8 +324,6 @@ static gboolean asy_write(struct net *n) {
   }
 
   g_string_erase(n->wbuf, 0, r);
-  ratecalc_add(&net_out, r);
-  ratecalc_add(n->rate_out, r);
   return TRUE;
 }
 
@@ -407,8 +482,11 @@ void net_settls(struct net *n, gboolean serv, void (*cb)(struct net *, const cha
   gnutls_init(&n->tls, serv ? GNUTLS_SERVER : GNUTLS_CLIENT);
   gnutls_credentials_set(n->tls, GNUTLS_CRD_CERTIFICATE, db_certificate);
   gnutls_priority_set_direct(n->tls, "NORMAL", NULL); // TODO: Make this configurable. No, really.
-  // TODO: Set custom read/write functions, necessary for correct rate calculation.
-  gnutls_transport_set_ptr(n->tls, (gnutls_transport_ptr_t)(long)n->sock);
+
+  gnutls_transport_set_ptr(n->tls, n);
+  gnutls_transport_set_push_function(n->tls, tls_push);
+  gnutls_transport_set_pull_function(n->tls, tls_pull);
+
   n->cb_handshake = cb;
   n->tls_handshake = TRUE;
   asy_handshake(n);
