@@ -80,6 +80,7 @@ struct net {
 
   gnutls_session_t tls; // state ASY,SYN,DIS (only if tls is enabled)
   gboolean tls_handshake; // state ASY, whether we're handshaking.
+  void (*cb_handshake)(struct net *, const char *); // state ASY, called after complete handshake.
 
   GString *rbuf; // state ASY. Read buffer.
   GString *wbuf; // state ASY. Write buffer.
@@ -257,8 +258,25 @@ static gboolean asy_handshake(struct net *n) {
   int r = gnutls_handshake(n->tls);
 
   if(!r) { // Successful handshake
-    g_debug("%s: TLS Handshake successful.", net_remoteaddr(n));
+    unsigned int len;
+    char kpr[32] = {};
+    char kpf[53] = {};
+    const gnutls_datum_t *certs = gnutls_certificate_get_peers(n->tls, &len);
+    if(certs && len >= 1) {
+      certificate_sha256(*certs, kpr);
+      base32_encode_dat(kpr, kpf, 32);
+    }
+    g_debug("%s: TLS Handshake successful, KP=SHA256/%s", net_remoteaddr(n), kpf);
     n->tls_handshake = FALSE;
+    if(n->cb_handshake) {
+      net_ref(n);
+      n->cb_handshake(n, *kpf ? kpr : NULL);
+      n->cb_handshake = NULL;
+      gboolean ret = n->state == NETST_ASY;
+      net_unref(n);
+      return ret;
+    }
+
   } else if(gnutls_error_is_fatal(r)) { // Error
     if(n->cb_err) {
       char *e = g_strdup_printf("TLS error: %s", gnutls_strerror(r));
@@ -357,9 +375,11 @@ void net_writef(struct net *n, const char *fmt, ...) {
 
 // Enables TLS-mode and initates the handshake. May not be called when there's
 // something in the read or write buffer.
+// The callback function, if set, will be called when the handshake has
+// completed. If a certificate of the peer has been received, its keyprint will
+// be sent as first argument. NULL otherwise.
 // TODO: Probably want to allow something in the read buffer in the future.
-// TODO: Callback for certificate checking.
-void net_settls(struct net *n, gboolean serv) {
+void net_settls(struct net *n, gboolean serv, void (*cb)(struct net *, const char *)) {
   g_return_if_fail(n->state == NETST_ASY);
   g_return_if_fail(!n->rbuf->len && !n->wbuf->len);
   g_return_if_fail(!n->tls);
@@ -368,6 +388,7 @@ void net_settls(struct net *n, gboolean serv) {
   gnutls_priority_set_direct(n->tls, "NORMAL", NULL); // TODO: Make this configurable. No, really.
   // TODO: Set custom read/write functions, necessary for correct rate calculation.
   gnutls_transport_set_ptr(n->tls, (gnutls_transport_ptr_t)(long)n->sock);
+  n->cb_handshake = cb;
   n->tls_handshake = TRUE;
   asy_handshake(n);
 }

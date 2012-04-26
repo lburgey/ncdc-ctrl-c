@@ -385,7 +385,6 @@ static void c_accept(char *args) {
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type != UIT_HUB)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
-#if TLS_SUPPORT
   else if(!tab->hub->kp)
     ui_m(NULL, 0, "Nothing to accept.");
   else {
@@ -396,10 +395,6 @@ static void c_accept(char *args) {
     tab->hub->kp = NULL;
     hub_connect(tab->hub);
   }
-#else
-  else
-    ui_m(NULL, 0, "No TLS support.");
-#endif
 }
 
 

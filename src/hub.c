@@ -56,9 +56,7 @@ struct hub_user {
   char cid[8];   // for ADC - only the first 8 bytes of the CID, for simple verification purposes
   guint64 uid;
   guint64 sharesize;
-#if TLS_SUPPORT
   char *kp;      // ADC with KEYP, 32 bytes slice-alloc'ed
-#endif
   GSequenceIter *iter; // used by ui_userlist_*
 }
 
@@ -101,10 +99,8 @@ struct hub {
   char *gpa_salt;
   int gpa_salt_len;
 
-#if TLS_SUPPORT
   // TLS certificate verification
   char *kp;                // NULL if it matches config, 32 bytes slice-alloced otherwise
-#endif
 
   // last info we sent to the hub
   char *nfo_desc, *nfo_conn, *nfo_mail;
@@ -182,10 +178,8 @@ static void user_free(gpointer dat) {
   if(u->hub->adc && u->sid)
     g_hash_table_remove(u->hub->sessions, GINT_TO_POINTER(u->sid));
   // free
-#if TLS_SUPPORT
   if(u->kp)
     g_slice_free1(32, u->kp);
-#endif
   g_free(u->name_hub);
   g_free(u->name);
   g_free(u->desc);
@@ -426,7 +420,6 @@ static void user_adc_nfo(struct hub *hub, struct hub_user *u, struct adc_cmd *cm
     case P('U','S'): // upload speed
       u->conn = GUINT_TO_POINTER((int)g_ascii_strtoull(p, NULL, 0));
       break;
-#if TLS_SUPPORT
     case P('K','P'): // keyprint
       if(!have_tls_support)
         break;
@@ -440,7 +433,6 @@ static void user_adc_nfo(struct hub *hub, struct hub_user *u, struct adc_cmd *cm
       } else
         g_message("Invalid KP field in INF for %s on %s (%s)", u->name, net_remoteaddr(hub->net), p);
       break;
-#endif
     }
   }
 
@@ -1667,6 +1659,44 @@ struct hub *hub_create(struct ui_tab *tab) {
 }
 
 
+static void handle_handshake(struct net *n, const char *kpr) {
+  g_return_if_fail(kpr != NULL);
+  struct hub *hub = n->handle;
+  g_return_if_fail(!hub->kp);
+
+  char kpf[53] = {};
+  base32_encode_dat(kpr, kpf, 32);
+
+  // Get configured keyprint
+  char *old = var_get(hub->id, VAR_hubkp);
+
+  // No keyprint? Then assume first-use trust and save it to the config file.
+  if(!old) {
+    ui_mf(hub->tab, 0, "No previous TLS keyprint known. Storing `%s' for future validation.", kpf);
+    var_set(hub->id, VAR_hubkp, kpf, NULL);
+    return;
+  }
+
+  // Keyprint matches? no problems!
+  if(strcmp(old, kpf) == 0)
+    return;
+
+  // Keyprint doesn't match... now we have a problem!
+  ui_mf(hub->tab, UIP_HIGH,
+    "\nWARNING: The TLS certificate of this hub has changed!\n"
+    "Old keyprint: %s\n"
+    "New keyprint: %s\n"
+    "This can mean two things:\n"
+    "- The hub you are connecting to is NOT the same as the one you intended to connect to.\n"
+    "- The hub owner has changed the TLS certificate.\n"
+    "If you accept the new keyprint and wish continue connecting, type `/accept'.\n",
+    old, kpf);
+  hub_disconnect(hub, FALSE);
+  hub->kp = g_slice_alloc(32);
+  memcpy(hub->kp, kpr, 32);
+}
+
+
 static void handle_connect(struct net *n, const char *addr) {
   struct hub *hub = n->handle;
   if(addr) {
@@ -1678,7 +1708,7 @@ static void handle_connect(struct net *n, const char *addr) {
 
   // TODO: Fix the certification validation thing
   if(hub->tls)
-    net_settls(hub->net, FALSE);
+    net_settls(hub->net, FALSE, handle_handshake);
 
   if(hub->adc)
     net_writestr(hub->net, "HSUP ADBASE ADTIGR\n");
@@ -1690,51 +1720,6 @@ static void handle_connect(struct net *n, const char *addr) {
   // Start handling incoming messages
   net_readmsg(hub->net, hub->adc ? '\n' : '|', hub->adc ? adc_handle : nmdc_handle);
 }
-
-
-#if TLS_SUPPORT
-
-static gboolean handle_accept_cert(GTlsConnection *conn, GTlsCertificate *cert, GTlsCertificateFlags errors, gpointer dat) {
-  struct net *n = dat;
-  struct hub *hub = n->handle;
-
-  // Get keyprint
-  char raw[32];
-  // TODO: fix for GnuTLS
-  //certificate_sha256(cert, raw);
-  char enc[53] = {};
-  base32_encode_dat(raw, enc, 32);
-
-  // Get configured keyprint
-  char *old = var_get(hub->id, VAR_hubkp);
-
-  // No keyprint? Then assume first-use trust and save it to the config file.
-  if(!old) {
-    ui_mf(hub->tab, 0, "No previous TLS keyprint known. Storing `%s' for future validation.", enc);
-    var_set(hub->id, VAR_hubkp, enc, NULL);
-    return TRUE;
-  }
-
-  // Keyprint matches? no problems!
-  if(strcmp(old, enc) == 0)
-    return TRUE;
-
-  // Keyprint doesn't match... now we have a problem!
-  hub->kp = g_slice_alloc(32);
-  memcpy(hub->kp, raw, 32);
-  ui_mf(hub->tab, UIP_HIGH,
-    "\nWARNING: The TLS certificate of this hub has changed!\n"
-    "Old keyprint: %s\n"
-    "New keyprint: %s\n"
-    "This can mean two things:\n"
-    "- The hub you are connecting to is NOT the same as the one you intended to connect to.\n"
-    "- The hub owner has changed the TLS certificate.\n"
-    "If you accept the new keyprint and wish continue connecting, type `/accept'.\n",
-    old, enc);
-  return FALSE;
-}
-
-#endif
 
 
 void hub_connect(struct hub *hub) {
@@ -1777,11 +1762,6 @@ void hub_connect(struct hub *hub) {
 
   ui_mf(hub->tab, 0, "Connecting to %s...", addr);
   net_connect2(hub->net, addr, 411, var_get(hub->id, VAR_local_address), handle_connect);
-
-  if(hub->kp) {
-    g_slice_free1(32, hub->kp);
-    hub->kp = NULL;
-  }
 }
 
 
@@ -1795,6 +1775,10 @@ void hub_disconnect(struct hub *hub, gboolean recon) {
     hub->joincomplete_timer = 0;
   }
   net_disconnect(hub->net);
+  if(hub->kp) {
+    g_slice_free1(32, hub->kp);
+    hub->kp = NULL;
+  }
   ui_hub_disconnect(hub->tab);
   g_hash_table_remove_all(hub->sessions);
   g_hash_table_remove_all(hub->users);
@@ -1827,10 +1811,6 @@ void hub_free(struct hub *hub) {
   hub_disconnect(hub, FALSE);
   cc_remove_hub(hub);
   net_unref(hub->net);
-#if TLS_SUPPORT
-  if(hub->kp)
-    g_slice_free1(32, hub->kp);
-#endif
   g_free(hub->nfo_desc);
   g_free(hub->nfo_conn);
   g_free(hub->nfo_mail);
