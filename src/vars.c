@@ -730,7 +730,7 @@ static struct flag_option var_tls_policy_ops[] = {
 };
 
 static char *f_tls_policy(const char *val) {
-  return !db_certificate ? g_strdup("disabled (not supported)") : flags_fmt(var_tls_policy_ops, int_raw(val));
+  return flags_fmt(var_tls_policy_ops, int_raw(val));
 }
 
 static char *p_tls_policy(const char *val, GError **err) {
@@ -743,8 +743,6 @@ static void su_tls_policy(const char *old, const char *val, char **sug) {
 }
 
 static char *g_tls_policy(guint64 hub, const char *key) {
-  if(!db_certificate)
-    return G_STRINGIFY(VAR_TLSP_DISABLE);
   char *r = db_vars_get(hub, key);
   if(!r)
     return NULL;
@@ -759,10 +757,6 @@ static char *g_tls_policy(guint64 hub, const char *key) {
 }
 
 static gboolean s_tls_policy(guint64 hub, const char *key, const char *val, GError **err) {
-  if(!db_certificate) {
-    g_set_error(err, 1, 0, "This option can't be modified: %s.", !have_tls_support ? "no TLS support available" : "no client certificate available");
-    return FALSE;
-  }
   char *r = flags_fmt(var_tls_policy_ops, int_raw(val));
   db_vars_set(hub, key, r[0] ? r : NULL);
   g_free(r);

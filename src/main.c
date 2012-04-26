@@ -40,9 +40,6 @@
 // global variables
 GMainLoop *main_loop;
 
-// TODO: get rid of this variable when the networking backend has been rewritten for gnutls.
-gboolean have_tls_support = FALSE;
-
 
 // input handling declarations
 

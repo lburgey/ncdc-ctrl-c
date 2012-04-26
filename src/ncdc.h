@@ -47,7 +47,6 @@
 # define VERSION GIT_VERSION
 #endif
 
-#define TLS_SUPPORT     GLIB_CHECK_VERSION(2, 28, 0)
 #define TIMEOUT_SUPPORT GLIB_CHECK_VERSION(2, 26, 0)
 
 // forward declaration for data types

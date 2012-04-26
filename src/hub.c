@@ -421,8 +421,6 @@ static void user_adc_nfo(struct hub *hub, struct hub_user *u, struct adc_cmd *cm
       u->conn = GUINT_TO_POINTER((int)g_ascii_strtoull(p, NULL, 0));
       break;
     case P('K','P'): // keyprint
-      if(!have_tls_support)
-        break;
       if(u->kp) {
         g_slice_free1(32, u->kp);
         u->kp = NULL;
@@ -664,8 +662,7 @@ void hub_send_nfo(struct hub *hub) {
       adc_append(cmd, "NI", hub->nick);
       // Always add our KP field, even if we're not active. Other clients may
       // validate our certificate even when we are the one connecting.
-      if(db_certificate)
-        g_string_append_printf(cmd, " KPSHA256/%s", db_certificate_kp);
+      g_string_append_printf(cmd, " KPSHA256/%s", db_certificate_kp);
     }
     if(f || !eq(ip4))
       g_string_append_printf(cmd, " I4%s", ip4_unpack(ip4)); // ip4 = 0 == 0.0.0.0, which is exactly what we want
