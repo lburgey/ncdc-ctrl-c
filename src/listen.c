@@ -137,6 +137,7 @@ static gboolean listen_tcp_handle(gpointer dat) {
   struct sockaddr_in a = {};
   socklen_t len = sizeof(a);
   int c = accept(b->sock, (struct sockaddr *)&a, &len);
+  fcntl(c, F_SETFL, fcntl(c, F_GETFL, 0)|O_NONBLOCK);
 
   // handle error
   if(c < 0) {
@@ -150,8 +151,9 @@ static gboolean listen_tcp_handle(gpointer dat) {
   }
 
   // Create connection
-  // TODO: cc_incoming()/net_setconn() should accept a socket fd + peer address info
-  //cc_incoming(cc_create(NULL), b->port, c, b->type == LBT_TLS);
+  char addr_str[100];
+  g_snprintf(addr_str, 100, "%s:%d", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
+  cc_incoming(cc_create(NULL), b->port, c, addr_str, b->type == LBT_TLS);
   return TRUE;
 }
 

@@ -77,9 +77,7 @@ struct cc_expect {
   guint16 port;
   char cid[8];  // ADC
   char *token;  // ADC
-#if TLS_SUPPORT
   char *kp;     // ADC - slice-alloc'ed with 32 bytes
-#endif
   time_t added;
   int timeout_src;
   gboolean adc : 1;
@@ -97,10 +95,8 @@ static void cc_expect_rm(GList *n, struct cc *success) {
   else if(e->dl)
     success->dl = TRUE;
   g_source_remove(e->timeout_src);
-#if TLS_SUPPORT
   if(e->kp)
     g_slice_free1(32, e->kp);
-#endif
   g_free(e->token);
   g_free(e->nick);
   g_slice_free(struct cc_expect, e);
@@ -129,12 +125,10 @@ void cc_expect_add(struct hub *hub, struct hub_user *u, guint16 port, char *t, g
     memcpy(e->cid, u->cid, 8);
   } else
     e->nick = g_strdup(u->name_hub);
-#if TLS_SUPPORT
   if(u->kp) {
     e->kp = g_slice_alloc(32);
     memcpy(e->kp, u->kp, 32);
   }
-#endif
   if(t)
     e->token = g_strdup(t);
   time(&(e->added));
@@ -153,10 +147,8 @@ static gboolean cc_expect_adc_rm(struct cc *cc) {
     if(e->adc && e->port == cc->port && memcmp(cc->cid, e->cid, 8) == 0 && strcmp(cc->token, e->token) == 0) {
       cc->uid = e->uid;
       cc->hub = e->hub;
-#if TLS_SUPPORT
       cc->kp_user = e->kp;
       e->kp = NULL;
-#endif
       cc_expect_rm(n, cc);
       return TRUE;
     }
@@ -284,6 +276,7 @@ struct cc {
   char *nick;
   char *hub_name; // Copy of hub->tab->name when hub is reset to NULL
   gboolean adc : 1;
+  gboolean tls : 1;
   gboolean active : 1;
   gboolean isop : 1;
   gboolean slot_mini : 1;
@@ -305,10 +298,8 @@ struct cc {
   int last_length;
   time_t last_start;
   char last_hash[24];
-#if TLS_SUPPORT
   char *kp_real;  // (ADC) slice-alloc'ed with 32 bytes. This is the actually calculated keyprint.
   char *kp_user;  // (ADC) This is the keyprint from the users' INF
-#endif
   GError *err;
   GSequenceIter *iter;
 };
@@ -565,14 +556,6 @@ static gboolean request_slot(struct cc *cc, gboolean need_full) {
 }
 
 
-static void handle_error(struct net *n, int action, GError *err) {
-  struct cc *cc = n->handle;
-  if(!cc->err) // ignore network errors if there already was a protocol error
-    g_propagate_error(&(cc->err), g_error_copy(err));
-  cc_disconnect(n->handle);
-}
-
-
 // Called from dl.c
 void cc_download(struct cc *cc, struct dl *dl) {
   g_return_if_fail(cc->dl && cc->state == CCS_IDLE);
@@ -590,16 +573,16 @@ void cc_download(struct cc *cc, struct dl *dl) {
   // if we have not received TTHL data yet, request it
   if(!dl->islist && !dl->hastthl) {
     if(cc->adc)
-      net_sendf(cc->net, "CGET tthl %s 0 -1", fn);
+      net_writef(cc->net, "CGET tthl %s 0 -1\n", fn);
     else
-      net_sendf(cc->net, "$ADCGET tthl %s 0 -1", fn);
+      net_writef(cc->net, "$ADCGET tthl %s 0 -1|", fn);
   // otherwise, send GET request
   } else {
     int len = dl->islist ? -1 : MIN(G_MAXINT-1, dl->size-dl->have);
     if(cc->adc)
-      net_sendf(cc->net, "CGET file %s %"G_GUINT64_FORMAT" %d", fn, dl->have, len);
+      net_writef(cc->net, "CGET file %s %"G_GUINT64_FORMAT" %d\n", fn, dl->have, len);
     else
-      net_sendf(cc->net, "$ADCGET file %s %"G_GUINT64_FORMAT" %d", fn, dl->have, len);
+      net_writef(cc->net, "$ADCGET file %s %"G_GUINT64_FORMAT" %d|", fn, dl->have, len);
   }
   g_free(cc->last_file);
   cc->last_file = g_strdup(dl->islist ? "files.xml.bz2" : dl->dest);
@@ -710,8 +693,8 @@ static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gi
       g_set_error_literal(err, 1, 51, "File Not Available");
     else {
       // no need to adc_escape(id) here, since it cannot contain any special characters
-      net_sendf(cc->net, cc->adc ? "CSND tthl %s 0 %d" : "$ADCSND tthl %s 0 %d", id, len);
-      net_sendraw(cc->net, dat, len);
+      net_writef(cc->net, cc->adc ? "CSND tthl %s 0 %d\n" : "$ADCSND tthl %s 0 %d|", id, len);
+      net_write(cc->net, dat, len);
       g_free(dat);
     }
     return;
@@ -738,8 +721,8 @@ static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gi
       return;
     }
     char *eid = adc_escape(id, !cc->adc);
-    net_sendf(cc->net, cc->adc ? "CSND list %s 0 %d" : "$ADCSND list %s 0 %d", eid, buf->len);
-    net_sendraw(cc->net, buf->str, buf->len);
+    net_writef(cc->net, cc->adc ? "CSND list %s 0 %d\n" : "$ADCSND list %s 0 %d|", eid, buf->len);
+    net_write(cc->net, buf->str, buf->len);
     g_free(eid);
     g_string_free(buf, TRUE);
     return;
@@ -819,8 +802,8 @@ static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gi
     // more than 2GB, but in actuality we stop transfering stuff at 2GB. Other
     // DC clients (DC++, notabily) don't like it when you reply with a
     // different byte count than they requested. :-(
-    net_sendf(cc->net,
-      cc->adc ? "CSND file %s %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT : "$ADCSND file %s %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT,
+    net_writef(cc->net,
+      cc->adc ? "CSND file %s %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT"\n" : "$ADCSND file %s %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT"|",
       tmp, start, bytes);
     cc->state = CCS_TRANSFER;
     time(&cc->last_start);
@@ -878,7 +861,14 @@ static void handle_id(struct cc *cc, struct hub_user *u) {
 }
 
 
-static void adc_handle(struct cc *cc, char *msg) {
+static void adc_handle(struct net *net, char *msg, int _len) {
+  struct cc *cc = net->handle;
+  if(!*msg)
+    return;
+  g_clear_error(&cc->err);
+  g_return_if_fail(cc->state != CCS_CONN && cc->state != CCS_DISCONN);
+  net_readmsg(net, '\n', adc_handle);
+
   struct adc_cmd cmd;
   GError *err = NULL;
 
@@ -905,13 +895,14 @@ static void adc_handle(struct cc *cc, char *msg) {
     } else {
       // TODO: actually do something with the arguments.
       if(cc->active)
-        net_send(cc->net, "CSUP ADBASE ADTIGR ADBZIP");
+        net_writestr(cc->net, "CSUP ADBASE ADTIGR ADBZIP\n");
 
       GString *r = adc_generate('C', ADCC_INF, 0, 0);
       adc_append(r, "ID", var_get(0, VAR_cid));
       if(!cc->active)
         adc_append(r, "TO", cc->token);
-      net_send(cc->net, r->str);
+      g_string_append_c(r, '\n');
+      net_writestr(cc->net, r->str);
       g_string_free(r, TRUE);
     }
     break;
@@ -950,7 +941,7 @@ static void adc_handle(struct cc *cc, char *msg) {
       } else
         memcpy(cc->cid, cid, 24);
       // Perform keyprint validation
-#if TLS_SUPPORT
+      // TODO: Throw an error if kp_user is set but we've not received a kp_real?
       if(cc->kp_real && cc->kp_user && memcmp(cc->kp_real, cc->kp_user, 32) != 0) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         char user[53] = {}, real[53] = {};
@@ -960,7 +951,6 @@ static void adc_handle(struct cc *cc, char *msg) {
         cc_disconnect(cc);
       } else if(cc->kp_real && cc->kp_user)
         g_debug("CC:%s: Client authenticated using KEYP.", net_remoteaddr(cc->net));
-#endif
       if(cc->dl && cc->state == CCS_IDLE)
         dl_user_cc(cc->uid, cc);
     }
@@ -982,7 +972,8 @@ static void adc_handle(struct cc *cc, char *msg) {
         GString *r = adc_generate('C', ADCC_STA, 0, 0);
         g_string_append_printf(r, " 1%02d", err->code);
         adc_append(r, NULL, err->message);
-        net_send(cc->net, r->str);
+        g_string_append_c(r, '\n');
+        net_writestr(cc->net, r->str);
         g_string_free(r, TRUE);
         g_propagate_error(&cc->err, err);
       }
@@ -1036,7 +1027,8 @@ static void adc_handle(struct cc *cc, char *msg) {
         } else
           g_string_append_c(r, '/');
       }
-      net_send(cc->net, r->str);
+      g_string_append_c(r, '\n');
+      net_writestr(cc->net, r->str);
       g_string_free(r, TRUE);
     }
     break;
@@ -1120,8 +1112,8 @@ static void nmdc_mynick(struct cc *cc, const char *nick) {
   handle_id(cc, u);
 
   if(cc->active) {
-    net_sendf(cc->net, "$MyNick %s", cc->hub->nick_hub);
-    net_sendf(cc->net, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s", PACKAGE_NAME, VERSION);
+    net_writef(cc->net, "$MyNick %s|", cc->hub->nick_hub);
+    net_writef(cc->net, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s|", PACKAGE_NAME, VERSION);
   }
 }
 
@@ -1170,9 +1162,15 @@ static void nmdc_direction(struct cc *cc, gboolean down, int num) {
 }
 
 
-static void nmdc_handle(struct cc *cc, char *cmd) {
-  GMatchInfo *nfo;
+static void nmdc_handle(struct net *net, char *cmd, int _len) {
+  struct cc *cc = net->handle;
+  if(!*cmd)
+    return;
+  g_clear_error(&cc->err);
+  g_return_if_fail(cc->state != CCS_CONN && cc->state != CCS_DISCONN);
+  net_readmsg(net, '|', nmdc_handle);
 
+  GMatchInfo *nfo;
   // create regexes (declared statically, allocated/compiled on first call)
 #define CMDREGEX(name, regex) \
   static GRegex * name = NULL;\
@@ -1214,11 +1212,11 @@ static void nmdc_handle(struct cc *cc, char *cmd) {
       g_warning("CC:%s: Does not advertise EXTENDEDPROTOCOL.", net_remoteaddr(cc->net));
       cc_disconnect(cc);
     } else {
-      net_send(cc->net, "$Supports MiniSlots XmlBZList ADCGet TTHL TTHF");
+      net_writestr(cc->net, "$Supports MiniSlots XmlBZList ADCGet TTHL TTHF|");
       char *key = nmdc_lock2key(lock);
       cc->dir = cc->dl ? g_random_int_range(0, 65535) : -1;
-      net_sendf(cc->net, "$Direction %s %d", cc->dl ? "Download" : "Upload", cc->dl ? cc->dir : 0);
-      net_sendf(cc->net, "$Key %s", key);
+      net_writef(cc->net, "$Direction %s %d|", cc->dl ? "Download" : "Upload", cc->dl ? cc->dir : 0);
+      net_writef(cc->net, "$Key %s|", key);
       g_free(key);
       g_free(lock);
     }
@@ -1276,9 +1274,9 @@ static void nmdc_handle(struct cc *cc, char *cmd) {
       handle_adcget(cc, type, un_id, st, by, &err);
       if(err) {
         if(err->code != 53)
-          net_sendf(cc->net, "$Error %s", err->message);
+          net_writef(cc->net, "$Error %s|", err->message);
         else
-          net_send(cc->net, "$MaxedOut");
+          net_writestr(cc->net, "$MaxedOut|");
         g_propagate_error(&cc->err, err);
       }
     }
@@ -1340,53 +1338,19 @@ static void nmdc_handle(struct cc *cc, char *cmd) {
 }
 
 
-static void handle_cmd(struct net *n, char *cmd) {
+static void handle_error(struct net *n, int action, const char *err) {
   struct cc *cc = n->handle;
-  g_return_if_fail(cc->state != CCS_CONN && cc->state != CCS_DISCONN);
-  if(!*cmd)
-    return;
-
-  g_clear_error(&(cc->err));
-
-  // No input is allowed while we're sending file data.
-  if(!cc->dl && cc->state == CCS_TRANSFER) {
-    g_message("CC:%s: Received message from while we're sending a file.", net_remoteaddr(cc->net));
-    g_set_error_literal(&cc->err, 1, 0, "Received message in upload state.");
-    cc_disconnect(cc);
-    return;
-  }
-
-  if(cc->adc)
-    adc_handle(cc, cmd);
-  else
-    nmdc_handle(cc, cmd);
+  if(!cc->err) // ignore network errors if there already was a protocol error
+    g_set_error_literal(&cc->err, 1, 0, err);
+  cc_disconnect(n->handle);
 }
-
-
-#if TLS_SUPPORT
-
-// Simply stores the keyprint of the certificate in cc->kp_real, it will be
-// checked when receiving CINF.
-static gboolean handle_accept_cert(GTlsConnection *conn, GTlsCertificate *cert, GTlsCertificateFlags errors, gpointer dat) {
-  struct net *n = dat;
-  struct cc *c = n->handle;
-  if(!c->kp_real)
-    c->kp_real = g_slice_alloc(32);
-  // TODO: Fix this for GnuTLS.
-  // certificate_sha256(cert, c->kp_real);
-  return TRUE;
-}
-
-#endif
 
 
 // Hub may be unknown when this is an incoming connection
 struct cc *cc_create(struct hub *hub) {
   struct cc *cc = g_new0(struct cc, 1);
-  cc->net = net_create('|', cc, FALSE, handle_cmd, handle_error);
-#if TLS_SUPPORT
-  cc->net->conn_accept_cert = handle_accept_cert;
-#endif
+  cc->net = net_new(cc);
+  cc->net->cb_err = handle_error;
   cc->hub = hub;
   cc->iter = g_sequence_append(cc_list, cc);
   cc->state = CCS_CONN;
@@ -1396,34 +1360,58 @@ struct cc *cc_create(struct hub *hub) {
 }
 
 
-static void handle_connect(struct net *n) {
+// Simply stores the keyprint of the certificate in cc->kp_real, it will be
+// checked when receiving CINF.
+static void handle_handshake(struct net *n, const char *kpr) {
+  struct cc *c = n->handle;
+  if(kpr) {
+    if(!c->kp_real)
+      c->kp_real = g_slice_alloc(32);
+    memcpy(c->kp_real, kpr, 32);
+  } else if(c->kp_real) {
+    g_slice_free1(32, c->kp_real);
+    c->kp_real = NULL;
+  }
+}
+
+
+static void handle_connect(struct net *n, const char *addr) {
+  if(addr)
+    return;
   struct cc *cc = n->handle;
-  strncpy(cc->remoteaddr, net_remoteaddr(cc->net), 23);
-  if(!cc->hub)
+  strncpy(cc->remoteaddr, net_remoteaddr(cc->net), sizeof(cc->remoteaddr));
+  if(!cc->hub) {
     cc_disconnect(cc);
-  else if(cc->adc) {
-    net_send(n, "CSUP ADBASE ADTIGR ADBZIP");
+    return;
+  }
+
+  if(n->tls)
+    net_settls(cc->net, FALSE, handle_handshake);
+
+  if(cc->adc) {
+    net_writestr(n, "CSUP ADBASE ADTIGR ADBZIP\n");
     // Note that while http://www.adcportal.com/wiki/REF says we should send
     // the hostname used to connect to the hub, the actual IP is easier to get
     // in our case. I personally don't see how having a hostname is better than
     // having an actual IP, but an attacked user who gets incoming connections
     // from both ncdc and other clients now knows both the DNS *and* the IP of
     // the hub. :-)
-    net_sendf(n, "CSTA 000 referrer RFadc://%s", net_remoteaddr(cc->hub->net));
+    net_writef(n, "CSTA 000 referrer RFadc://%s\n", net_remoteaddr(cc->hub->net));
   } else {
-    net_sendf(n, "$MyNick %s", cc->hub->nick_hub);
-    net_sendf(n, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s,Ref=%s", PACKAGE_NAME, VERSION, net_remoteaddr(cc->hub->net));
+    net_writef(n, "$MyNick %s|", cc->hub->nick_hub);
+    net_writef(n, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s,Ref=%s|", PACKAGE_NAME, VERSION, net_remoteaddr(cc->hub->net));
   }
   cc->state = CCS_HANDSHAKE;
+  net_readmsg(cc->net, cc->adc ? '\n' : '|', cc->adc ? adc_handle : nmdc_handle);
 }
 
 
 void cc_nmdc_connect(struct cc *cc, const char *addr, const char *laddr, gboolean tls) {
   g_return_if_fail(cc->state == CCS_CONN);
-  g_return_if_fail(!tls || have_tls_support);
-  strncpy(cc->remoteaddr, addr, 23);
-  net_connect(cc->net, addr, laddr, 0, tls, handle_connect);
-  g_clear_error(&(cc->err));
+  strncpy(cc->remoteaddr, addr, sizeof(cc->remoteaddr));
+  cc->tls = tls;
+  net_connect2(cc->net, addr, 0, laddr, handle_connect);
+  g_clear_error(&cc->err);
 }
 
 
@@ -1431,25 +1419,22 @@ void cc_adc_connect(struct cc *cc, struct hub_user *u, const char *laddr, unsign
   g_return_if_fail(cc->state == CCS_CONN);
   g_return_if_fail(cc->hub);
   g_return_if_fail(u && u->active && u->ip4);
-  g_return_if_fail(!tls || have_tls_support);
+  cc->tls = tls;
   cc->adc = TRUE;
   cc->token = g_strdup(token);
   memcpy(cc->cid, u->cid, 8);
-  cc->net->eom[0] = '\n';
   // build address
-  strncpy(cc->remoteaddr, ip4_unpack(u->ip4), 23);
+  strncpy(cc->remoteaddr, ip4_unpack(u->ip4), sizeof(cc->remoteaddr));
   char tmp[10];
   g_snprintf(tmp, 10, "%d", port);
-  strncat(cc->remoteaddr, ":", 23-strlen(cc->remoteaddr));
-  strncat(cc->remoteaddr, tmp, 23-strlen(cc->remoteaddr));
+  strncat(cc->remoteaddr, ":", sizeof(cc->remoteaddr)-strlen(cc->remoteaddr));
+  strncat(cc->remoteaddr, tmp, sizeof(cc->remoteaddr)-strlen(cc->remoteaddr));
   // check whether this was as a reply to a RCM from us
   cc_expect_adc_rm(cc);
-#if TLS_SUPPORT
   if(!cc->kp_user && u->kp) {
     cc->kp_user = g_slice_alloc(32);
     memcpy(cc->kp_user, u->kp, 32);
   }
-#endif
   // check / update user info
   handle_id(cc, u);
   // handle_id() can do a cc_disconnect() when it discovers a duplicate
@@ -1458,30 +1443,33 @@ void cc_adc_connect(struct cc *cc, struct hub_user *u, const char *laddr, unsign
   if(!cc->token)
     return;
   // connect
-  net_connect(cc->net, cc->remoteaddr, laddr, 0, tls, handle_connect);
-  g_clear_error(&(cc->err));
+  net_connect2(cc->net, cc->remoteaddr, 0, laddr, handle_connect);
+  g_clear_error(&cc->err);
 }
 
 
+// TODO: Also detect and handle TLS, to allow combining the incoming TCP/TLS
+// ports into a single port.
 static void handle_detectprotocol(struct net *net, char *dat, int len) {
+  g_debug("PEEK!");
   g_return_if_fail(len > 0);
   struct cc *cc = net->handle;
-  net->recv_datain = NULL;
-  if(dat[0] == 'C') {
+  if(dat[0] == 'C')
     cc->adc = TRUE;
-    net->eom[0] = '\n';
-  }
-  // otherwise, assume defaults (= NMDC)
+  net_readmsg(cc->net, cc->adc ? '\n' : '|', cc->adc ? adc_handle : nmdc_handle);
 }
 
 
-void cc_incoming(struct cc *cc, guint16 port, GSocketConnection *conn, gboolean tls) {
-  net_setconn(cc->net, conn, tls, TRUE);
+void cc_incoming(struct cc *cc, guint16 port, int sock, const char *addr, gboolean tls) {
+  net_connected(cc->net, sock, addr);
+  if(tls)
+    net_settls(cc->net, TRUE, handle_handshake);
+  cc->tls = tls;
   cc->port = port;
   cc->active = TRUE;
-  cc->net->recv_datain = handle_detectprotocol;
   cc->state = CCS_HANDSHAKE;
-  strncpy(cc->remoteaddr, net_remoteaddr(cc->net), 23);
+  net_peekbytes(cc->net, 1, handle_detectprotocol);
+  strncpy(cc->remoteaddr, net_remoteaddr(cc->net), sizeof(cc->remoteaddr));
 }
 
 
@@ -1516,12 +1504,10 @@ void cc_free(struct cc *cc) {
   net_unref(cc->net);
   if(cc->err)
     g_error_free(cc->err);
-#if TLS_SUPPORT
   if(cc->kp_real)
     g_slice_free1(32, cc->kp_real);
   if(cc->kp_user)
     g_slice_free1(32, cc->kp_user);
-#endif
   g_free(cc->tthl_dat);
   g_free(cc->nick_raw);
   g_free(cc->nick);

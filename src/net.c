@@ -91,9 +91,11 @@ struct net {
   // this has been called.
   void (*cb_err)(struct net *, int, const char *);
 
-  // Message reading. Callback will be called only once. (Both state ASY)
-  void (*msg_read)(struct net *, char *);
-  char msg_eom;
+  // Read buffer handling. Callback will be called only once. (State ASY)
+  void (*rd_cb)(struct net *, char *, int len);
+  gboolean rd_msg : 1; // TRUE: message, rd_dat=EOM; FALSE=bytes, rd_dat=count
+  gboolean rd_consume : 1;
+  int rd_dat;
 
   // some pointer for use by the user
   void *handle;
@@ -103,16 +105,10 @@ struct net {
   // OLD STUFF
   int conn;
   gboolean connecting;
-  unsigned short conn_defport;
-#if TLS_SUPPORT
-  gboolean (*conn_accept_cert)(GTlsConnection *, GTlsCertificate *, GTlsCertificateFlags, gpointer);
-#endif
-  char eom[2];
   void (*recv_msg_cb)(struct net *, char *);
   void (*recv_datain)(struct net *, char *data, int len);
   void (*file_cb)(struct net *);
   void (*cb_con)(struct net *);
-  gboolean keepalive;
   time_t timeout_last;
 };
 
@@ -121,16 +117,14 @@ struct net {
 
 #define net_remoteaddr(n) ((n)->addr)
 
+#define net_is_connected(n) ((n)->state == NETST_ASY || (n)->state == NETST_SYN)
+#define net_is_connecting(n) ((n)->state == NETST_DNS || (n)->state == NETST_CON)
+#define net_is_idle(n) ((n)->state == NETST_IDL)
+
 // OLD STUFF
 #define net_file_left(n) 0
 #define net_recv_left(n) 0
 #define net_recvraw(a,b,c,d,e)
-#define net_create(a,b,c,d,e) NULL
-#define net_setconn(a,b,c,d)
-#define net_connect(a,b,c,d,e,f)
-#define net_sendraw(a,b,d)
-#define net_send(a,b)
-#define net_sendf(a,b,...)
 #define net_sendfile(a,b,c,d,e,f)
 
 #endif
@@ -154,17 +148,28 @@ static gboolean asy_handlerbuf(gpointer dat) {
   // otherwise we need to make a copy of rbuf before passing it to the
   // callback.
   net_ref(n);
-  while(n->state == NETST_ASY && n->rbuf->len && n->msg_read) {
-    char *eom = memchr(n->rbuf->str, (unsigned char)n->msg_eom, n->rbuf->len);
-    if(!eom)
+  while(n->state == NETST_ASY && n->rbuf->len && n->rd_cb) {
+    gboolean msg = n->rd_msg;
+    gboolean consume = n->rd_consume;
+    int dat = n->rd_dat;
+    void(*cb)(struct net *, char *, int) = n->rd_cb;
+
+    char *end = msg
+      ? memchr(n->rbuf->str, dat, n->rbuf->len)
+      : n->rbuf->len >= dat ? n->rbuf->str + dat : NULL;
+    if(!end)
       break;
-    void(*cb)(struct net *, char *) = n->msg_read;
-    n->msg_read = NULL;
-    *eom = 0;
-    g_debug("%s< %s%c", net_remoteaddr(n), n->rbuf->str, n->msg_eom != '\n' ? n->msg_eom : ' ');
-    cb(n, n->rbuf->str);
-    if(n->state == NETST_ASY)
-      g_string_erase(n->rbuf, 0, eom - n->rbuf->str + 1);
+    n->rd_cb = NULL;
+    if(msg) {
+      *end = 0;
+      if(consume)
+        g_debug("%s< %s%c", net_remoteaddr(n), n->rbuf->str, dat != '\n' ? dat : ' ');
+    }
+    cb(n, n->rbuf->str, end - n->rbuf->str);
+    if(n->state == NETST_ASY && consume)
+      g_string_erase(n->rbuf, 0, end - n->rbuf->str + (msg ? 1 : 0));
+    else if(n->state == NETST_ASY && msg && !consume)
+      *end = dat;
   }
   net_unref(n);
   return FALSE;
@@ -331,12 +336,26 @@ static void asy_setuppoll(struct net *n) {
 // Will run the specified callback once a full message has been received. A
 // "message" meaning any bytes before reading the EOM character. The EOM
 // character is not passed to the callback.
-// Only a single net_readmsg() can be queued at one time.
-void net_readmsg(struct net *n, char eom, void(*cb)(struct net *, char *)) {
+// Only a single net_(read|peek) may be active at a single time.
+void net_readmsg(struct net *n, unsigned char eom, void(*cb)(struct net *, char *, int)) {
   g_return_if_fail(n->state == NETST_ASY);
-  g_return_if_fail(!n->msg_read);
-  n->msg_eom = eom;
-  n->msg_read = cb;
+  g_return_if_fail(!n->rd_cb);
+  n->rd_msg = n->rd_consume = TRUE;
+  n->rd_dat = eom;
+  n->rd_cb = cb;
+  g_idle_add(asy_handlerbuf, n);
+}
+
+
+// Will run the specified callback once at least the specified number of bytes
+// are in the buffer. The data will remain in the buffer after the callback has
+// run.
+void net_peekbytes(struct net *n, int bytes, void(*cb)(struct net *, char *, int)) {
+  g_return_if_fail(n->state == NETST_ASY);
+  g_return_if_fail(!n->rd_cb);
+  n->rd_msg = n->rd_consume = FALSE;
+  n->rd_dat = bytes;
+  n->rd_cb = cb;
   g_idle_add(asy_handlerbuf, n);
 }
 
@@ -633,7 +652,7 @@ void net_disconnect(struct net *n) {
     break;
 
   case NETST_ASY:
-    n->msg_read = NULL;
+    n->rd_cb = NULL;
     g_string_free(n->rbuf, TRUE);
     g_string_free(n->wbuf, TRUE);
     n->rbuf = n->wbuf = NULL;

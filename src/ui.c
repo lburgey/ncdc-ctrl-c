@@ -349,9 +349,9 @@ static void ui_hub_draw(struct ui_tab *tab) {
 
   attron(UIC(separator));
   mvhline(winrows-4, 0, ' ', wincols);
-  if(tab->hub->net->state == NETST_CON || tab->hub->net->state == NETST_DNS)
+  if(net_is_connecting(tab->hub->net))
     mvaddstr(winrows-4, wincols-15, "Connecting...");
-  else if(tab->hub->net->state != NETST_ASY)
+  else if(!net_is_connected(tab->hub->net))
     mvaddstr(winrows-4, wincols-16, "Not connected.");
   else if(!tab->hub->nick_valid)
     mvaddstr(winrows-4, wincols-15, "Logging in...");
@@ -381,10 +381,10 @@ static void ui_hub_draw(struct ui_tab *tab) {
 
 static char *ui_hub_title(struct ui_tab *tab) {
   return g_strdup_printf("%s: %s", tab->name,
-    tab->hub->net->state == NETST_CON || tab->hub->net->state == NETST_DNS ? "Connecting..." :
-    tab->hub->net->state != NETST_ASY ? "Not connected." :
-    !tab->hub->nick_valid      ? "Logging in..." :
-    tab->hub->hubname          ? tab->hub->hubname : "Connected.");
+    net_is_connecting(tab->hub->net) ? "Connecting..." :
+    !net_is_connected(tab->hub->net) ? "Not connected." :
+    !tab->hub->nick_valid            ? "Logging in..." :
+    tab->hub->hubname                ? tab->hub->hubname : "Connected.");
 }
 
 
@@ -1129,7 +1129,7 @@ static void ui_conn_key(guint64 key) {
   case INPT_CHAR('d'): // d - disconnect
     if(!cc)
       ui_m(NULL, 0, "Nothing selected.");
-    else if(!cc->net->conn && !cc->net->connecting)
+    else if(net_is_idle(cc->net))
       ui_m(NULL, 0, "Not connected.");
     else
       cc_disconnect(cc);

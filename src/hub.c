@@ -921,7 +921,7 @@ adc_search_cleanup:
 #define is_adc_proto(p)   (strcmp(p, "ADC/1.0") == 0  || strcmp(p, "ADC/0.10") == 0)
 #define is_valid_proto(p) (is_adc_proto(p) || is_adcs_proto(p))
 
-static void adc_handle(struct net *net, char *msg) {
+static void adc_handle(struct net *net, char *msg, int _len) {
   struct hub *hub = net->handle;
   net_readmsg(net, '\n', adc_handle);
 
@@ -1269,7 +1269,7 @@ static void nmdc_search(struct hub *hub, char *from, int size_m, guint64 size, i
 }
 
 
-static void nmdc_handle(struct net *net, char *cmd) {
+static void nmdc_handle(struct net *net, char *cmd, int _len) {
   struct hub *hub = net->handle;
   // Immediately queue next read. It will be cancelled when net_disconnect() is
   // called anyway.
