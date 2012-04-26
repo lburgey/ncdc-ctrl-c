@@ -618,8 +618,7 @@ struct net *net_new(void *handle) {
 // optional. The callback is called with an address each time a connection
 // attempt is made. It is called with NULL when the connection was successful
 // (at which point net_remoteaddr() should work).
-// TODO: Rename to net_connect() once the old crap has been rewritten.
-void net_connect2(struct net *n, const char *addr, int defport, const char *laddr, void(*cb)(struct net *, const char *)) {
+void net_connect(struct net *n, const char *addr, int defport, const char *laddr, void(*cb)(struct net *, const char *)) {
   g_return_if_fail(n->state == NETST_IDL);
 
   struct dnscon *r = g_slice_new0(struct dnscon);

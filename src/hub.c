@@ -1758,7 +1758,7 @@ void hub_connect(struct hub *hub) {
   }
 
   ui_mf(hub->tab, 0, "Connecting to %s...", addr);
-  net_connect2(hub->net, addr, 411, var_get(hub->id, VAR_local_address), handle_connect);
+  net_connect(hub->net, addr, 411, var_get(hub->id, VAR_local_address), handle_connect);
 }
 
 

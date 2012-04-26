@@ -1409,7 +1409,7 @@ void cc_nmdc_connect(struct cc *cc, const char *addr, const char *laddr, gboolea
   g_return_if_fail(cc->state == CCS_CONN);
   strncpy(cc->remoteaddr, addr, sizeof(cc->remoteaddr));
   cc->tls = tls;
-  net_connect2(cc->net, addr, 0, laddr, handle_connect);
+  net_connect(cc->net, addr, 0, laddr, handle_connect);
   g_clear_error(&cc->err);
 }
 
@@ -1442,7 +1442,7 @@ void cc_adc_connect(struct cc *cc, struct hub_user *u, const char *laddr, unsign
   if(!cc->token)
     return;
   // connect
-  net_connect2(cc->net, cc->remoteaddr, 0, laddr, handle_connect);
+  net_connect(cc->net, cc->remoteaddr, 0, laddr, handle_connect);
   g_clear_error(&cc->err);
 }
 
