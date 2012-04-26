@@ -291,11 +291,11 @@ struct cc {
   char remoteaddr[24]; // xxx.xxx.xxx.xxx:ppppp
   char *token;    // (ADC)
   char *last_file;
-  char *tthl_dat;
   guint64 uid;
   guint64 last_size;
   guint64 last_offset;
   int last_length;
+  gboolean last_tthl;
   time_t last_start;
   char last_hash[24];
   char *kp_real;  // (ADC) slice-alloc'ed with 32 bytes. This is the actually calculated keyprint.
@@ -360,13 +360,15 @@ struct cc {
   idle and transfer states.
 
   Exchanging TTHL data is handled differently with uploading and downloading:
-  With uploading it is done in a single call to net_send_raw(), and as such the
+  With uploading it is done in a single call to net_write(), and as such the
   transfer_u state will not be used. Downloading, on the other hand, uses
-  net_recvfile(), and the cc instance will stay in the transfer_d state until
+  net_readbytes(), and the cc instance will stay in the transfer_d state until
   the TTHL data has been fully received.
 */
 
 
+static void adc_handle(struct net *net, char *msg, int _len);
+static void nmdc_handle(struct net *net, char *msg, int _len);
 
 // opened connections - ui_conn is responsible for the ordering
 GSequence *cc_list;
@@ -470,7 +472,7 @@ int cc_slots_in_use(int *mini) {
 static void xfer_log_add(struct cc *cc) {
   g_return_if_fail(cc->state == CCS_TRANSFER && cc->last_file);
   // we don't log tthl transfers or transfers that hadn't been started yet
-  if(cc->tthl_dat || !cc->last_length)
+  if(cc->last_tthl || !cc->last_length)
     return;
 
   if(!var_get_bool(0, cc->dl ? VAR_log_downloads : VAR_log_uploads))
@@ -598,7 +600,7 @@ static void handle_recvdone(struct net *n, void *dat) {
   dl_recv_done(dat);
   // If the connection is still active, log the transfer and check for more
   // stuff to download
-  if(n && n->conn) {
+  if(n && net_is_connected(n)) {
     struct cc *cc = n->handle;
     xfer_log_add(cc);
     cc->state = CCS_IDLE;
@@ -607,20 +609,17 @@ static void handle_recvdone(struct net *n, void *dat) {
 }
 
 
-static gboolean handle_recvtth(struct net *n, char *buf, int read, int left, void *dat) {
+static void handle_recvtth(struct net *n, char *buf, int read) {
   struct cc *cc = n->handle;
-  g_return_val_if_fail(read + left <= cc->last_length, FALSE);
-  memcpy(cc->tthl_dat+(cc->last_length-(left+read)), buf, read);
-  if(!left) {
-    dl_settthl(cc->uid, cc->last_hash, cc->tthl_dat, cc->last_length);
-    g_free(cc->tthl_dat);
-    cc->tthl_dat = NULL;
-    if(n->conn) {
-      cc->state = CCS_IDLE;
-      dl_user_cc(cc->uid, cc);
-    }
+  g_return_if_fail(read == cc->last_length);
+
+  dl_settthl(cc->uid, cc->last_hash, buf, cc->last_length);
+  if(net_is_connected(n)) {
+    cc->last_tthl = FALSE;
+    cc->state = CCS_IDLE;
+    dl_user_cc(cc->uid, cc);
+    net_readmsg(cc->net, cc->adc ? '\n' : '|', cc->adc ? adc_handle : nmdc_handle);
   }
-  return TRUE;
 }
 
 
@@ -646,6 +645,7 @@ static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 by
   bytes = MIN(bytes, G_MAXINT-1);
 
   cc->last_length = bytes;
+  cc->last_tthl = tthl;
   if(!tthl) {
     g_return_if_fail(dl->have == start);
     if(!dl->size)
@@ -658,8 +658,7 @@ static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 by
     net_recvraw(cc->net, bytes, dl_recv_data, handle_recvdone, ctx);
   } else {
     g_return_if_fail(start == 0 && bytes > 0 && (bytes%24) == 0 && bytes < 48*1024);
-    cc->tthl_dat = g_malloc(bytes);
-    net_recvraw(cc->net, bytes, handle_recvtth, NULL, NULL);
+    net_readbytes(cc->net, bytes, handle_recvtth);
   }
   time(&cc->last_start);
 }
@@ -835,7 +834,7 @@ static void handle_id(struct cc *cc, struct hub_user *u) {
   // known yet. This doesn't matter, however, as the hub already sends IP
   // information with ADC (if it didn't, we won't be able to connect in the
   // first place).
-  if(!u->ip4 && cc->net->conn) {
+  if(!u->ip4 && net_is_connected(cc->net)) {
     char *tmp = net_remoteaddr(cc->net);
     char *sep = strchr(tmp, ':');
     if(sep)
@@ -1451,7 +1450,6 @@ void cc_adc_connect(struct cc *cc, struct hub_user *u, const char *laddr, unsign
 // TODO: Also detect and handle TLS, to allow combining the incoming TCP/TLS
 // ports into a single port.
 static void handle_detectprotocol(struct net *net, char *dat, int len) {
-  g_debug("PEEK!");
   g_return_if_fail(len > 0);
   struct cc *cc = net->handle;
   if(dat[0] == 'C')
@@ -1508,7 +1506,6 @@ void cc_free(struct cc *cc) {
     g_slice_free1(32, cc->kp_real);
   if(cc->kp_user)
     g_slice_free1(32, cc->kp_user);
-  g_free(cc->tthl_dat);
   g_free(cc->nick_raw);
   g_free(cc->nick);
   g_free(cc->hub_name);

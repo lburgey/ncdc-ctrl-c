@@ -103,12 +103,9 @@ struct net {
   int ref;
 
   // OLD STUFF
-  int conn;
-  gboolean connecting;
   void (*recv_msg_cb)(struct net *, char *);
   void (*recv_datain)(struct net *, char *data, int len);
   void (*file_cb)(struct net *);
-  void (*cb_con)(struct net *);
   time_t timeout_last;
 };
 
@@ -333,17 +330,27 @@ static void asy_setuppoll(struct net *n) {
 }
 
 
+static void asy_setupread(struct net *n, gboolean msg, gboolean consume, int dat, void(*cb)(struct net *, char *, int)) {
+  g_return_if_fail(n->state == NETST_ASY);
+  n->rd_msg = msg;
+  n->rd_consume = consume;
+  n->rd_dat = dat;
+  n->rd_cb = cb;
+  g_idle_add(asy_handlerbuf, n);
+}
+
+
 // Will run the specified callback once a full message has been received. A
 // "message" meaning any bytes before reading the EOM character. The EOM
 // character is not passed to the callback.
 // Only a single net_(read|peek) may be active at a single time.
 void net_readmsg(struct net *n, unsigned char eom, void(*cb)(struct net *, char *, int)) {
-  g_return_if_fail(n->state == NETST_ASY);
-  g_return_if_fail(!n->rd_cb);
-  n->rd_msg = n->rd_consume = TRUE;
-  n->rd_dat = eom;
-  n->rd_cb = cb;
-  g_idle_add(asy_handlerbuf, n);
+  asy_setupread(n, TRUE, TRUE, eom, cb);
+}
+
+
+void net_readbytes(struct net *n, int bytes, void(*cb)(struct net *, char *, int)) {
+  asy_setupread(n, FALSE, TRUE, bytes, cb);
 }
 
 
@@ -351,12 +358,7 @@ void net_readmsg(struct net *n, unsigned char eom, void(*cb)(struct net *, char 
 // are in the buffer. The data will remain in the buffer after the callback has
 // run.
 void net_peekbytes(struct net *n, int bytes, void(*cb)(struct net *, char *, int)) {
-  g_return_if_fail(n->state == NETST_ASY);
-  g_return_if_fail(!n->rd_cb);
-  n->rd_msg = n->rd_consume = FALSE;
-  n->rd_dat = bytes;
-  n->rd_cb = cb;
-  g_idle_add(asy_handlerbuf, n);
+  asy_setupread(n, FALSE, FALSE, bytes, cb);
 }
 
 

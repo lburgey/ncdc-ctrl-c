@@ -684,7 +684,7 @@ static gboolean s_password(guint64 hub, const char *key, const char *val, GError
   GList *tab;
   for(tab=ui_tabs; tab; tab=tab->next) {
     struct ui_tab *t = tab->data;
-    if(t->type == UIT_HUB && t->hub->id == hub && t->hub->net->conn && !t->hub->nick_valid)
+    if(t->type == UIT_HUB && t->hub->id == hub && net_is_connected(t->hub->net) && !t->hub->nick_valid)
       hub_password(t->hub, NULL);
   }
   return TRUE;
