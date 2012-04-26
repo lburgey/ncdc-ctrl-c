@@ -303,8 +303,8 @@ static void bind_create(struct listen_bind *b) {
   int err = 0;
 
   // Create socket
-  int sock = socket(AF_INET, b->type == LBT_UDP ? SOCK_STREAM : SOCK_DGRAM, 0);
-  g_return_if_fail(sock < 0);
+  int sock = socket(AF_INET, b->type != LBT_UDP ? SOCK_STREAM : SOCK_DGRAM, 0);
+  g_return_if_fail(sock > 0);
 
   int set = 1;
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (void *)&set, sizeof(set));
