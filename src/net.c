@@ -339,23 +339,73 @@ static int syn_wait(struct synfer *s, int sock, gboolean write) {
 }
 
 
-// TODO: Re-add sendfile() support
-static void syn_upload(struct synfer *s, int sock, gnutls_session_t tls) {
-  int left = s->left;
-  char buf[NET_TRANS_BUF];
+#ifdef HAVE_SENDFILE
 
-  struct fadv adv;
-  if(s->flush)
-    fadv_init(&adv, s->fd, lseek(s->fd, 0, SEEK_CUR), VAR_FFC_UPLOAD);
+static void syn_upload_sendfile(struct synfer *s, int sock, struct fadv *adv) {
+  off_t off = lseek(s->fd, 0, SEEK_CUR);
+  if(off == (off_t)-1) {
+    s->err = g_strdup(g_strerror(errno));
+    return;
+  }
 
-  while(left > 0 && !s->err && !s->cancel) {
-    int rd = read(s->fd, buf, MIN(NET_TRANS_BUF, left));
+  while(s->left > 0 && !s->err && !s->cancel) {
+    off_t oldoff = off;
+    int b = syn_wait(s, sock, TRUE);
+    if(b <= 0)
+      return;
+
+    // No need for a lock here, we're not using the TLS session and socket fd's
+    // are thread-safe. To some extent at least.
+#ifdef HAVE_LINUX_SENDFILE
+    ssize_t r = sendfile(sock, s->fd, &off, MIN(b, s->left));
+#elif HAVE_BSD_SENDFILE
+    off_t len = 0;
+    gint64 r = sendfile(s->fd, sock, off, (size_t)MIN(b, s->left), NULL, &len, 0);
+    // a partial write results in an EAGAIN error on BSD, even though this isn't
+    // really an error condition at all.
+    if(r != -1 || (r == -1 && errno == EAGAIN))
+      r = len;
+#endif
+
+    if(r >= 0) {
+      if(s->flush)
+        fadv_purge(adv, r);
+      off = oldoff + r;
+      g_atomic_int_add(&s->left, -r);
+      // This bypasses the low_send() function, so manually add it to the
+      // ratecalc thing.
+      ratecalc_add(&net_out, r);
+      ratecalc_add(s->net->rate_out, r);
+      continue;
+    } else if(errno == EAGAIN || errno == EINTR) {
+      continue;
+    } else if(errno == ENOTSUP || errno == ENOSYS || errno == EINVAL) {
+      g_message("sendfile() failed with `%s', using fallback.", g_strerror(errno));
+      // Don't set s->err here, let the fallback handle the rest
+      return;
+    } else {
+      if(errno != EPIPE && errno != ECONNRESET)
+        g_critical("sendfile() returned an unknown error: %d (%s)", errno, g_strerror(errno));
+      s->err = g_strdup(g_strerror(errno));
+      return;
+    }
+  }
+}
+
+#endif
+
+
+static void syn_upload_buf(struct synfer *s, int sock, struct fadv *adv) {
+  char *buf = g_malloc(NET_TRANS_BUF);
+
+  while(s->left > 0 && !s->err && !s->cancel) {
+    int rd = read(s->fd, buf, MIN(NET_TRANS_BUF, s->left));
     if(rd <= 0) {
       s->err = g_strdup(g_strerror(errno));
       goto done;
     }
     if(s->flush)
-      fadv_purge(&adv, rd);
+      fadv_purge(adv, rd);
 
     char *p = buf;
     while(rd > 0) {
@@ -378,30 +428,41 @@ static void syn_upload(struct synfer *s, int sock, gnutls_session_t tls) {
       }
       // successful write
       p += wr;
-      left -= wr;
+      g_atomic_int_add(&s->left, -wr);
       rd -= wr;
-      g_atomic_int_compare_and_exchange(&s->left, left+wr, left);
     }
   }
 
 done:
-  if(s->flush)
-    fadv_close(&adv);
+  g_free(buf);
 }
 
 
 static void syn_thread(gpointer dat, gpointer udat) {
   struct synfer *s = dat;
 
-  // Make a copy of sock & tls to make sure it doesn't disappear on us.
+  // Make a copy of sock to make sure it doesn't disappear on us.
   // (Still need to obtain the lock to make use of it).
   g_static_mutex_lock(&s->lock);
   int sock = s->net->sock;
-  gnutls_session_t tls = s->net->tls;
+  gboolean tls = !!s->net->tls;
   g_static_mutex_unlock(&s->lock);
 
-  if(sock && !s->cancel)
-    syn_upload(s, sock, tls);
+  if(sock && !s->cancel && s->upl) {
+    struct fadv adv;
+    if(s->flush)
+      fadv_init(&adv, s->fd, lseek(s->fd, 0, SEEK_CUR), VAR_FFC_UPLOAD);
+
+#ifdef HAVE_SENDFILE
+    if(!tls && var_get_bool(0, VAR_sendfile))
+      syn_upload_sendfile(s, sock, &adv);
+#endif
+    if(s->left > 0 && !s->err && !s->cancel)
+      syn_upload_buf(s, sock, &adv);
+
+    if(s->flush)
+      fadv_close(&adv);
+  }
 
   g_idle_add(syn_done, s);
 }
