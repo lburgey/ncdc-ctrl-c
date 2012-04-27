@@ -1102,7 +1102,7 @@ static gboolean dl_recv_check(struct dl *dl, int num, char *tth) {
 // point where the newly received data will be written to.
 // Returns -1 if nothing went wrong, any other number to indicate which block
 // failed the hash check.
-static int dl_recv_update(struct dl *dl, int length, char *buf) {
+static int dl_recv_update(struct dl *dl, const char *buf, int length) {
   int block = dl->have / dl->hash_block;
   guint64 cur = dl->have % dl->hash_block;
 
@@ -1135,7 +1135,7 @@ static int dl_recv_update(struct dl *dl, int length, char *buf) {
 
 
 // Called directly from net.c.
-gboolean dl_recv_data(struct net *n, char *buf, int length, int left, void *dat) {
+gboolean dl_recv_data(void *dat, const char *buf, int length) {
   struct recv_ctx *c = dat;
 
   while(length > 0) {
@@ -1149,7 +1149,7 @@ gboolean dl_recv_data(struct net *n, char *buf, int length, int left, void *dat)
     fadv_purge(&c->adv, r);
 
     // check hash
-    int fail = c->dl->islist ? -1 : dl_recv_update(c->dl, r, buf);
+    int fail = c->dl->islist ? -1 : dl_recv_update(c->dl, buf, r);
     if(fail >= 0) {
       c->uerr = DLE_HASH;
       c->uerr_msg = g_strdup_printf("Hash for block %d does not match.", fail);
@@ -1223,7 +1223,7 @@ void dl_load_partial(struct dl *dl) {
         left = 0;
         break;
       }
-      dl_recv_update(dl, r, buf);
+      dl_recv_update(dl, buf, r);
       dl->have += r;
       left -= r;
     }

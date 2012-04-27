@@ -86,7 +86,8 @@ struct net {
 
   GString *rbuf; // state ASY. Read buffer.
   GString *wbuf; // state ASY. Write buffer.
-  gboolean writing; // state ASY. Whether 'socksrc' is write poll event.
+  gboolean writing : 16; // state ASY. Whether 'socksrc' is write poll event.
+  gboolean wantwrite : 16; // state ASY. Whether we want a write on sock.
 
   // Called when an error has occured. Second argument is NETERR_*, third a
   // string representing the error. The net struct is always in NETST_IDL after
@@ -121,9 +122,6 @@ struct net {
 #define net_is_connected(n) ((n)->state == NETST_ASY || (n)->state == NETST_SYN)
 #define net_is_connecting(n) ((n)->state == NETST_DNS || (n)->state == NETST_CON)
 #define net_is_idle(n) ((n)->state == NETST_IDL)
-
-// OLD STUFF
-#define net_recvraw(a,b,c,d,e)
 
 #endif
 
@@ -223,13 +221,16 @@ struct synfer {
   GStaticMutex lock; // protects net->sock and net->tls in the case of a disconnect.
   struct net *net;
   int left;
-  int fd;
+  int fd;     // for uploads
   int cancel; // set to 1 to cancel transfer
   int can[2]; // close() this pipe (can[1]) to cancel the transfer
   gboolean upl : 1; // whether this is an upload or download
   gboolean flush : 1; // for uploads
   char *err;
-  void (*cb_done)(struct net *);
+  void *ctx; // for downloads
+  void (*cb_downdone)(struct net *, void *);
+  gboolean (*cb_downdata)(void *, const char *, int);
+  void (*cb_upldone)(struct net *);
 };
 
 static GThreadPool *syn_pool = NULL;
@@ -253,7 +254,8 @@ static void syn_new(struct net *n, gboolean upl, int len) {
 static void syn_free(struct synfer *s) {
   net_unref(s->net);
   close(s->can[0]);
-  close(s->fd);
+  if(s->fd)
+    close(s->fd);
   g_free(s->err);
   g_slice_free(struct synfer, s);
 }
@@ -288,10 +290,13 @@ static gboolean syn_done(gpointer dat) {
   }
 
   syn_cancel(n);
-  if(s->cb_done)
-    s->cb_done(n);
   n->state = NETST_ASY;
+  n->wantwrite = FALSE;
   asy_setuppoll(n);
+  if(s->cb_upldone)
+    s->cb_upldone(n);
+  if(s->cb_downdone)
+    s->cb_downdone(n, s->ctx);
   syn_free(s);
   return FALSE;
 }
@@ -435,6 +440,39 @@ done:
 }
 
 
+static void syn_download(struct synfer *s, int sock) {
+  char *buf = g_malloc(NET_TRANS_BUF);
+
+  while(s->left > 0 && !s->err && !s->cancel) {
+    int b = syn_wait(s, sock, FALSE);
+    if(b <= 0)
+      break;
+
+    g_static_mutex_lock(&s->lock);
+    const char *err = NULL;
+    int r = s->cancel || !s->net->sock ? 0 : low_recv(s->net, buf, MIN(NET_TRANS_BUF, s->left), &err);
+    g_static_mutex_unlock(&s->lock);
+
+    if(!r)
+      break;
+    if(r < 0 && !err)
+      continue;
+    if(r < 0) {
+      s->err = g_strdup(err);
+      break;
+    }
+
+    g_atomic_int_add(&s->left, -r);
+    if(!s->cb_downdata(s->ctx, buf, r)) {
+      s->err = g_strdup("Operation cancelled");
+      break;
+    }
+  }
+
+  g_free(buf);
+}
+
+
 static void syn_thread(gpointer dat, gpointer udat) {
   struct synfer *s = dat;
 
@@ -460,6 +498,9 @@ static void syn_thread(gpointer dat, gpointer udat) {
     if(s->flush)
       fadv_close(&adv);
   }
+
+  if(sock && !s->cancel && !s->upl)
+    syn_download(s, sock);
 
   g_idle_add(syn_done, s);
 }
@@ -498,7 +539,7 @@ static gboolean asy_handlerbuf(gpointer dat) {
   // otherwise we need to make a copy of rbuf before passing it to the
   // callback.
   net_ref(n);
-  while(n->state == NETST_ASY && n->rbuf->len && n->rd_cb) {
+  while(n->state == NETST_ASY && n->rbuf->len && n->rd_cb && !n->syn) {
     gboolean msg = n->rd_msg;
     gboolean consume = n->rd_consume;
     int dat = n->rd_dat;
@@ -523,6 +564,25 @@ static gboolean asy_handlerbuf(gpointer dat) {
         *end = dat;
     }
   }
+
+  // Handle recvfile
+  if(n->syn && n->state == NETST_ASY && !n->syn->upl) {
+    struct synfer *s = n->syn;
+    if(n->rbuf->len) {
+      int w = MIN(n->rbuf->len, s->left);
+      s->left -= w;
+      s->cb_downdata(s->ctx, n->rbuf->str, w);
+      g_string_erase(n->rbuf, 0, w);
+    }
+    if(s->left)
+      syn_start(n);
+    else {
+      s->cb_downdone(n, s->ctx);
+      syn_cancel(n);
+      syn_free(s);
+    }
+  }
+
   net_unref(n);
   return FALSE;
 }
@@ -580,8 +640,10 @@ static gboolean asy_write(struct net *n) {
 
   const char *err = NULL;
   int r = low_send(n, n->wbuf->str, n->wbuf->len, &err);
-  if(r < 0 && !err)
+  if(r < 0 && !err) {
+    n->wantwrite = TRUE;
     return TRUE;
+  }
 
   // Handle error
   if(r < 0) {
@@ -622,14 +684,19 @@ static gboolean asy_handshake(struct net *n) {
     }
     g_debug("%s: TLS Handshake successful, KP=SHA256/%s", net_remoteaddr(n), kpf);
     n->tls_handshake = FALSE;
+    gboolean ret = TRUE;
     if(n->cb_handshake) {
       net_ref(n);
       n->cb_handshake(n, *kpf ? kpr : NULL);
       n->cb_handshake = NULL;
-      gboolean ret = n->state == NETST_ASY;
+      ret = n->state == NETST_ASY;
       net_unref(n);
-      return ret;
     }
+    if(ret && n->syn) {
+      syn_start(n);
+      return FALSE;
+    }
+    return ret;
 
   } else if(gnutls_error_is_fatal(r)) { // Error
     char *e = g_strdup_printf("TLS error: %s", gnutls_strerror(r));
@@ -641,10 +708,9 @@ static gboolean asy_handshake(struct net *n) {
     return FALSE;
   }
 
-  if(n->syn) {
-    syn_start(n);
-    return FALSE;
-  }
+  if(gnutls_record_get_direction(n->tls))
+    n->wantwrite = TRUE;
+
   return TRUE;
 }
 
@@ -652,6 +718,7 @@ static gboolean asy_handshake(struct net *n) {
 static gboolean asy_pollresult(gpointer dat) {
   struct net *n = dat;
   n->socksrc = 0;
+  n->wantwrite = FALSE;
 
   // Handshake
   if(n->tls_handshake && !asy_handshake(n))
@@ -672,14 +739,13 @@ static gboolean asy_pollresult(gpointer dat) {
 
 static void asy_setuppoll(struct net *n) {
   // If we already have the right poll source active, ignore this.
-  gboolean wantwrite = n->tls ? gnutls_record_get_direction(n->tls) : !!n->wbuf->len;
-  if(n->socksrc && (!wantwrite || n->writing))
+  if(n->socksrc && (!n->wantwrite || n->writing))
     return;
 
   if(n->socksrc)
     g_source_remove(n->socksrc);
 
-  n->writing = wantwrite;
+  n->writing = n->wantwrite;
   GSource *src = fdsrc_new(n->sock, G_IO_IN | (n->writing ? G_IO_OUT : 0));
   g_source_set_callback(src, asy_pollresult, n, NULL);
   n->socksrc = g_source_attach(src, NULL);
@@ -716,6 +782,20 @@ void net_readbytes(struct net *n, int bytes, void(*cb)(struct net *, char *, int
 // run.
 void net_peekbytes(struct net *n, int bytes, void(*cb)(struct net *, char *, int)) {
   asy_setupread(n, FALSE, FALSE, bytes, cb);
+}
+
+
+// Similar to net_readbytes(), but will call the data() callback for every read
+// from the network, this callback may be run from another thread. When done,
+// the done() callback will be run in the main thread.
+void net_recvfile(struct net *n, int len, gboolean(*data)(void *, const char *, int), void(*done)(struct net *, void *), void *ctx) {
+  g_return_if_fail(n->state == NETST_ASY);
+  syn_new(n, FALSE, len);
+  n->syn->cb_downdata = data;
+  n->syn->cb_downdone = done;
+  n->syn->ctx = ctx;
+  n->rd_cb = NULL;
+  g_idle_add(asy_handlerbuf, n);
 }
 
 
@@ -757,7 +837,7 @@ void net_sendfile(struct net *n, int fd, int len, gboolean flush, void (*cb)(str
   g_return_if_fail(n->state == NETST_ASY && !n->syn);
   syn_new(n, TRUE, len);
   n->syn->flush = flush;
-  n->syn->cb_done = cb;
+  n->syn->cb_upldone = cb;
   n->syn->fd = fd;
   if(!n->wbuf->len)
     syn_start(n);
