@@ -935,7 +935,7 @@ int ratecalc_rate(struct ratecalc *rc) {
 }
 
 
-static int ratecalc_burst(struct ratecalc *rc) {
+int ratecalc_burst(struct ratecalc *rc) {
   g_static_mutex_lock(&rc->lock);
   int r = rc->burst;
   g_static_mutex_unlock(&rc->lock);

@@ -26,6 +26,11 @@
 
 #include "ncdc.h"
 #include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 
 // List (well, table) of users who are granted a slot. Key = UID (g_memdup'ed),
@@ -671,6 +676,18 @@ static void handle_sendcomplete(struct net *net) {
 }
 
 
+static void send_file(struct cc *cc, const char *path, guint64 start, int len, gboolean flush, GError **err) {
+  int fd = 0;
+  if((fd = open(path, O_RDONLY)) < 0 || lseek(fd, start, SEEK_SET) == (off_t)-1) {
+    // Don't give a detailed error message, the remote shouldn't know too much about us.
+    g_set_error_literal(err, 1, 50, "Error opening file");
+    g_message("Error opening/seeking '%s' for sending: %s", path, g_strerror(errno));
+    return;
+  }
+  net_sendfile(cc->net, fd, len, flush, handle_sendcomplete);
+}
+
+
 // err->code:
 //  40: Generic protocol error
 //  50: Generic internal error
@@ -806,7 +823,7 @@ static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gi
       tmp, start, bytes);
     cc->state = CCS_TRANSFER;
     time(&cc->last_start);
-    net_sendfile(cc->net, path, start, cc->last_length, strcmp(vpath, "files.xml.bz2") == 0 ? FALSE : TRUE, handle_sendcomplete);
+    send_file(cc, path, start, cc->last_length, strcmp(vpath, "files.xml.bz2") == 0 ? FALSE : TRUE, err);
     g_free(tmp);
   } else {
     g_set_error_literal(err, 1, 53, "No Slots Available");
@@ -1386,6 +1403,8 @@ static void handle_connect(struct net *n, const char *addr) {
 
   if(n->tls)
     net_settls(cc->net, FALSE, handle_handshake);
+  if(!net_is_connected(cc->net))
+    return;
 
   if(cc->adc) {
     net_writestr(n, "CSUP ADBASE ADTIGR ADBZIP\n");
@@ -1462,6 +1481,8 @@ void cc_incoming(struct cc *cc, guint16 port, int sock, const char *addr, gboole
   net_connected(cc->net, sock, addr);
   if(tls)
     net_settls(cc->net, TRUE, handle_handshake);
+  if(!net_is_connected(cc->net))
+    return;
   cc->tls = tls;
   cc->port = port;
   cc->active = TRUE;

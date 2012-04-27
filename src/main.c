@@ -284,6 +284,10 @@ static void catch_sigwinch(int sig) {
   screen_resized = TRUE;
 }
 
+static void catch_sigpipe(int sig) {
+  // Ignore.
+}
+
 
 
 // A special GSource to handle SIGTERM, SIGHUP and SIGUSR1 synchronously in the
@@ -445,6 +449,11 @@ int main(int argc, char **argv) {
   act.sa_handler = catch_sigusr1;
   if(sigaction(SIGUSR1, &act, NULL) < 0)
     g_error("Can't setup SIGUSR1: %s", g_strerror(errno));
+
+  // setup SIGPIPE
+  act.sa_handler = catch_sigpipe;
+  if(sigaction(SIGPIPE, &act, NULL) < 0)
+    g_error("Can't setup SIGPIPE: %s", g_strerror(errno));
 
   fl_init();
   if(auto_open)

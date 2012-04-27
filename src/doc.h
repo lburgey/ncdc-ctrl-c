@@ -381,9 +381,9 @@ static const struct doc_set {
 { "download_rate", 0, "<speed>",
   "Maximum combined transfer rate of all downloads. The total download speed"
   " will be limited to this value. The suffixes `G', 'M', and 'K' can be used"
-  " for GiB/s, MiB/s and KiB/s, respectively. Note that, similar to"
-  " upload_rate, TCP and TLS overhead are not counted towards this limit, so"
-  " the actual bandwidth usage might be a little higher."
+  " for GiB/s, MiB/s and KiB/s, respectively. Note that, similar to upload_rate,"
+  " TCP overhead are not counted towards this limit, so the actual bandwidth"
+  " usage might be a little higher."
 },
 { "download_slots", 0, "<integer>",
   "Maximum number of simultaneous downloads."
@@ -518,9 +518,7 @@ static const struct doc_set {
   " performance when uploading and downloading, but is quite effective at"
   " avoiding protocol-specific traffic shaping that some ISPs may do. Also note"
   " that, even if you set this to `prefer', TLS will only be used if the"
-  " connecting party also supports it.\n\n"
-  "Enabling TLS may result in less accurate traffic shaping when the"
-  " `download_rate' or `upload_rate' settings are used."
+  " connecting party also supports it."
 },
 { "ui_time_format", 0, "<string>",
   "The format of the time displayed in the lower-left of the screen. Set `-' to"

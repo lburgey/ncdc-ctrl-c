@@ -46,8 +46,9 @@
 // global network stats
 struct ratecalc net_in, net_out;
 
-#define NET_RECV_SIZE (8*1024)
-#define NET_MAX_RBUF (1024*1024)
+#define NET_RECV_SIZE (   8*1024)
+#define NET_MAX_RBUF  (1024*1024)
+#define NET_TRANS_BUF (  32*1024)
 
 #if INTERFACE
 
@@ -66,6 +67,7 @@ struct ratecalc net_in, net_out;
 
 
 struct dnscon;
+struct synfer;
 
 struct net {
   int state;
@@ -97,6 +99,11 @@ struct net {
   gboolean rd_consume : 1;
   int rd_dat;
 
+  // Synchronous file transfers (SYN state) (currently only for uploading)
+  // When set in the ASY state, it means that buffers should be flushed before
+  // switching to the SYN state.
+  struct synfer *syn;
+
   // some pointer for use by the user
   void *handle;
   // reference counter
@@ -122,7 +129,6 @@ struct net {
 #define net_file_left(n) 0
 #define net_recv_left(n) 0
 #define net_recvraw(a,b,c,d,e)
-#define net_sendfile(a,b,c,d,e,f)
 
 #endif
 
@@ -214,11 +220,212 @@ static int low_send(struct net *n, const char *buf, int len, const char **err) {
 
 
 
-
-// Asynchronous message handling
+// Synchronous file transfers
 
 static void asy_setuppoll(struct net *n);
 
+struct synfer {
+  GStaticMutex lock; // protects net->sock and net->tls in the case of a disconnect.
+  struct net *net;
+  int left;
+  int fd;
+  int cancel; // set to 1 to cancel transfer
+  int can[2]; // close() this pipe (can[1]) to cancel the transfer
+  gboolean upl : 1; // whether this is an upload or download
+  gboolean flush : 1; // for uploads
+  char *err;
+  void (*cb_done)(struct net *);
+};
+
+static GThreadPool *syn_pool = NULL;
+
+
+static void syn_new(struct net *n, gboolean upl, int len) {
+  n->syn = g_slice_new0(struct synfer);
+  n->syn->left = len;
+  n->syn->net = n;
+  n->syn->upl = upl;
+
+  g_static_mutex_init(&n->syn->lock);
+  if(pipe(n->syn->can) < 0) {
+    g_critical("pipe() failed: %s", g_strerror(errno));
+    g_return_if_reached();
+  }
+  net_ref(n);
+}
+
+
+static void syn_free(struct synfer *s) {
+  net_unref(s->net);
+  close(s->can[0]);
+  close(s->fd);
+  g_free(s->err);
+  g_slice_free(struct synfer, s);
+}
+
+
+static void syn_cancel(struct net *n) {
+  n->syn->cancel = 1;
+  close(n->syn->can[1]);
+  n->syn = NULL;
+}
+
+
+// Called as an idle function from syn_thread
+static gboolean syn_done(gpointer dat) {
+  struct synfer *s = dat;
+  struct net *n = s->net;
+
+  // Cancelled
+  if(s->cancel) {
+    syn_free(s);
+    return FALSE;
+  }
+
+  // Error
+  if(s->err) {
+    g_debug("%s: Syn: %s", net_remoteaddr(n), s->err);
+    if(n->cb_err)
+      n->cb_err(n, s->upl ? NETERR_SEND : NETERR_RECV, s->err);
+    net_disconnect(n);
+    syn_free(s);
+    return FALSE;
+  }
+
+  syn_cancel(n);
+  if(s->cb_done)
+    s->cb_done(n);
+  n->state = NETST_ASY;
+  asy_setuppoll(n);
+  syn_free(s);
+  return FALSE;
+}
+
+
+// Does two things: Waits some time to ensure that we are allowed to burst with
+// the rate limiting thing, and then waits for the socket to become
+// readable/writable. Returns the number of bytes that may be read/written on
+// success, 0 if the operation has been cancelled.
+static int syn_wait(struct synfer *s, int sock, gboolean write) {
+  // Lock to get the socket fd
+  g_static_mutex_lock(&s->lock);
+  GPollFD fds[2] = {};
+  fds[0].fd = s->can[0];
+  fds[0].events = G_IO_IN;
+  fds[1].fd = sock;
+  fds[1].events = write ? G_IO_OUT : G_IO_IN;
+  g_static_mutex_unlock(&s->lock);
+
+  // Poll for burst
+  int b = 0;
+  int r = 0;
+  while(r <= 0 && (b = ratecalc_burst(write ? s->net->rate_out : s->net->rate_in)) <= 0) {
+    // Wake up 4 times per second. If the resource is CPU or HDD I/O
+    // constrained, then this means that at most 1/4th of the possible usage
+    // time is "thrown away". I don't expect this to be much of an issue,
+    // however.
+    r = g_poll(fds, 1, 250); // only poll for the cancel fd here.
+    g_return_val_if_fail(r >= 0 || errno == EINTR, 0);
+  }
+  if(r)
+    return 0;
+
+  // Now poll for read/writability of the socket.
+  do
+    r = g_poll(fds, 2, -1);
+  while(r < 0 && errno == EINTR);
+
+  if(fds[0].revents)
+    return 0;
+  return b;
+}
+
+
+// TODO: Re-add sendfile() support
+static void syn_upload(struct synfer *s, int sock, gnutls_session_t tls) {
+  int left = s->left;
+  char buf[NET_TRANS_BUF];
+
+  struct fadv adv;
+  if(s->flush)
+    fadv_init(&adv, s->fd, lseek(s->fd, 0, SEEK_CUR), VAR_FFC_UPLOAD);
+
+  while(left > 0 && !s->err && !s->cancel) {
+    int rd = read(s->fd, buf, MIN(NET_TRANS_BUF, left));
+    if(rd <= 0) {
+      s->err = g_strdup(g_strerror(errno));
+      goto done;
+    }
+    if(s->flush)
+      fadv_purge(&adv, rd);
+
+    char *p = buf;
+    while(rd > 0) {
+      int b = syn_wait(s, sock, TRUE);
+      if(b <= 0)
+        goto done;
+
+      g_static_mutex_lock(&s->lock);
+      const char *err = NULL;
+      int wr = s->cancel || !s->net->sock ? 0 : low_send(s->net, p, MIN(rd, b), &err);
+      g_static_mutex_unlock(&s->lock);
+
+      if(!wr) // cancelled
+        goto done;
+      if(wr < 0 && !err) // would block
+        continue;
+      if(wr < 0) { // actual error
+        s->err = g_strdup(err);
+        goto done;
+      }
+      // successful write
+      p += wr;
+      left -= wr;
+      rd -= wr;
+      s->left = g_atomic_int_compare_and_exchange(&s->left, left+wr, left);
+    }
+  }
+
+done:
+  if(s->flush)
+    fadv_close(&adv);
+}
+
+
+static void syn_thread(gpointer dat, gpointer udat) {
+  struct synfer *s = dat;
+
+  // Make a copy of sock & tls to make sure it doesn't disappear on us.
+  // (Still need to obtain the lock to make use of it).
+  g_static_mutex_lock(&s->lock);
+  int sock = s->net->sock;
+  gnutls_session_t tls = s->net->tls;
+  g_static_mutex_unlock(&s->lock);
+
+  if(sock && !s->cancel)
+    syn_upload(s, sock, tls);
+
+  g_idle_add(syn_done, s);
+}
+
+
+static void syn_start(struct net *n) {
+  n->state = NETST_SYN;
+  // We're coming from the ASY state, so make sure to clean this up.
+  if(n->socksrc) {
+    g_source_remove(n->socksrc);
+    n->socksrc = 0;
+  }
+  g_thread_pool_push(syn_pool, n->syn, NULL);
+}
+
+
+
+
+
+
+
+// Asynchronous message handling
 
 // Checks rbuf against any queued read events and handles those. (Can be called
 // as a glib idle function)
@@ -248,10 +455,12 @@ static gboolean asy_handlerbuf(gpointer dat) {
         g_debug("%s< %s%c", net_remoteaddr(n), n->rbuf->str, dat != '\n' ? dat : ' ');
     }
     cb(n, n->rbuf->str, end - n->rbuf->str);
-    if(n->state == NETST_ASY && consume)
-      g_string_erase(n->rbuf, 0, end - n->rbuf->str + (msg ? 1 : 0));
-    else if(n->state == NETST_ASY && msg && !consume)
-      *end = dat;
+    if(n->state == NETST_ASY || n->state == NETST_SYN) {
+      if(consume)
+        g_string_erase(n->rbuf, 0, end - n->rbuf->str + (msg ? 1 : 0));
+      else if(msg)
+        *end = dat;
+    }
   }
   net_unref(n);
   return FALSE;
@@ -269,6 +478,7 @@ static gboolean asy_read(struct net *n) {
   }
   int len = n->rbuf->allocated_len - n->rbuf->len - 1;
   if(len <= 10) { // Some arbitrary low number.
+    g_debug("%s: Read buffer full", net_remoteaddr(n));
     if(n->cb_err)
       n->cb_err(n, NETERR_RECV, "Read buffer full");
     net_disconnect(n);
@@ -282,11 +492,11 @@ static gboolean asy_read(struct net *n) {
 
   // Handle error and disconnect
   if(r < 0) {
-    if(n->cb_err) {
-      char *e = g_strdup_printf("Read error: %s", err);
+    char *e = g_strdup_printf("Read error: %s", err);
+    g_debug("%s: %s", net_remoteaddr(n), e);
+    if(n->cb_err)
       n->cb_err(n, NETERR_RECV, e);
-      g_free(e);
-    }
+    g_free(e);
     net_disconnect(n);
     return FALSE;
   }
@@ -314,16 +524,22 @@ static gboolean asy_write(struct net *n) {
 
   // Handle error
   if(r < 0) {
-    if(n->cb_err) {
-      char *e = g_strdup_printf("Write error: %s", err);
+    char *e = g_strdup_printf("Write error: %s", err);
+    g_debug("%s: %s", net_remoteaddr(n), e);
+    if(n->cb_err)
       n->cb_err(n, NETERR_SEND, e);
-      g_free(e);
-    }
+    g_free(e);
     net_disconnect(n);
     return FALSE;
   }
 
   g_string_erase(n->wbuf, 0, r);
+
+  if(n->syn && n->syn->upl && !n->wbuf->len) {
+    syn_start(n);
+    return FALSE;
+  }
+
   return TRUE;
 }
 
@@ -355,12 +571,17 @@ static gboolean asy_handshake(struct net *n) {
     }
 
   } else if(gnutls_error_is_fatal(r)) { // Error
-    if(n->cb_err) {
-      char *e = g_strdup_printf("TLS error: %s", gnutls_strerror(r));
+    char *e = g_strdup_printf("TLS error: %s", gnutls_strerror(r));
+    g_debug("%s: %s", net_remoteaddr(n), e);
+    if(n->cb_err)
       n->cb_err(n, NETERR_RECV, e);
-      g_free(e);
-    }
+    g_free(e);
     net_disconnect(n);
+    return FALSE;
+  }
+
+  if(n->syn) {
+    syn_start(n);
     return FALSE;
   }
   return TRUE;
@@ -441,14 +662,14 @@ void net_peekbytes(struct net *n, int bytes, void(*cb)(struct net *, char *, int
 
 // This is often used to write a raw byte strings, so is not logged for debugging.
 void net_write(struct net *n, const char *buf, int len) {
-  g_return_if_fail(n->state == NETST_ASY);
+  g_return_if_fail(n->state == NETST_ASY && !n->syn);
   g_string_append_len(n->wbuf, buf, len);
   flush;
 }
 
 
 void net_writestr(struct net *n, const char *msg) {
-  g_return_if_fail(n->state == NETST_ASY);
+  g_return_if_fail(n->state == NETST_ASY && !n->syn);
   g_debug("%s> %s", net_remoteaddr(n), msg);
   g_string_append(n->wbuf, msg);
   flush;
@@ -456,7 +677,7 @@ void net_writestr(struct net *n, const char *msg) {
 
 
 void net_writef(struct net *n, const char *fmt, ...) {
-  g_return_if_fail(n->state == NETST_ASY);
+  g_return_if_fail(n->state == NETST_ASY && !n->syn);
   int old = n->wbuf->len;
   va_list va;
   va_start(va, fmt);
@@ -467,6 +688,19 @@ void net_writef(struct net *n, const char *fmt, ...) {
 }
 
 #undef flush
+
+
+// Switches to the SYN state when the write buffer has been flushed. fd will be
+// close()'d when done. cb() will be called in the main thread.
+void net_sendfile(struct net *n, int fd, int len, gboolean flush, void (*cb)(struct net *)) {
+  g_return_if_fail(n->state == NETST_ASY && !n->syn);
+  syn_new(n, TRUE, len);
+  n->syn->flush = flush;
+  n->syn->cb_done = cb;
+  n->syn->fd = fd;
+  if(!n->wbuf->len)
+    syn_start(n);
+}
 
 
 // Enables TLS-mode and initates the handshake. May not be called when there's
@@ -568,6 +802,7 @@ static void dnsconn_handleconn(struct net *n, int err) {
   }
 
   // Error on the last try, time to give up.
+  g_debug("%s: Connect error: %s", net_remoteaddr(n), g_strerror(err));
   if(n->cb_err)
     n->cb_err(n, NETERR_CONN, g_strerror(err));
   net_disconnect(n);
@@ -604,11 +839,11 @@ static void dnscon_tryconn(struct net *n) {
   fcntl(n->sock, F_SETFL, fcntl(n->sock, F_GETFL, 0)|O_NONBLOCK);
 
   if(bind(n->sock, (struct sockaddr *)&n->dnscon->laddr, sizeof(n->dnscon->laddr)) < 0) {
-    if(n->cb_err) {
-      char *e = g_strdup_printf("Can't bind to local address: %s", g_strerror(errno));
+    char *e = g_strdup_printf("Can't bind to local address: %s", g_strerror(errno));
+    g_debug("%s: %s", net_remoteaddr(n), e);
+    if(n->cb_err)
       n->cb_err(n, NETERR_CONN, e);
-      g_free(e);
-    }
+    g_free(e);
     net_disconnect(n);
     return;
   }
@@ -640,6 +875,7 @@ static gboolean dnscon_gotdns(gpointer dat) {
 
   // Handle error
   if(r->err) {
+    g_debug("%s: DNS resolve: %s", net_remoteaddr(n), r->err);
     if(n->cb_err)
       n->cb_err(n, NETERR_CONN, r->err);
     net_disconnect(n);
@@ -717,7 +953,10 @@ void net_connect(struct net *n, const char *addr, int defport, const char *laddr
 }
 
 
+// Force-disconnect. Can be called from any state.
 void net_disconnect(struct net *n) {
+  struct synfer *s = NULL;
+
   switch(n->state) {
 
   case NETST_DNS:
@@ -732,13 +971,22 @@ void net_disconnect(struct net *n) {
 
   case NETST_ASY:
     n->rd_cb = NULL;
-    g_string_free(n->rbuf, TRUE);
-    g_string_free(n->wbuf, TRUE);
-    n->rbuf = n->wbuf = NULL;
+    if(n->syn) {
+      syn_cancel(n);
+      syn_free(s);
+    }
+    break;
+
+  case NETST_SYN:
+    s = n->syn;
+    syn_cancel(n);
     break;
   }
 
-  // This is a force disconnect, not a graceful shutdown.
+  // If we're in the SYN state, then the socket and tls session are in control
+  // of the file transfer thread. Hence the need for the conditional locks.
+  if(s)
+    g_static_mutex_lock(&s->lock);
   if(n->tls) {
     gnutls_deinit(n->tls);
     n->tls = NULL;
@@ -747,6 +995,15 @@ void net_disconnect(struct net *n) {
     close(n->sock);
     n->sock = 0;
   }
+  if(s)
+    g_static_mutex_unlock(&s->lock);
+
+  if(n->rbuf) {
+    g_string_free(n->rbuf, TRUE);
+    g_string_free(n->wbuf, TRUE);
+    n->rbuf = n->wbuf = NULL;
+  }
+
   if(n->socksrc) {
     g_source_remove(n->socksrc);
     n->socksrc = 0;
@@ -855,6 +1112,7 @@ void net_init_global() {
   ratecalc_register(&net_out, RCC_NONE);
 
   dns_pool = g_thread_pool_new(dnscon_thread, NULL, -1, FALSE, NULL);
+  syn_pool = g_thread_pool_new(syn_thread, NULL, -1, FALSE, NULL);
 
   // TODO: IPv6?
   net_udp_sock = socket(AF_INET, SOCK_DGRAM, 0);

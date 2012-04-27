@@ -1703,9 +1703,10 @@ static void handle_connect(struct net *n, const char *addr) {
 
   ui_mf(hub->tab, 0, "Connected to %s.", net_remoteaddr(n));
 
-  // TODO: Fix the certification validation thing
   if(hub->tls)
     net_settls(hub->net, FALSE, handle_handshake);
+  if(!net_is_connected(hub->net))
+    return;
 
   if(hub->adc)
     net_writestr(hub->net, "HSUP ADBASE ADTIGR\n");
