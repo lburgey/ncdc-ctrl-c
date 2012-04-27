@@ -499,7 +499,7 @@ static void xfer_log_add(struct cc *cc) {
   else
     base32_encode(cc->last_hash, tth);
 
-  int transfer_size = cc->last_length - (cc->dl ? net_recv_left(cc->net) : net_file_left(cc->net));
+  int transfer_size = cc->last_length - net_left(cc->net);
 
   char *nick = adc_escape(cc->nick, FALSE);
   char *file = adc_escape(cc->last_file, FALSE);

@@ -126,8 +126,6 @@ struct net {
 #define net_is_idle(n) ((n)->state == NETST_IDL)
 
 // OLD STUFF
-#define net_file_left(n) 0
-#define net_recv_left(n) 0
 #define net_recvraw(a,b,c,d,e)
 
 #endif
@@ -382,7 +380,7 @@ static void syn_upload(struct synfer *s, int sock, gnutls_session_t tls) {
       p += wr;
       left -= wr;
       rd -= wr;
-      s->left = g_atomic_int_compare_and_exchange(&s->left, left+wr, left);
+      g_atomic_int_compare_and_exchange(&s->left, left+wr, left);
     }
   }
 
@@ -417,6 +415,11 @@ static void syn_start(struct net *n) {
     n->socksrc = 0;
   }
   g_thread_pool_push(syn_pool, n->syn, NULL);
+}
+
+
+int net_left(struct net *n) {
+  return n->syn ? g_atomic_int_get(&n->syn->left) : 0;
 }
 
 

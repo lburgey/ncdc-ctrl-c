@@ -965,9 +965,8 @@ static void ui_conn_draw_row(struct ui_listing *list, GSequenceIter *iter, int r
   mvaddstr(row, 33, cc->last_length ? str_formatsize(cc->last_length) : "-");
 
   if(cc->last_length && !cc->timeout_src) {
-    float left = cc->dl ? net_recv_left(cc->net) : net_file_left(cc->net);
     float length = cc->last_length;
-    mvprintw(row, 45, "%3.0f%%", (length-left)*100.0f/length);
+    mvprintw(row, 45, "%3.0f%%", (length-net_left(cc->net))*100.0f/length);
   } else
     mvaddstr(row, 45, " -");
 
@@ -1035,14 +1034,13 @@ static void ui_conn_draw_details(int l) {
   mvaddstr(l+5, 13, cc->last_size ? str_formatsize(cc->last_offset) : "-");
   mvaddstr(l+6, 13, cc->last_length ? str_formatsize(cc->last_length) : "-");
   // progress / eta / idle (line 4/5/6)
-  int left = cc->dl ? net_recv_left(cc->net) : net_file_left(cc->net);
   if(cc->last_length && !cc->timeout_src) {
     float length = cc->last_length;
-    mvprintw(l+4, 47, "%3.0f%%", (length-(float)left)*100.0f/length);
+    mvprintw(l+4, 47, "%3.0f%%", (length-net_left(cc->net))*100.0f/length);
   } else
     mvaddstr(l+4, 47, "-");
   if(cc->last_length && !cc->timeout_src)
-    mvaddstr(l+5, 47, ratecalc_eta(cc->dl ? cc->net->rate_in : cc->net->rate_out, left));
+    mvaddstr(l+5, 47, ratecalc_eta(cc->dl ? cc->net->rate_in : cc->net->rate_out, net_left(cc->net)));
   else
     mvaddstr(l+5, 47, "-");
   mvprintw(l+6, 47, "%ds", (int)(time(NULL)-cc->net->timeout_last));
