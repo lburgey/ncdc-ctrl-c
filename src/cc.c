@@ -1401,7 +1401,7 @@ static void handle_connect(struct net *n, const char *addr) {
     return;
   }
 
-  if(n->tls)
+  if(cc->tls)
     net_settls(cc->net, FALSE, handle_handshake);
   if(!net_is_connected(cc->net))
     return;
