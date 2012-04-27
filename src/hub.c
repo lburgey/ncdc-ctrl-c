@@ -1646,8 +1646,7 @@ struct hub *hub_create(struct ui_tab *tab) {
   }
 
   // actual separator is set in handle_connect()
-  hub->net = net_new(hub);
-  hub->net->cb_err = handle_error;
+  hub->net = net_new(hub, handle_error);
   hub->tab = tab;
   hub->users = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, user_free);
   hub->sessions = g_hash_table_new(g_direct_hash, g_direct_equal);

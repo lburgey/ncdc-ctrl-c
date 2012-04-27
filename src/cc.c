@@ -1365,8 +1365,7 @@ static void handle_error(struct net *n, int action, const char *err) {
 // Hub may be unknown when this is an incoming connection
 struct cc *cc_create(struct hub *hub) {
   struct cc *cc = g_new0(struct cc, 1);
-  cc->net = net_new(cc);
-  cc->net->cb_err = handle_error;
+  cc->net = net_new(cc, handle_error);
   cc->hub = hub;
   cc->iter = g_sequence_append(cc_list, cc);
   cc->state = CCS_CONN;

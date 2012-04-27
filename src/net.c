@@ -110,9 +110,6 @@ struct net {
   int ref;
 
   // OLD STUFF
-  void (*recv_msg_cb)(struct net *, char *);
-  void (*recv_datain)(struct net *, char *data, int len);
-  void (*file_cb)(struct net *);
   time_t timeout_last;
 };
 
@@ -980,10 +977,11 @@ static void dnscon_thread(gpointer dat, gpointer udat) {
 
 // Connection management
 
-struct net *net_new(void *handle) {
+struct net *net_new(void *handle, void(*err)(struct net *, int, const char *)) {
   struct net *n = g_new0(struct net, 1);
   n->ref = 1;
   n->handle = handle;
+  n->cb_err = err;
   n->rate_in = g_slice_new0(struct ratecalc);
   n->rate_out = g_slice_new0(struct ratecalc);
   ratecalc_init(n->rate_in);
