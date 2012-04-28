@@ -1359,8 +1359,7 @@ static void handle_error(struct net *n, int action, const char *err) {
   struct cc *cc = n->handle;
   if(!cc->err) // ignore network errors if there already was a protocol error
     g_set_error_literal(&cc->err, 1, 0, err);
-  if(action == NETERR_TIMEOUT)
-    cc_disconnect(n->handle, FALSE);
+  cc_disconnect(n->handle, action != NETERR_TIMEOUT);
 }
 
 

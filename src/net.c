@@ -94,8 +94,7 @@ struct net {
   GString *wbuf; // state ASY. Write buffer.
 
   // Called when an error has occured. Second argument is NETERR_*, third a
-  // string representing the error. The net struct is always in NETST_IDL after
-  // this has been called.
+  // string representing the error.
   void (*cb_err)(struct net *, int, const char *);
 
   // Read buffer handling. Callback will be called only once. (State ASY)
@@ -290,9 +289,8 @@ static gboolean syn_done(gpointer dat) {
   // Error
   if(s->err) {
     g_debug("%s: Syn: %s", net_remoteaddr(n), s->err);
-    if(n->cb_err)
-      n->cb_err(n, s->upl ? NETERR_SEND : NETERR_RECV, s->err);
-    net_disconnect(n);
+    syn_cancel(n);
+    n->cb_err(n, s->upl ? NETERR_SEND : NETERR_RECV, s->err);
     syn_free(s);
     return FALSE;
   }
@@ -615,9 +613,7 @@ static gboolean asy_read(struct net *n) {
   int len = n->rbuf->allocated_len - n->rbuf->len - 1;
   if(len <= 10) { // Some arbitrary low number.
     g_debug("%s: Read buffer full", net_remoteaddr(n));
-    if(n->cb_err)
-      n->cb_err(n, NETERR_RECV, "Read buffer full");
-    net_disconnect(n);
+    n->cb_err(n, NETERR_RECV, "Read buffer full");
     return FALSE;
   }
 
@@ -630,10 +626,8 @@ static gboolean asy_read(struct net *n) {
   if(r < 0) {
     char *e = g_strdup_printf("Read error: %s", err);
     g_debug("%s: %s", net_remoteaddr(n), e);
-    if(n->cb_err)
-      n->cb_err(n, NETERR_RECV, e);
+    n->cb_err(n, NETERR_RECV, e);
     g_free(e);
-    net_disconnect(n);
     return FALSE;
   }
 
@@ -663,10 +657,8 @@ static gboolean dis_shutdown(struct net *n) {
     } else {
       char *e = g_strdup_printf("Shutdown error: %s", gnutls_strerror(r));
       g_debug("%s: %s", net_remoteaddr(n), e);
-      if(n->cb_err)
-        n->cb_err(n, NETERR_RECV, e);
+      n->cb_err(n, NETERR_RECV, e);
       g_free(e);
-      net_disconnect(n);
       return FALSE;
     }
   }
@@ -686,10 +678,8 @@ static gboolean dis_shutdown(struct net *n) {
     if(r < 0) {
       char *e = g_strdup_printf("Read error: %s", g_strerror(errno));
       g_debug("%s: %s", net_remoteaddr(n), e);
-      if(n->cb_err)
-        n->cb_err(n, NETERR_RECV, e);
+      n->cb_err(n, NETERR_RECV, e);
       g_free(e);
-      net_disconnect(n);
       return FALSE;
     }
     if(r == 0) {
@@ -717,10 +707,8 @@ static gboolean asy_write(struct net *n) {
   if(r < 0) {
     char *e = g_strdup_printf("Write error: %s", err);
     g_debug("%s: %s", net_remoteaddr(n), e);
-    if(n->cb_err)
-      n->cb_err(n, NETERR_SEND, e);
+    n->cb_err(n, NETERR_SEND, e);
     g_free(e);
-    net_disconnect(n);
     return FALSE;
   }
 
@@ -773,10 +761,8 @@ static gboolean asy_handshake(struct net *n) {
   } else if(gnutls_error_is_fatal(r)) { // Error
     char *e = g_strdup_printf("TLS error: %s", gnutls_strerror(r));
     g_debug("%s: %s", net_remoteaddr(n), e);
-    if(n->cb_err)
-      n->cb_err(n, NETERR_RECV, e);
+    n->cb_err(n, NETERR_RECV, e);
     g_free(e);
-    net_disconnect(n);
     return FALSE;
   }
 
@@ -1038,9 +1024,7 @@ static void dnsconn_handleconn(struct net *n, int err) {
 
   // Error on the last try, time to give up.
   g_debug("%s: Connect error: %s", net_remoteaddr(n), g_strerror(err));
-  if(n->cb_err)
-    n->cb_err(n, NETERR_CONN, g_strerror(err));
-  net_disconnect(n);
+  n->cb_err(n, NETERR_CONN, g_strerror(err));
 }
 
 
@@ -1077,10 +1061,8 @@ static void dnscon_tryconn(struct net *n) {
   if(bind(n->sock, (struct sockaddr *)&n->dnscon->laddr, sizeof(n->dnscon->laddr)) < 0) {
     char *e = g_strdup_printf("Can't bind to local address: %s", g_strerror(errno));
     g_debug("%s: %s", net_remoteaddr(n), e);
-    if(n->cb_err)
-      n->cb_err(n, NETERR_CONN, e);
+    n->cb_err(n, NETERR_CONN, e);
     g_free(e);
-    net_disconnect(n);
     return;
   }
   int r = connect(n->sock, n->dnscon->next->ai_addr, n->dnscon->next->ai_addrlen);
@@ -1112,9 +1094,7 @@ static gboolean dnscon_gotdns(gpointer dat) {
   // Handle error
   if(r->err) {
     g_debug("%s: DNS resolve: %s", net_remoteaddr(n), r->err);
-    if(n->cb_err)
-      n->cb_err(n, NETERR_CONN, r->err);
-    net_disconnect(n);
+    n->cb_err(n, NETERR_CONN, r->err);
     return FALSE;
   }
 
@@ -1175,9 +1155,9 @@ static gboolean handle_timer(gpointer dat) {
   // 30 second timeout on connecting, disconnecting, synchronous transfers, and
   // non-keepalive ASY connections.
   if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_DIS || (n->state == NETST_ASY && !n->timeout_msg))) {
-    if(n->cb_err && (n->state == NETST_DNS || n->state == NETST_CON))
+    if(n->state == NETST_DNS || n->state == NETST_CON)
       n->cb_err(n, NETERR_TIMEOUT, g_strerror(ETIMEDOUT));
-    else if(n->cb_err)
+    else
       n->cb_err(n, NETERR_TIMEOUT, "Idle timeout");
     n->timeout_src = 0;
     return FALSE;
