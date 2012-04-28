@@ -1645,7 +1645,6 @@ struct hub *hub_create(struct ui_tab *tab) {
     var_set(hub->id, VAR_hubname, tab->name, NULL);
   }
 
-  // actual separator is set in handle_connect()
   hub->net = net_new(hub, handle_error);
   hub->tab = tab;
   hub->users = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, user_free);
@@ -1700,6 +1699,7 @@ static void handle_connect(struct net *n, const char *addr) {
     return;
   }
 
+  n->timeout_msg = hub->adc ? "\n" : "|";
   ui_mf(hub->tab, 0, "Connected to %s.", net_remoteaddr(n));
 
   if(hub->tls)

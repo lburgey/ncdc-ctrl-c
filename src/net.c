@@ -109,8 +109,10 @@ struct net {
   // reference counter
   int ref;
 
-  // OLD STUFF
+  // Timeout handling
+  int timeout_src;
   time_t timeout_last;
+  const char *timeout_msg;
 };
 
 
@@ -157,6 +159,7 @@ static int low_recv(struct net *n, char *buf, int len, const char **err) {
     return -1;
   }
 
+  time(&n->timeout_last);
   if(r <= 0) {
     *err = !r || !n->tls ? g_strerror(!r ? ECONNRESET : errno) : gnutls_strerror(r);
     return -1;
@@ -195,6 +198,7 @@ static int low_send(struct net *n, const char *buf, int len, const char **err) {
     return -1;
   }
 
+  time(&n->timeout_last);
   if(r < 0) {
     *err = n->tls ? gnutls_strerror(errno) : g_strerror(errno);
     return -1;
@@ -342,6 +346,7 @@ static int syn_wait(struct synfer *s, int sock, gboolean write) {
 
 #ifdef HAVE_SENDFILE
 
+// TODO: Make sure timeout_last is updated here
 static void syn_upload_sendfile(struct synfer *s, int sock, struct fadv *adv) {
   off_t off = lseek(s->fd, 0, SEEK_CUR);
   if(off == (off_t)-1) {
@@ -374,9 +379,12 @@ static void syn_upload_sendfile(struct synfer *s, int sock, struct fadv *adv) {
       off = oldoff + r;
       g_atomic_int_add(&s->left, -r);
       // This bypasses the low_send() function, so manually add it to the
-      // ratecalc thing.
+      // ratecalc thing and update timeout_last.
       ratecalc_add(&net_out, r);
       ratecalc_add(s->net->rate_out, r);
+      g_static_mutex_lock(&s->lock);
+      time(&s->net->timeout_last);
+      g_static_mutex_unlock(&s->lock);
       continue;
     } else if(errno == EAGAIN || errno == EINTR) {
       continue;
@@ -527,6 +535,8 @@ int net_left(struct net *n) {
 
 
 // Asynchronous message handling
+
+static gboolean handle_timer(gpointer dat);
 
 // Checks rbuf against any queued read events and handles those. (Can be called
 // as a glib idle function)
@@ -880,6 +890,9 @@ void net_connected(struct net *n, int sock, const char *addr) {
   ratecalc_reset(n->rate_out);
   ratecalc_register(n->rate_in, RCC_DOWN);
   ratecalc_register(n->rate_out, RCC_UP);
+  time(&n->timeout_last);
+  if(!n->timeout_src)
+    n->timeout_src = g_timeout_add_seconds(5, handle_timer, n);
 
   asy_setuppoll(n); // Always make sure we're polling for read, to catch an async disconnect.
 }
@@ -967,6 +980,7 @@ static void dnscon_tryconn(struct net *n) {
   // We can't handle IPv6 yet.
   g_return_if_fail(c->ai_family == AF_INET && c->ai_addrlen == sizeof(struct sockaddr_in));
 
+  time(&n->timeout_last);
   if(n->dnscon->cb) {
     struct sockaddr_in *sa = (struct sockaddr_in *)c->ai_addr;
     char a[100];
@@ -1056,6 +1070,46 @@ static void dnscon_thread(gpointer dat, gpointer udat) {
 
 // Connection management
 
+time_t net_last_activity(struct net *n) {
+  if(n->syn)
+    g_static_mutex_lock(&n->syn->lock);
+  time_t last = n->timeout_last;
+  if(n->syn)
+    g_static_mutex_unlock(&n->syn->lock);
+  return last;
+}
+
+
+static gboolean handle_timer(gpointer dat) {
+  struct net *n = dat;
+  time_t intv = time(NULL)-net_last_activity(n);
+
+  // time() isn't that reliable.
+  if(intv < 0) {
+    time(&n->timeout_last);
+    return TRUE;
+  }
+
+  // 30 second timeout on connecting, disconnecting, synchronous transfers, and
+  // non-keepalive ASY connections.
+  if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_DIS || (n->state == NETST_ASY && !n->timeout_msg))) {
+    if(n->cb_err && (n->state == NETST_DNS || n->state == NETST_CON))
+      n->cb_err(n, NETERR_CONN, g_strerror(ETIMEDOUT));
+    else if(n->cb_err)
+      n->cb_err(n, NETERR_RECV, "Idle timeout");
+    n->timeout_src = 0;
+    net_disconnect(n);
+    return FALSE;
+  }
+
+  // For keepalive ASY connections, send the timeout_msg after 2 minutes
+  if(intv > 120 && n->state == NETST_ASY && n->timeout_msg)
+    net_writestr(n, n->timeout_msg);
+
+  return TRUE;
+}
+
+
 struct net *net_new(void *handle, void(*err)(struct net *, int, const char *)) {
   struct net *n = g_new0(struct net, 1);
   n->ref = 1;
@@ -1065,6 +1119,7 @@ struct net *net_new(void *handle, void(*err)(struct net *, int, const char *)) {
   n->rate_out = g_slice_new0(struct ratecalc);
   ratecalc_init(n->rate_in);
   ratecalc_init(n->rate_out);
+  time(&n->timeout_last);
   return n;
 }
 
@@ -1088,6 +1143,9 @@ void net_connect(struct net *n, const char *addr, int defport, const char *laddr
   else
     r->laddr.sin_addr.s_addr = INADDR_ANY;
 
+  if(!n->timeout_src)
+    n->timeout_src = g_timeout_add_seconds(5, handle_timer, n);
+  time(&n->timeout_last);
   n->dnscon = r;
   n->state = NETST_DNS;
   g_thread_pool_push(dns_pool, r, NULL);
@@ -1136,6 +1194,7 @@ void net_disconnect(struct net *n) {
     close(n->sock);
     n->sock = 0;
   }
+  time(&n->timeout_last);
   if(s)
     g_static_mutex_unlock(&s->lock);
 
@@ -1148,6 +1207,10 @@ void net_disconnect(struct net *n) {
   if(n->socksrc) {
     g_source_remove(n->socksrc);
     n->socksrc = 0;
+  }
+  if(n->timeout_src) {
+    g_source_remove(n->timeout_src);
+    n->timeout_src = 0;
   }
 
   ratecalc_unregister(n->rate_in);

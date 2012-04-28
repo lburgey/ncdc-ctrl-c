@@ -1043,7 +1043,7 @@ static void ui_conn_draw_details(int l) {
     mvaddstr(l+5, 47, ratecalc_eta(cc->dl ? cc->net->rate_in : cc->net->rate_out, net_left(cc->net)));
   else
     mvaddstr(l+5, 47, "-");
-  mvprintw(l+6, 47, "%ds", (int)(time(NULL)-cc->net->timeout_last));
+  mvprintw(l+6, 47, "%ds", (int)(time(NULL)-net_last_activity(cc->net)));
   // line 7
   if(cc->last_file)
     mvaddnstr(l+7, 13, cc->last_file, str_offset_from_columns(cc->last_file, wincols-13));
