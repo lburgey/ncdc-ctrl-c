@@ -1112,7 +1112,7 @@ static gboolean dnscon_gotdns(gpointer dat) {
 // Async DNS resolution in a background thread
 static void dnscon_thread(gpointer dat, gpointer udat) {
   struct dnscon *r = dat;
-  struct addrinfo hint;
+  struct addrinfo hint = {};
   hint.ai_family = AF_INET;
   hint.ai_socktype = SOCK_STREAM;
   hint.ai_protocol = 0;
