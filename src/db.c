@@ -1132,7 +1132,11 @@ static const char *cert_gen(const char *cert_file, const char *key_file, gnutls_
   unlink(key_file);
 
   // Private key
-  gnutls_x509_privkey_generate(key, GNUTLS_PK_RSA, gnutls_sec_param_to_pk_bits(GNUTLS_PK_RSA, GNUTLS_SEC_PARAM_NORMAL), 0);
+  int bits = 2432;
+#if GNUTLS_VERSION_MAJOR > 2 || (GNUTLS_VERSION_MAJOR == 2 && GNUTLS_VERSION_MINOR >= 12)
+  bits = gnutls_sec_param_to_pk_bits(GNUTLS_PK_RSA, GNUTLS_SEC_PARAM_NORMAL);
+#endif
+  gnutls_x509_privkey_generate(key, GNUTLS_PK_RSA, bits, 0);
   len = sizeof(dat);
   g_assert(gnutls_x509_privkey_export(key, GNUTLS_X509_FMT_PEM, dat, &len) == 0);
   if(!(f = fopen(key_file, "w"))
