@@ -1130,7 +1130,7 @@ static void ui_conn_key(guint64 key) {
     else if(net_is_idle(cc->net))
       ui_m(NULL, 0, "Not connected.");
     else
-      cc_disconnect(cc);
+      cc_disconnect(cc, FALSE);
     break;
   case INPT_CHAR('q'): // q - find queue item
     if(!cc)

@@ -341,7 +341,7 @@ static void dl_user_rm(struct dl *dl, int i) {
   // Make sure to disconnect the user and disable dl->active if we happened to
   // be actively downloading the file from this user.
   if(du->active == dud) {
-    cc_disconnect(du->cc);
+    cc_disconnect(du->cc, TRUE);
     du->active = NULL;
     dl->active = FALSE;
     // Note that cc_disconnect() immediately calls dl_user_cc(), causing

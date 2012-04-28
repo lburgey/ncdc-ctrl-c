@@ -396,7 +396,7 @@ void cc_global_close() {
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
     struct cc *c = g_sequence_get(i);
     if(c->state != CCS_DISCONN)
-      cc_disconnect(c);
+      cc_disconnect(c, TRUE);
   }
 }
 
@@ -413,7 +413,7 @@ void cc_global_onlinecheck() {
     if((c->state == CCS_IDLE || c->state == CCS_TRANSFER) // idle or transfer mode
         && !g_hash_table_lookup(hub_uids, &c->uid) // user offline
         && var_get_bool(c->hub?c->hub->id:0, VAR_disconnect_offline)) // 'disconnect_offline' enabled
-      cc_disconnect(c);
+      cc_disconnect(c, FALSE);
   }
 }
 
@@ -633,7 +633,7 @@ static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 by
   struct dl *dl = g_hash_table_lookup(dl_queue, cc->last_hash);
   if(!dl) {
     g_set_error_literal(&cc->err, 1, 0, "Download interrupted.");
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
     return;
   }
   // Some buggy clients (DCGUI) return $ADCSND with bytes = -1. They probably
@@ -641,7 +641,7 @@ static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 by
   if(bytes < 0) {
     if(tthl) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
       return;
     }
     bytes = cc->last_size - cc->last_offset;
@@ -659,7 +659,7 @@ static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 by
     void *ctx = dl_recv_create(cc->uid, cc->last_hash);
     if(!ctx) {
       g_set_error_literal(&cc->err, 1, 0, "Download interrupted.");
-      cc_disconnect(cc);
+      cc_disconnect(cc, FALSE);
     } else
       net_recvfile(cc->net, bytes, dl_recv_data, handle_recvdone, ctx);
   } else {
@@ -869,7 +869,7 @@ static void handle_id(struct cc *cc, struct hub_user *u) {
     struct cc *dup = cc_check_dupe(cc);
     if(dup && !!cc->dl == !!dup->dl) {
       g_set_error_literal(&(cc->err), 1, 0, "too many open connections with this user");
-      cc_disconnect(cc);
+      cc_disconnect(cc, FALSE);
       return;
     }
   }
@@ -908,7 +908,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     if(cc->state != CCS_HANDSHAKE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       // TODO: actually do something with the arguments.
       if(cc->active)
@@ -928,7 +928,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     if(cc->state != CCS_HANDSHAKE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       cc->state = CCS_IDLE;;
       char *id = adc_getparam(cmd.argv, "ID", NULL);
@@ -939,11 +939,11 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       if(!id || (cc->active && !token)) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: No token or CID present: %s", net_remoteaddr(cc->net), msg);
-        cc_disconnect(cc);
+        cc_disconnect(cc, TRUE);
       } else if(!istth(id) || (!cc->active && memcmp(cid, cc->cid, 8) != 0)) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: Incorrect CID: %s", net_remoteaddr(cc->net), msg);
-        cc_disconnect(cc);
+        cc_disconnect(cc, TRUE);
       } else if(cc->active) {
         cc->token = g_strdup(token);
         memcpy(cc->cid, cid, 24);
@@ -952,7 +952,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
         if(!u) {
           g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
           g_message("CC:%s: Unexpected ADC connection: %s", net_remoteaddr(cc->net), msg);
-          cc_disconnect(cc);
+          cc_disconnect(cc, TRUE);
         } else
           handle_id(cc, u);
       } else
@@ -965,7 +965,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
         base32_encode_dat(cc->kp_user, user, 32);
         base32_encode_dat(cc->kp_real, real, 32);
         g_message("CC:%s: Client keyprint does not match TLS keyprint: %s != %s", net_remoteaddr(cc->net), user, real);
-        cc_disconnect(cc);
+        cc_disconnect(cc, TRUE);
       } else if(cc->kp_real && cc->kp_user)
         g_debug("CC:%s: Client authenticated using KEYP.", net_remoteaddr(cc->net));
       if(cc->dl && cc->state == CCS_IDLE)
@@ -979,7 +979,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     } else if(cc->dl || cc->state != CCS_IDLE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       guint64 start = g_ascii_strtoull(cmd.argv[2], NULL, 0);
       gint64 len = g_ascii_strtoll(cmd.argv[3], NULL, 0);
@@ -1003,7 +1003,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     } else if(!cc->dl || cc->state != CCS_TRANSFER) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else
       handle_adcsnd(cc, strcmp(cmd.argv[0], "tthl") == 0, g_ascii_strtoull(cmd.argv[2], NULL, 0), g_ascii_strtoll(cmd.argv[3], NULL, 0));
     break;
@@ -1014,7 +1014,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     } else if(cc->dl || cc->state != CCS_IDLE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       // Get file
       struct fl_list *f = NULL;
@@ -1061,11 +1061,11 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       if(!cc->dl || cc->state != CCS_TRANSFER) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
-        cc_disconnect(cc);
+        cc_disconnect(cc, TRUE);
       } else {
         // Make a "slots full" message fatal; dl.c assumes this behaviour.
         g_set_error_literal(&cc->err, 1, 0, "No Slots Available");
-        cc_disconnect(cc);
+        cc_disconnect(cc, TRUE);
       }
 
     // File (Part) Not Available: notify dl.c
@@ -1073,11 +1073,11 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       if(!cc->dl || cc->state != CCS_TRANSFER) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
-        cc_disconnect(cc);
+        cc_disconnect(cc, TRUE);
       } else {
         dl_queue_setuerr(cc->uid, cc->last_hash, DLE_NOFILE, NULL);
         if(cmd.argv[0][0] == '2')
-          cc_disconnect(cc);
+          cc_disconnect(cc, FALSE);
         else {
           cc->state = CCS_IDLE;
           dl_user_cc(cc->uid, cc);
@@ -1088,7 +1088,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     } else if(cmd.argv[0][0] == '1' || cmd.argv[0][0] == '2') {
       g_set_error(&cc->err, 1, 0, "(%s) %s", cmd.argv[0], cmd.argv[1]);
       if(cmd.argv[0][0] == '2')
-        cc_disconnect(cc);
+        cc_disconnect(cc, FALSE);
     } else if(!adc_getparam(cmd.argv, "RF", NULL))
       g_message("CC:%s: Status: (%s) %s", net_remoteaddr(cc->net), cmd.argv[0], cmd.argv[1]);
     break;
@@ -1104,7 +1104,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 static void nmdc_mynick(struct cc *cc, const char *nick) {
   if(cc->nick_raw) {
     g_message("CC:%s: Received $MyNick twice.", net_remoteaddr(cc->net));
-    cc_disconnect(cc);
+    cc_disconnect(cc, TRUE);
     return;
   }
   cc->nick_raw = g_strdup(nick);
@@ -1115,14 +1115,14 @@ static void nmdc_mynick(struct cc *cc, const char *nick) {
   // didn't see this one coming? disconnect!
   if(!cc->hub) {
     g_message("CC:%s: Unexpected NMDC connection from %s.", net_remoteaddr(cc->net), nick);
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
     return;
   }
 
   struct hub_user *u = g_hash_table_lookup(cc->hub->users, nick);
   if(!u) {
     g_set_error_literal(&(cc->err), 1, 0, "User not online.");
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
     return;
   }
 
@@ -1148,13 +1148,13 @@ static void nmdc_direction(struct cc *cc, gboolean down, int num) {
   else if(!down && !cc->dl) {
     g_message("CC:%s: None of us wants to download.", net_remoteaddr(cc->net));
     g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
     return;
   // if we both want to download and the numbers are equal... then fuck it!
   } else if(cc->dir == num) {
     g_message("CC:%s: $Direction numbers are equal.", net_remoteaddr(cc->net));
     g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
     return;
   // if we both want to download and the numbers aren't equal, then check the numbers
   } else
@@ -1164,7 +1164,7 @@ static void nmdc_direction(struct cc *cc, gboolean down, int num) {
   struct cc *dup = cc_check_dupe(cc);
   if(dup && !!cc->dl == !!dup->dl) {
     g_set_error_literal(&cc->err, 1, 0, "Too many open connections with this user");
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
     return;
   }
   cc->state = CCS_IDLE;
@@ -1207,7 +1207,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     if(cc->state != CCS_HANDSHAKE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       char *nick = g_match_info_fetch(nfo, 1);
       nmdc_mynick(cc, nick);
@@ -1222,12 +1222,12 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     if(cc->state != CCS_HANDSHAKE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     // we don't implement the classic NMDC get, so we can't talk with non-EXTENDEDPROTOCOL clients
     } else if(strncmp(lock, "EXTENDEDPROTOCOL", 16) != 0) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Does not advertise EXTENDEDPROTOCOL.", net_remoteaddr(cc->net));
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       net_writestr(cc->net, "$Supports MiniSlots XmlBZList ADCGet TTHL TTHF|");
       char *key = nmdc_lock2key(lock);
@@ -1246,12 +1246,12 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     if(cc->state != CCS_HANDSHAKE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     // Client must support ADCGet to download from us, since we haven't implemented the old NMDC $Get.
     } else if(!strstr(list, "ADCGet")) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Does not support ADCGet.", net_remoteaddr(cc->net));
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     }
     g_free(list);
   }
@@ -1262,7 +1262,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     if(cc->state != CCS_HANDSHAKE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       char *dir = g_match_info_fetch(nfo, 1);
       char *num = g_match_info_fetch(nfo, 2);
@@ -1285,7 +1285,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     if(cc->dl || cc->state != CCS_IDLE) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else if(un_id && g_utf8_validate(un_id, -1, NULL)) {
       GError *err = NULL;
       handle_adcget(cc, type, un_id, st, by, &err);
@@ -1310,7 +1310,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     if(!cc->dl || cc->state != CCS_TRANSFER) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       char *type = g_match_info_fetch(nfo, 1);
       char *start = g_match_info_fetch(nfo, 2);
@@ -1328,7 +1328,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     if(!cc->dl || cc->state != CCS_TRANSFER) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
-      cc_disconnect(cc);
+      cc_disconnect(cc, TRUE);
     } else {
       char *msg = g_match_info_fetch(nfo, 1);
       g_set_error_literal(&cc->err, 1, 0, msg);
@@ -1349,7 +1349,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), cmd);
     } else
       g_set_error_literal(&cc->err, 1, 0, "No Slots Available");
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
   }
   g_match_info_free(nfo);
 }
@@ -1359,7 +1359,8 @@ static void handle_error(struct net *n, int action, const char *err) {
   struct cc *cc = n->handle;
   if(!cc->err) // ignore network errors if there already was a protocol error
     g_set_error_literal(&cc->err, 1, 0, err);
-  cc_disconnect(n->handle);
+  if(action == NETERR_TIMEOUT)
+    cc_disconnect(n->handle, FALSE);
 }
 
 
@@ -1397,7 +1398,7 @@ static void handle_connect(struct net *n, const char *addr) {
   struct cc *cc = n->handle;
   strncpy(cc->remoteaddr, net_remoteaddr(cc->net), sizeof(cc->remoteaddr));
   if(!cc->hub) {
-    cc_disconnect(cc);
+    cc_disconnect(cc, FALSE);
     return;
   }
 
@@ -1498,11 +1499,14 @@ static gboolean handle_timeout(gpointer dat) {
 }
 
 
-void cc_disconnect(struct cc *cc) {
+void cc_disconnect(struct cc *cc, gboolean force) {
   g_return_if_fail(cc->state != CCS_DISCONN);
   if(cc->state == CCS_TRANSFER)
     xfer_log_add(cc);
-  net_disconnect(cc->net);
+  if(force || cc->net->state != NETST_ASY)
+    net_disconnect(cc->net);
+  else
+    net_shutdown(cc->net, NULL);
   cc->timeout_src = g_timeout_add_seconds(60, handle_timeout, cc);
   g_free(cc->token);
   cc->token = NULL;
@@ -1514,7 +1518,7 @@ void cc_disconnect(struct cc *cc) {
 
 void cc_free(struct cc *cc) {
   if(!cc->timeout_src)
-    cc_disconnect(cc);
+    cc_disconnect(cc, TRUE);
   if(cc->timeout_src)
     g_source_remove(cc->timeout_src);
   if(ui_conn)

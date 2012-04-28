@@ -64,6 +64,7 @@ struct ratecalc net_in, net_out;
 #define NETERR_CONN 0
 #define NETERR_RECV 1
 #define NETERR_SEND 2
+#define NETERR_TIMEOUT 3
 
 
 struct dnscon;
@@ -81,13 +82,16 @@ struct net {
   char addr[64]; // state ASY,SYN,DIS
 
   gnutls_session_t tls; // state ASY,SYN,DIS (only if tls is enabled)
-  gboolean tls_handshake; // state ASY, whether we're handshaking.
   void (*cb_handshake)(struct net *, const char *); // state ASY, called after complete handshake.
+  void (*cb_shutdown)(struct net *); // state DIS, called after complete disconnect.
+
+  gboolean tls_handshake : 8; // state ASY, whether we're handshaking.
+  gboolean shutdown_closed : 8; // state DIS, whether shutdown() has been called on the socket.
+  gboolean writing : 8; // state ASY. Whether 'socksrc' is write poll event.
+  gboolean wantwrite : 8; // state ASY. Whether we want a write on sock.
 
   GString *rbuf; // state ASY. Read buffer.
   GString *wbuf; // state ASY. Write buffer.
-  gboolean writing : 16; // state ASY. Whether 'socksrc' is write poll event.
-  gboolean wantwrite : 16; // state ASY. Whether we want a write on sock.
 
   // Called when an error has occured. Second argument is NETERR_*, third a
   // string representing the error. The net struct is always in NETST_IDL after
@@ -144,7 +148,6 @@ static ssize_t tls_pull(gnutls_transport_ptr_t dat, void *buf, size_t len) {
   }
   return r;
 }
-
 
 // Behaves similarly to a normal recv(), but writes a readable error message to
 // *err. If the error is temporary (e.g. EAGAIN), returns -1 but with *err=NULL.
@@ -537,7 +540,7 @@ int net_left(struct net *n) {
 
 
 
-// Asynchronous message handling
+// Asynchronous TLS handshaking & message handling & disconnecting
 
 static gboolean handle_timer(gpointer dat);
 
@@ -569,7 +572,7 @@ static gboolean asy_handlerbuf(gpointer dat) {
         g_debug("%s< %s%c", net_remoteaddr(n), n->rbuf->str, dat != '\n' ? dat : ' ');
     }
     cb(n, n->rbuf->str, end - n->rbuf->str);
-    if(n->state == NETST_ASY || n->state == NETST_SYN) {
+    if(n->state == NETST_ASY || n->state == NETST_SYN || n->state == NETST_DIS) {
       if(consume)
         g_string_erase(n->rbuf, 0, end - n->rbuf->str + (msg ? 1 : 0));
       else if(msg)
@@ -646,6 +649,59 @@ static gboolean asy_read(struct net *n) {
 }
 
 
+static gboolean dis_shutdown(struct net *n) {
+  // Shutdown TLS
+  if(n->tls) {
+    int r = gnutls_bye(n->tls, GNUTLS_SHUT_RDWR);
+    if(r == 0) {
+      gnutls_deinit(n->tls);
+      n->tls = NULL;
+    } else if(r < 0 && !gnutls_error_is_fatal(r)) {
+      if(gnutls_record_get_direction(n->tls))
+        n->wantwrite = TRUE;
+      return TRUE;
+    } else {
+      char *e = g_strdup_printf("Shutdown error: %s", gnutls_strerror(r));
+      g_debug("%s: %s", net_remoteaddr(n), e);
+      if(n->cb_err)
+        n->cb_err(n, NETERR_RECV, e);
+      g_free(e);
+      net_disconnect(n);
+      return FALSE;
+    }
+  }
+
+  // Shutdown socket
+  if(!n->tls && !n->shutdown_closed) {
+    shutdown(n->sock, SHUT_WR);
+    n->shutdown_closed = TRUE;
+  }
+
+  // Wait for ACK (discard anything we read)
+  if(!n->tls) {
+    char buf[10];
+    int r = recv(n->sock, buf, sizeof(buf), 0);
+    if(r < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+      return TRUE;
+    if(r < 0) {
+      char *e = g_strdup_printf("Read error: %s", g_strerror(errno));
+      g_debug("%s: %s", net_remoteaddr(n), e);
+      if(n->cb_err)
+        n->cb_err(n, NETERR_RECV, e);
+      g_free(e);
+      net_disconnect(n);
+      return FALSE;
+    }
+    if(r == 0) {
+      if(n->cb_shutdown)
+        n->cb_shutdown(n);
+      net_disconnect(n); // still do a force disconnect to clean up stuff and go to IDLE state
+    }
+  }
+  return FALSE;
+}
+
+
 static gboolean asy_write(struct net *n) {
   if(!n->wbuf->len)
     return TRUE;
@@ -670,9 +726,13 @@ static gboolean asy_write(struct net *n) {
 
   g_string_erase(n->wbuf, 0, r);
 
-  if(n->syn && n->syn->upl && !n->wbuf->len) {
-    syn_start(n);
-    return FALSE;
+  if(!n->wbuf->len) {
+    if(n->syn && n->syn->upl) {
+      syn_start(n);
+      return FALSE;
+    }
+    if(n->state == NETST_DIS)
+      return dis_shutdown(n);
   }
 
   return TRUE;
@@ -731,6 +791,13 @@ static gboolean asy_pollresult(gpointer dat) {
   struct net *n = dat;
   n->socksrc = 0;
   n->wantwrite = FALSE;
+
+  // Shutdown
+  if(n->state == NETST_DIS) {
+    if(dis_shutdown(n))
+      asy_setuppoll(n);
+    return FALSE;
+  }
 
   // Handshake
   if(n->tls_handshake && !asy_handshake(n))
@@ -853,6 +920,18 @@ void net_sendfile(struct net *n, int fd, int len, gboolean flush, void (*cb)(str
   n->syn->fd = fd;
   if(!n->wbuf->len)
     syn_start(n);
+}
+
+
+// Clean and orderly shutdown. Callback is called when done (unless there was
+// some error). Only supported in the ASY state.
+void net_shutdown(struct net *n, void(*cb)(struct net *)) {
+  g_return_if_fail(n->state == NETST_ASY);
+  g_debug("%s: Shutting down", net_remoteaddr(n));
+  n->state = NETST_DIS;
+  n->cb_shutdown = cb;
+  if(!n->wbuf->len)
+    dis_shutdown(n);
 }
 
 
@@ -1097,11 +1176,10 @@ static gboolean handle_timer(gpointer dat) {
   // non-keepalive ASY connections.
   if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_DIS || (n->state == NETST_ASY && !n->timeout_msg))) {
     if(n->cb_err && (n->state == NETST_DNS || n->state == NETST_CON))
-      n->cb_err(n, NETERR_CONN, g_strerror(ETIMEDOUT));
+      n->cb_err(n, NETERR_TIMEOUT, g_strerror(ETIMEDOUT));
     else if(n->cb_err)
-      n->cb_err(n, NETERR_RECV, "Idle timeout");
+      n->cb_err(n, NETERR_TIMEOUT, "Idle timeout");
     n->timeout_src = 0;
-    net_disconnect(n);
     return FALSE;
   }
 
@@ -1172,6 +1250,7 @@ void net_disconnect(struct net *n) {
     break;
 
   case NETST_ASY:
+  case NETST_DIS:
     n->rd_cb = NULL;
     if(n->syn) {
       syn_cancel(n);
@@ -1220,9 +1299,9 @@ void net_disconnect(struct net *n) {
   ratecalc_unregister(n->rate_out);
 
   if(n->state == NETST_ASY || n->state == NETST_SYN || n->state == NETST_DIS)
-    g_debug("%s: Disconnected (forced).", net_remoteaddr(n));
+    g_debug("%s: Disconnected.", net_remoteaddr(n));
   n->addr[0] = 0;
-  n->tls_handshake = FALSE;
+  n->wantwrite = n->writing = n->tls_handshake = n->shutdown_closed = FALSE;
   n->state = NETST_IDL;
 }
 
