@@ -610,7 +610,7 @@ void hub_send_nfo(struct hub *hub) {
     return;
 
   // get info, to be compared with hub->nfo_
-  char *desc, *conn, *mail;
+  char *desc, *conn = NULL, *mail;
   unsigned char slots, h_norm, h_reg, h_op;
   guint64 share;
   guint32 ip4;
@@ -618,8 +618,14 @@ void hub_send_nfo(struct hub *hub) {
   gboolean sup_tls;
 
   desc = var_get(hub->id, VAR_description);
-  conn = var_get_int(0, VAR_upload_rate) ? g_strdup_printf("%d KiB/s", var_get_int(0, VAR_upload_rate)/1024) : var_get(hub->id, VAR_connection);
   mail = var_get(hub->id, VAR_email);
+
+  char buf[50] = {};
+  if(var_get_int(0, VAR_upload_rate)) {
+    g_snprintf(buf, sizeof(buf), "%d KiB/s", var_get_int(0, VAR_upload_rate)/1024);
+    conn = buf;
+  } else
+    conn = var_get(hub->id, VAR_connection);
 
   h_norm = h_reg = h_op = 0;
   GList *n;
