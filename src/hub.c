@@ -934,7 +934,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   adc_parse(msg, &cmd, feats, &err);
   if(err) {
-    g_warning("ADC parse error from %s: %s. --> %s", net_remoteaddr(hub->net), err->message, msg);
+    g_message("ADC parse error from %s: %s. --> %s", net_remoteaddr(hub->net), err->message, msg);
     g_error_free(err);
     return;
   }
@@ -942,7 +942,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
   switch(cmd.cmd) {
   case ADCC_SID:
     if(hub->state != ADC_S_PROTOCOL || cmd.type != 'I' || cmd.argc != 1 || strlen(cmd.argv[0]) != 4)
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else {
       hub->sid = ADC_DFCC(cmd.argv[0]);
       hub->state = ADC_S_IDENTIFY;
@@ -984,7 +984,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
           u = user_add(hub, nick, cid);
       }
       if(!u)
-        g_warning("INF for user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
+        g_message("INF for user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
       else {
         if(!u->hasinfo)
           hub->sharecount++;
@@ -1010,7 +1010,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   case ADCC_QUI:
     if(cmd.type != 'I' || cmd.argc < 1 || strlen(cmd.argv[0]) != 4)
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else {
       int sid = ADC_DFCC(cmd.argv[0]);
       struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(sid));
@@ -1037,7 +1037,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   case ADCC_STA:
     if(cmd.argc < 2 || strlen(cmd.argv[0]) != 3)
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else {
       int code = (cmd.argv[0][1]-'0')*10 + (cmd.argv[0][2]-'0');
       if(!code)
@@ -1054,7 +1054,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   case ADCC_CTM:
     if(cmd.argc < 3 || cmd.type != 'D' || cmd.dest != hub->sid)
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else if(var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_DISABLE ? !is_adc_proto(cmd.argv[0]) : !is_valid_proto(cmd.argv[0])) {
       GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
       g_string_append(r, " 141 Unknown\\protocol");
@@ -1067,11 +1067,11 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
       int port = strtol(cmd.argv[1], NULL, 0);
       if(!u)
-        g_warning("CTM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
+        g_message("CTM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
       else if(port < 1 || port > 65535)
-        g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+        g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
       else if(!u->active || !u->ip4) {
-        g_warning("CTM from user who is not active (%s): %s", net_remoteaddr(hub->net), msg);
+        g_message("CTM from user who is not active (%s): %s", net_remoteaddr(hub->net), msg);
         GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
         g_string_append(r, " 140 No\\sIP\\sto\\sconnect\\sto.\n");
         net_writestr(hub->net, r->str);
@@ -1083,7 +1083,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   case ADCC_RCM:
     if(cmd.argc < 2 || cmd.type != 'D' || cmd.dest != hub->sid)
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else if(!listen_hub_tls(hub->id) ? !is_adc_proto(cmd.argv[0]) : !is_valid_proto(cmd.argv[0])) {
       GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
       g_string_append(r, " 141 Unknown\\protocol");
@@ -1103,7 +1103,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     } else {
       struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
       if(!u)
-        g_warning("RCM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
+        g_message("RCM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
       else {
         int port = is_adcs_proto(cmd.argv[0]) ? listen_hub_tls(hub->id) : listen_hub_tcp(hub->id);
         GString *r = adc_generate('D', ADCC_CTM, hub->sid, cmd.source);
@@ -1120,7 +1120,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   case ADCC_MSG:;
     if(cmd.argc < 1 || (cmd.type != 'B' && cmd.type != 'E' && cmd.type != 'D' && cmd.type != 'I' && cmd.type != 'F'))
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else {
       char *pm = adc_getparam(cmd.argv+1, "PM", NULL);
       gboolean me = adc_getparam(cmd.argv+1, "ME", NULL) != NULL;
@@ -1128,7 +1128,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       struct hub_user *d = (cmd.type == 'E' || cmd.type == 'D') && cmd.source == hub->sid
         ? g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.dest)) : NULL;
       if(cmd.type != 'I' && !u && !d)
-        g_warning("Message from someone not on this hub. (%s: %s)", net_remoteaddr(hub->net), msg);
+        g_message("Message from someone not on this hub. (%s: %s)", net_remoteaddr(hub->net), msg);
       else {
         char *m = g_strdup_printf(me ? "** %s %s" : "<%s> %s", cmd.type == 'I' ? "hub" : u->name, cmd.argv[0]);
         if(cmd.type == 'E' || cmd.type == 'D' || cmd.type == 'F')
@@ -1143,14 +1143,14 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   case ADCC_SCH:
     if(cmd.type != 'B' && cmd.type != 'D' && cmd.type != 'E' && cmd.type != 'F')
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else if(cmd.source != hub->sid)
       adc_sch(hub, &cmd);
     break;
 
   case ADCC_GPA:
     if(cmd.type != 'I' || cmd.argc < 1 || (hub->state != ADC_S_IDENTIFY && hub->state != ADC_S_VERIFY))
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else {
       g_free(hub->gpa_salt);
       hub->state = ADC_S_VERIFY;
@@ -1163,14 +1163,14 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 
   case ADCC_RES:
     if(cmd.type != 'D' || cmd.argc < 3)
-      g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else {
       struct search_r *r = search_parse_adc(hub, &cmd);
       if(r) {
         ui_search_global_result(r);
         search_r_free(r);
       } else
-        g_warning("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+        g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     }
     break;
 
@@ -1467,7 +1467,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     char *msg = g_match_info_fetch(nfo, 3);
     struct hub_user *u = g_hash_table_lookup(hub->users, from);
     if(!u)
-      g_warning("[hub: %s] Got a $To from `%s', who is not on this hub!", hub->tab->name, from);
+      g_message("[hub: %s] Got a $To from `%s', who is not on this hub!", hub->tab->name, from);
     else {
       char *msge = nmdc_unescape_and_decode(hub, msg);
       ui_hub_msg(hub->tab, u, msge, 0);
@@ -1496,7 +1496,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     char *addr = g_match_info_fetch(nfo, 2);
     char *tls = g_match_info_fetch(nfo, 3);
     if(strcmp(me, hub->nick_hub) != 0)
-      g_warning("Received a $ConnectToMe for someone else (to %s from %s)", me, addr);
+      g_message("Received a $ConnectToMe for someone else (to %s from %s)", me, addr);
     else
       cc_nmdc_connect(cc_create(hub), addr, var_get(hub->id, VAR_local_address), *tls ? TRUE : FALSE);
     g_free(me);
@@ -1511,7 +1511,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     char *me = g_match_info_fetch(nfo, 2);
     struct hub_user *u = g_hash_table_lookup(hub->users, other);
     if(strcmp(me, hub->nick_hub) != 0)
-      g_warning("Received a $RevConnectToMe for someone else (to %s from %s)", me, other);
+      g_message("Received a $RevConnectToMe for someone else (to %s from %s)", me, other);
     else if(!u)
       g_message("Received a $RevConnectToMe from someone not on the hub.");
     else if(listen_hub_active(hub->id)) {

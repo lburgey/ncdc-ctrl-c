@@ -169,7 +169,7 @@ static void listen_udp_handle_msg(char *addr, char *msg, gboolean adc) {
     struct adc_cmd cmd;
     adc_parse(msg, &cmd, NULL, &err);
     if(err) {
-      g_warning("ADC parse error from UDP:%s: %s. --> %s", addr, err->message, msg);
+      g_message("ADC parse error from UDP:%s: %s. --> %s", addr, err->message, msg);
       g_error_free(err);
       return;
     }
@@ -185,7 +185,7 @@ static void listen_udp_handle_msg(char *addr, char *msg, gboolean adc) {
     ui_search_global_result(r);
     search_r_free(r);
   } else
-    g_warning("Invalid search result from UDP:%s: %s", addr, msg);
+    g_message("Invalid search result from UDP:%s: %s", addr, msg);
 }
 
 

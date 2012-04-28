@@ -938,11 +938,11 @@ static void adc_handle(struct net *net, char *msg, int _len) {
         base32_decode(id, cid);
       if(!id || (cc->active && !token)) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-        g_warning("CC:%s: No token or CID present: %s", net_remoteaddr(cc->net), msg);
+        g_message("CC:%s: No token or CID present: %s", net_remoteaddr(cc->net), msg);
         cc_disconnect(cc);
       } else if(!istth(id) || (!cc->active && memcmp(cid, cc->cid, 8) != 0)) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-        g_warning("CC:%s: Incorrect CID: %s", net_remoteaddr(cc->net), msg);
+        g_message("CC:%s: Incorrect CID: %s", net_remoteaddr(cc->net), msg);
         cc_disconnect(cc);
       } else if(cc->active) {
         cc->token = g_strdup(token);
@@ -951,7 +951,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
         struct hub_user *u = cc->uid ? g_hash_table_lookup(hub_uids, &cc->uid) : NULL;
         if(!u) {
           g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-          g_warning("CC:%s: Unexpected ADC connection: %s", net_remoteaddr(cc->net), msg);
+          g_message("CC:%s: Unexpected ADC connection: %s", net_remoteaddr(cc->net), msg);
           cc_disconnect(cc);
         } else
           handle_id(cc, u);
@@ -964,7 +964,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
         char user[53] = {}, real[53] = {};
         base32_encode_dat(cc->kp_user, user, 32);
         base32_encode_dat(cc->kp_real, real, 32);
-        g_warning("CC:%s: Client keyprint does not match TLS keyprint: %s != %s", net_remoteaddr(cc->net), user, real);
+        g_message("CC:%s: Client keyprint does not match TLS keyprint: %s != %s", net_remoteaddr(cc->net), user, real);
         cc_disconnect(cc);
       } else if(cc->kp_real && cc->kp_user)
         g_debug("CC:%s: Client authenticated using KEYP.", net_remoteaddr(cc->net));
@@ -1146,13 +1146,13 @@ static void nmdc_direction(struct cc *cc, gboolean down, int num) {
     ;
   // if neither of us wants to download... then what the heck are we doing?
   else if(!down && !cc->dl) {
-    g_warning("CC:%s: None of us wants to download.", net_remoteaddr(cc->net));
+    g_message("CC:%s: None of us wants to download.", net_remoteaddr(cc->net));
     g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
     cc_disconnect(cc);
     return;
   // if we both want to download and the numbers are equal... then fuck it!
   } else if(cc->dir == num) {
-    g_warning("CC:%s: $Direction numbers are equal.", net_remoteaddr(cc->net));
+    g_message("CC:%s: $Direction numbers are equal.", net_remoteaddr(cc->net));
     g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
     cc_disconnect(cc);
     return;
@@ -1226,7 +1226,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     // we don't implement the classic NMDC get, so we can't talk with non-EXTENDEDPROTOCOL clients
     } else if(strncmp(lock, "EXTENDEDPROTOCOL", 16) != 0) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-      g_warning("CC:%s: Does not advertise EXTENDEDPROTOCOL.", net_remoteaddr(cc->net));
+      g_message("CC:%s: Does not advertise EXTENDEDPROTOCOL.", net_remoteaddr(cc->net));
       cc_disconnect(cc);
     } else {
       net_writestr(cc->net, "$Supports MiniSlots XmlBZList ADCGet TTHL TTHF|");
@@ -1250,7 +1250,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     // Client must support ADCGet to download from us, since we haven't implemented the old NMDC $Get.
     } else if(!strstr(list, "ADCGet")) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-      g_warning("CC:%s: Does not support ADCGet.", net_remoteaddr(cc->net));
+      g_message("CC:%s: Does not support ADCGet.", net_remoteaddr(cc->net));
       cc_disconnect(cc);
     }
     g_free(list);
