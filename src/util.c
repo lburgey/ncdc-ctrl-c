@@ -29,6 +29,9 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <glib/gstdio.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <fcntl.h>
 
 #if INTERFACE
@@ -751,32 +754,29 @@ void base32_decode(const char *from, char *to) {
 
 
 // Handy wrappers to efficiently store an IPv4 address in an integer. This is
-// only used for internal storage, all actual network IO is done using GIO,
-// which works with the stringified versions. For portability and future IPv6
-// support, it'd help to use GInetAddress objects instead, but that's
-// inefficient. (For one thing, a simple pointer already takes twice as much
-// space as a compacted IPv4 address). Even for IPv6 it'll be more efficient to
-// use this strategy of ip6_pack() and ip6_unpack() with two guint64's.
+// only used for internal storage, all actual network IO is done by passing the
+// stringified addresses to the right networking functions (inet_pton or
+// getaddrinfo), and thus does not make any assumptions about how these
+// integers are stored.
+// TODO: Might as well get rid of these and use 'struct in_addr' and 'struct
+// in6_addr' everywhere. (when IPv6 will be supported). In that case there is
+// still a need for a _cmp() function, though, and that will probably be a
+// little less efficient than the current one.
 
 guint32 ip4_pack(const char *str) {
-  unsigned char ipraw[4];
-  if(!str || sscanf(str, "%hhu.%hhu.%hhu.%hhu", ipraw, ipraw+1, ipraw+2, ipraw+3) != 4)
+  struct in_addr a;
+  if(!str || inet_pton(AF_INET, str, &a) != 1)
     return 0;
-  guint32 ip;
-  memcpy(&ip, ipraw, 4); // ip is now in network byte order
-  return g_ntohl(ip); // convert to host byte order (allows for easy sorting)
+  return g_ntohl(a.s_addr); // convert to host byte order (allows for easy sorting)
 }
 
 
 // Returns a static string buffer.
-char *ip4_unpack(guint32 ip) {
-  // Don't use inet_ntoa(), not very portable on Solaris.
-  static char buf[20];
-  unsigned char ipraw[4];
-  ip = g_htonl(ip);
-  memcpy(ipraw, &ip, 4);
-  g_snprintf(buf, 20, "%d.%d.%d.%d", ipraw[0], ipraw[1], ipraw[2], ipraw[3]);
-  return buf;
+const char *ip4_unpack(guint32 ip) {
+  static char buf[INET_ADDRSTRLEN+10];
+  struct in_addr a;
+  a.s_addr = g_htonl(ip);
+  return inet_ntop(AF_INET, &a, buf, sizeof(buf));
 }
 
 #if INTERFACE
