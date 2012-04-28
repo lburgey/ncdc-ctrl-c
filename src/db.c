@@ -1150,9 +1150,8 @@ static const char *cert_gen(const char *cert_file, const char *key_file, gnutls_
   gnutls_x509_crt_set_dn_by_oid(cert, GNUTLS_OID_X520_COUNTRY_NAME,             0, "UN", strlen("UN"));
   gnutls_x509_crt_set_key(cert, key);
   gnutls_x509_crt_set_serial(cert, &t, sizeof(t));
-  gnutls_x509_crt_set_activation_time(cert, t);
+  gnutls_x509_crt_set_activation_time(cert, t-(24*3600));
   gnutls_x509_crt_set_expiration_time(cert, t+(3560*24*3600));
-  gnutls_x509_crt_set_ca_status(cert, 0);
   gnutls_x509_crt_sign(cert, cert, key);
   len = sizeof(dat);
   g_assert(gnutls_x509_crt_export(cert, GNUTLS_X509_FMT_PEM, dat, &len) == 0);
