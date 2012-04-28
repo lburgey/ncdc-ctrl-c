@@ -317,7 +317,7 @@ static void bind_create(struct listen_bind *b) {
   struct sockaddr_in a = {};
   a.sin_family = AF_INET;
   a.sin_port = htons(b->port);
-  inet_aton(ip4_unpack(b->ip4), &a.sin_addr); // also works if b->ip4 == 0
+  inet_pton(AF_INET, ip4_unpack(b->ip4), &a.sin_addr); // also works if b->ip4 == 0
   if(bind(sock, (struct sockaddr *)&a, sizeof(a)) < 0)
     err = errno;
 

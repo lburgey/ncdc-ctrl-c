@@ -29,6 +29,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 
 
@@ -118,12 +122,12 @@ static char *p_interval(const char *val, GError **err) {
 }
 
 static char *p_ip(const char *val, GError **err) {
-  GInetAddress *a = g_inet_address_new_from_string(val);
-  if(!a) {
+  // TODO: Also allow IPv6, once that gets supported
+  struct in_addr a;
+  if(inet_pton(AF_INET, val, &a) != 1) {
     g_set_error_literal(err, 1, 0, "Invalid IP.");
     return NULL;
   }
-  g_object_unref(a);
   return g_strdup(val);
 }
 

@@ -1200,7 +1200,7 @@ void net_connect(struct net *n, const char *addr, int defport, const char *laddr
   r->laddr.sin_family = AF_INET;
   r->laddr.sin_port = 0;
   if(laddr)
-    inet_aton(laddr, &r->laddr.sin_addr);
+    inet_pton(AF_INET, laddr, &r->laddr.sin_addr);
   else
     r->laddr.sin_addr.s_addr = INADDR_ANY;
 
@@ -1336,7 +1336,10 @@ void net_udp_send_raw(const char *dest, const char *msg, int len) {
   m->msglen = len;
   m->addr.sin_family = AF_INET;
   m->addr.sin_port = htons(port);
-  inet_aton(ip, &m->addr.sin_addr);
+  if(inet_pton(AF_INET, ip, &m->addr.sin_addr) != 1) {
+    g_debug("UDP: Invalid IP: %s", ip);
+    g_free(ip);
+  }
   g_free(ip);
 
   g_queue_push_tail(net_udp_queue, m);
