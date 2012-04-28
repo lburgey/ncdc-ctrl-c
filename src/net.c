@@ -259,6 +259,8 @@ static void syn_free(struct synfer *s) {
   close(s->can[0]);
   if(s->fd)
     close(s->fd);
+  if(s->cb_downdone)
+    s->cb_downdone(NULL, s->ctx);
   g_free(s->err);
   g_slice_free(struct synfer, s);
 }
@@ -298,8 +300,10 @@ static gboolean syn_done(gpointer dat) {
   asy_setuppoll(n);
   if(s->cb_upldone)
     s->cb_upldone(n);
-  if(s->cb_downdone)
+  if(s->cb_downdone) {
     s->cb_downdone(n, s->ctx);
+    s->cb_downdone = NULL;
+  }
   syn_free(s);
   return FALSE;
 }
@@ -346,7 +350,6 @@ static int syn_wait(struct synfer *s, int sock, gboolean write) {
 
 #ifdef HAVE_SENDFILE
 
-// TODO: Make sure timeout_last is updated here
 static void syn_upload_sendfile(struct synfer *s, int sock, struct fadv *adv) {
   off_t off = lseek(s->fd, 0, SEEK_CUR);
   if(off == (off_t)-1) {
