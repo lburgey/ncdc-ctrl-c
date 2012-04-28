@@ -1272,6 +1272,9 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
   // called anyway.
   net_readmsg(net, '|', nmdc_handle);
 
+  if(!cmd[0])
+    return;
+
   GMatchInfo *nfo;
 
   // create regexes (declared statically, allocated/compiled on first call)
