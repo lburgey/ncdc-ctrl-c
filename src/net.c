@@ -1240,7 +1240,8 @@ void net_disconnect(struct net *n) {
 
   case NETST_SYN:
     s = n->syn;
-    syn_cancel(n);
+    if(s)
+      syn_cancel(n);
     break;
   }
 
