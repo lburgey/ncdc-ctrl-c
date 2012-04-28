@@ -660,8 +660,8 @@ static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 by
     if(!ctx) {
       g_set_error_literal(&cc->err, 1, 0, "Download interrupted.");
       cc_disconnect(cc);
-    }
-    net_recvfile(cc->net, bytes, dl_recv_data, handle_recvdone, ctx);
+    } else
+      net_recvfile(cc->net, bytes, dl_recv_data, handle_recvdone, ctx);
   } else {
     g_return_if_fail(start == 0 && bytes > 0 && (bytes%24) == 0 && bytes < 48*1024);
     net_readbytes(cc->net, bytes, handle_recvtth);
