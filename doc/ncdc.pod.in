@@ -133,9 +133,8 @@ $NCDC_DIR or $HOME/.ncdc.
 =item $NCDC_DIR/cert/
 
 Directory where the client certificates are stored. Must contain a private key
-file (client.key) and public certificate (client.crt). These should be
-generated automatically when ncdc starts up the first time, but can be
-generated manually using L<ncdc-gen-cert(1)>.
+file (client.key) and public certificate (client.crt). These will be generated
+automatically when ncdc starts up the first time.
 
 =item $NCDC_DIR/db.sqlite3
 
@@ -216,4 +215,4 @@ Web: L<http://dev.yorhel.nl/ncdc>
 
 =head1 SEE ALSO
 
-L<ncdc-gen-cert(1)>, L<ncdc-db-upgrade(1)>.
+L<ncdc-db-upgrade(1)>.

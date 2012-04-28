@@ -100,9 +100,8 @@ struct net {
   gboolean rd_consume : 1;
   int rd_dat;
 
-  // Synchronous file transfers (SYN state) (currently only for uploading)
-  // When set in the ASY state, it means that buffers should be flushed before
-  // switching to the SYN state.
+  // Synchronous file transfers (SYN state) When set in the ASY state, it means
+  // that buffers should be flushed before switching to the SYN state.
   struct synfer *syn;
 
   // some pointer for use by the user
