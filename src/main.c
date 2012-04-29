@@ -396,7 +396,6 @@ int main(int argc, char **argv) {
   // init stuff
   gnutls_global_init();
   g_thread_init(NULL);
-  g_type_init();
 
   // Create main loop
   main_loop = g_main_loop_new(NULL, FALSE);

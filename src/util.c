@@ -698,6 +698,78 @@ done:
 }
 
 
+// Move a file from one place to another. Uses rename() when possible,
+// otherwise falls back to slow file copying. Does not copy over stat()
+// information such as modification times or chmod.
+// In the case of an error, the 'from' file will remain unmodified, but the
+// 'to' file may (or may not) have been deleted if 'overwrite' was true. In
+// some rare situations (if unlink fails), it may also remain on the disk but
+// with corrupted contents.
+gboolean file_move(const char *from, const char *to, gboolean overwrite, GError **err) {
+  if(!overwrite && g_file_test(to, G_FILE_TEST_EXISTS)) {
+    g_set_error_literal(err, 1, g_file_error_from_errno(EEXIST), g_strerror(EEXIST));
+    return FALSE;
+  }
+  int r;
+  do
+    r = rename(from, to);
+  while(r < 0 && errno == EINTR);
+  if(!r)
+    return TRUE;
+  if(errno != EXDEV) {
+    g_set_error_literal(err, 1, g_file_error_from_errno(errno), g_strerror(errno));
+    return FALSE;
+  }
+
+  // plain old copy fallback
+  int fromfd = open(from, O_RDONLY);
+  if(fromfd < 0) {
+    g_set_error_literal(err, 1, g_file_error_from_errno(errno), g_strerror(errno));
+    return FALSE;
+  }
+  int tofd = open(to, O_WRONLY | O_CREAT | (overwrite ? 0 : O_EXCL), 0666);
+  if(tofd < 0) {
+    g_set_error_literal(err, 1, g_file_error_from_errno(errno), g_strerror(errno));
+    close(fromfd);
+    return FALSE;
+  }
+
+  char buf[8*1024];
+  while(1) {
+    r = read(fromfd, buf, sizeof(buf));
+    if(r < 0 && errno == EINTR)
+      continue;
+    if(r <= 0)
+      break;
+
+    while(r > 0) {
+      char *p = buf;
+      int w = write(tofd, p, r);
+      if(w < 0 && errno == EINTR)
+        continue;
+      if(w < 0)
+        goto err;
+      r -= w;
+      p += w;
+    }
+  }
+
+  if(r == 0) {
+    if(close(tofd) < 0 || unlink(from) < 0)
+      goto err;
+    close(fromfd);
+    return TRUE;
+  }
+
+err:
+  g_set_error_literal(err, 1, g_file_error_from_errno(errno), g_strerror(errno));
+  close(fromfd);
+  close(tofd);
+  unlink(to);
+  return FALSE;
+}
+
+
 
 
 #if INTERFACE

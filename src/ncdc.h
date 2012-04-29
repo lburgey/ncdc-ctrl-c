@@ -26,7 +26,6 @@
 #include "config.h"
 #include <glib.h>
 #include <glib/gprintf.h>
-#include <gio/gio.h>
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
 #include <sys/types.h>

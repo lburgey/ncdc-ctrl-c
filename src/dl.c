@@ -930,11 +930,7 @@ static void dl_finished(struct dl *dl) {
   // do this in a separate thread?
   GError *err = NULL;
   if(dl->prio != DLP_ERR) {
-    GFile *src = g_file_new_for_path(dl->inc);
-    GFile *dst = g_file_new_for_path(dest);
-    g_file_move(src, dst, dl->islist ? G_FILE_COPY_OVERWRITE : G_FILE_COPY_BACKUP, NULL, NULL, NULL, &err);
-    g_object_unref(src);
-    g_object_unref(dst);
+    file_move(dl->inc, dest, dl->islist, &err);
     if(err) {
       g_warning("Error moving `%s' to `%s': %s", dl->inc, dest, err->message);
       dl_queue_seterr(dl, DLE_IO_DEST, err->message);
