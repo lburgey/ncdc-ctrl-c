@@ -46,8 +46,10 @@ static GThreadPool *fl_hash_pool;
 GHashTable            *fl_hash_queue = NULL; // set of files-to-hash
 guint64                fl_hash_queue_size = 0;
 static struct fl_list *fl_hash_cur = NULL;   // most recent file initiated for hashing
-static GCancellable   *fl_hash_reset = NULL; // when fl_hash_cur is removed from the queue (to stop current hash operation)
 struct ratecalc        fl_hash_rate;
+static guint64         fl_hash_reset = 0; // increased when fl_hash_cur is removed from the queue (to stop current hash operation)
+static GMutex         *fl_hash_resetlock;
+static GCond          *fl_hash_resetcond;
 
 #define TTH_BUFSIZE (512*1024)
 
@@ -417,7 +419,7 @@ struct fl_hash_args {
   time_t lastmod;    // set by hash thread
   gint64 id;         // set by hash thread
   gdouble time;      // set by hash thread
-  GCancellable *can; // used by hash thread to validate that *file is still in the queue
+  guint64 lastreset; // last value of fl_hash_reset when starting this thread
 };
 
 // Maximum number of levels, including root (level 0).  The ADC docs specify
@@ -460,9 +462,10 @@ struct fl_hash_args {
       fl_hash_queue_size -= fl->size;\
       g_hash_table_remove(fl_hash_queue, fl);\
       if((fl) == fl_hash_cur) {\
-        g_cancellable_cancel(fl_hash_reset);\
-        g_object_unref(fl_hash_reset);\
-        fl_hash_reset = g_cancellable_new();\
+        g_mutex_lock(fl_hash_resetlock);\
+        fl_hash_reset++;\
+        g_cond_signal(fl_hash_resetcond);\
+        g_mutex_unlock(fl_hash_resetlock);\
       }\
     }\
   } while(0)
@@ -478,6 +481,23 @@ static void fl_hash_queue_delrec(struct fl_list *f) {
     for(i=0; i<f->sub->len; i++)
       fl_hash_queue_delrec(g_ptr_array_index(f->sub, i));
   }
+}
+
+
+// Checks whether this hashing operation has been cancelled and waits until the
+// hash ratecalc object has enough burst to allow us to continue hashing again.
+// Returns the allowed burst, or 0 on cancellation.
+static int fl_hash_burst(guint64 lastreset) {
+  int b = 0;
+  g_mutex_lock(fl_hash_resetlock);
+  while(fl_hash_reset == lastreset && (b = ratecalc_burst(&fl_hash_rate)) <= 0) {
+    GTimeVal end;
+    g_get_current_time(&end);
+    g_time_val_add(&end, 100*1000); // Wake up every 100ms.
+    g_cond_timed_wait(fl_hash_resetcond, fl_hash_resetlock, &end);
+  }
+  g_mutex_unlock(fl_hash_resetlock);
+  return b;
 }
 
 
@@ -525,14 +545,11 @@ static void fl_hash_thread(gpointer data, gpointer udata) {
   int block_cur = 0;
   guint64 block_len = 0;
 
-  if((nr = ratecalc_request(&fl_hash_rate, args->can)) <= 0)
+  if((nr = fl_hash_burst(args->lastreset)) <= 0)
     goto finish;
   while((r = read(f, buf, MIN(nr, TTH_BUFSIZE))) > 0) {
     rd += r;
     fadv_purge(&adv, r);
-    // no need to hash any further? quit!
-    if(g_cancellable_is_cancelled(args->can))
-      goto finish;
     // file has been modified. time to back out
     if(rd > args->filesize) {
       g_set_error_literal(&args->err, 1, 0, "File has been modified.");
@@ -554,7 +571,7 @@ static void fl_hash_thread(gpointer data, gpointer udata) {
         block_len = 0;
       }
     }
-    if((nr = ratecalc_request(&fl_hash_rate, args->can)) <= 0)
+    if((nr = fl_hash_burst(args->lastreset)) <= 0)
       goto finish;
   }
   if(r < 0) {
@@ -617,8 +634,7 @@ static void fl_hash_process() {
   args->path = g_filename_from_utf8(tmp, -1, NULL, NULL, NULL);
   g_free(tmp);
   args->filesize = file->size;
-  args->can = fl_hash_reset;
-  g_object_ref(args->can);
+  args->lastreset = fl_hash_reset;
   g_thread_pool_push(fl_hash_pool, args, NULL);
 }
 
@@ -651,7 +667,6 @@ fl_hash_done_f:
   if(args->err)
     g_error_free(args->err);
   g_free(args->path);
-  g_object_unref(args->can);
   g_free(args);
   // Hash next file in the queue
   fl_hash_process();
@@ -968,8 +983,9 @@ void fl_init() {
   fl_refresh_queue = g_queue_new();
   fl_scan_pool = g_thread_pool_new(fl_scan_thread, NULL, 1, FALSE, NULL);
   fl_hash_pool = g_thread_pool_new(fl_hash_thread, NULL, 1, FALSE, NULL);
+  fl_hash_resetlock = g_mutex_new();
+  fl_hash_resetcond = g_cond_new();
   fl_hash_queue = g_hash_table_new(g_direct_hash, g_direct_equal);
-  fl_hash_reset = g_cancellable_new();
   // Even though the keys are the tth roots, we can just use g_int_hash. The
   // first four bytes provide enough unique data anyway.
   fl_hash_index = g_hash_table_new(g_int_hash, tiger_hash_equal);
