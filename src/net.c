@@ -870,7 +870,7 @@ void net_recvfile(struct net *n, int len, gboolean(*data)(void *, const char *, 
 
 // This is often used to write a raw byte strings, so is not logged for debugging.
 void net_write(struct net *n, const char *buf, int len) {
-  if(n->state == NETST_ASY && !n->syn)
+  if(n->state != NETST_ASY || n->syn)
     g_warning("%s: Write in incorrect state.", net_remoteaddr(n));
   else {
     g_string_append_len(n->wbuf, buf, len);
@@ -880,7 +880,7 @@ void net_write(struct net *n, const char *buf, int len) {
 
 
 void net_writestr(struct net *n, const char *msg) {
-  if(n->state == NETST_ASY && !n->syn)
+  if(n->state != NETST_ASY || n->syn)
     g_warning("%s: Writestr in incorrect state: %s", net_remoteaddr(n), msg);
   else {
     g_debug("%s> %s", net_remoteaddr(n), msg);
@@ -891,7 +891,7 @@ void net_writestr(struct net *n, const char *msg) {
 
 
 void net_writef(struct net *n, const char *fmt, ...) {
-  if(n->state == NETST_ASY && !n->syn)
+  if(n->state != NETST_ASY || n->syn)
     g_warning("%s: Writef in incorrect state: %s", net_remoteaddr(n), fmt);
   else {
     int old = n->wbuf->len;
