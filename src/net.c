@@ -870,29 +870,38 @@ void net_recvfile(struct net *n, int len, gboolean(*data)(void *, const char *, 
 
 // This is often used to write a raw byte strings, so is not logged for debugging.
 void net_write(struct net *n, const char *buf, int len) {
-  g_return_if_fail(n->state == NETST_ASY && !n->syn);
-  g_string_append_len(n->wbuf, buf, len);
-  flush;
+  if(n->state == NETST_ASY && !n->syn)
+    g_warning("%s: Write in incorrect state.", net_remoteaddr(n));
+  else {
+    g_string_append_len(n->wbuf, buf, len);
+    flush;
+  }
 }
 
 
 void net_writestr(struct net *n, const char *msg) {
-  g_return_if_fail(n->state == NETST_ASY && !n->syn);
-  g_debug("%s> %s", net_remoteaddr(n), msg);
-  g_string_append(n->wbuf, msg);
-  flush;
+  if(n->state == NETST_ASY && !n->syn)
+    g_warning("%s: Writestr in incorrect state: %s", net_remoteaddr(n), msg);
+  else {
+    g_debug("%s> %s", net_remoteaddr(n), msg);
+    g_string_append(n->wbuf, msg);
+    flush;
+  }
 }
 
 
 void net_writef(struct net *n, const char *fmt, ...) {
-  g_return_if_fail(n->state == NETST_ASY && !n->syn);
-  int old = n->wbuf->len;
-  va_list va;
-  va_start(va, fmt);
-  g_string_append_vprintf(n->wbuf, fmt, va);
-  va_end(va);
-  g_debug("%s> %s", net_remoteaddr(n), n->wbuf->str+old);
-  flush;
+  if(n->state == NETST_ASY && !n->syn)
+    g_warning("%s: Writef in incorrect state: %s", net_remoteaddr(n), fmt);
+  else {
+    int old = n->wbuf->len;
+    va_list va;
+    va_start(va, fmt);
+    g_string_append_vprintf(n->wbuf, fmt, va);
+    va_end(va);
+    g_debug("%s> %s", net_remoteaddr(n), n->wbuf->str+old);
+    flush;
+  }
 }
 
 #undef flush
