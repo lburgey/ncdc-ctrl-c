@@ -161,7 +161,8 @@ static int low_recv(struct net *n, char *buf, int len, const char **err) {
     return -1;
   }
 
-  time(&n->timeout_last);
+  if(n->state != NETST_DIS)
+    time(&n->timeout_last);
   if(r <= 0) {
     *err = !r || !n->tls ? g_strerror(!r ? ECONNRESET : errno) : gnutls_strerror(r);
     return -1;
@@ -200,7 +201,8 @@ static int low_send(struct net *n, const char *buf, int len, const char **err) {
     return -1;
   }
 
-  time(&n->timeout_last);
+  if(n->state != NETST_DIS)
+    time(&n->timeout_last);
   if(r < 0) {
     *err = n->tls ? gnutls_strerror(errno) : g_strerror(errno);
     return -1;
@@ -916,6 +918,7 @@ void net_shutdown(struct net *n, void(*cb)(struct net *)) {
   g_debug("%s: Shutting down", net_remoteaddr(n));
   n->state = NETST_DIS;
   n->cb_shutdown = cb;
+  time(&n->timeout_last);
   if(!n->wbuf->len)
     dis_shutdown(n);
 }
@@ -1157,8 +1160,10 @@ static gboolean handle_timer(gpointer dat) {
   if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_DIS || (n->state == NETST_ASY && !n->timeout_msg))) {
     if(n->state == NETST_DNS || n->state == NETST_CON)
       n->cb_err(n, NETERR_TIMEOUT, g_strerror(ETIMEDOUT));
-    else
+    else {
+      g_debug("%s: Timeout.", net_remoteaddr(n));
       n->cb_err(n, NETERR_TIMEOUT, "Idle timeout");
+    }
     n->timeout_src = 0;
     return FALSE;
   }

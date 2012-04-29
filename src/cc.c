@@ -1359,7 +1359,14 @@ static void handle_error(struct net *n, int action, const char *err) {
   struct cc *cc = n->handle;
   if(!cc->err) // ignore network errors if there already was a protocol error
     g_set_error_literal(&cc->err, 1, 0, err);
-  cc_disconnect(n->handle, action != NETERR_TIMEOUT);
+
+  // If we already were shutting down, that means this cc entry is already in
+  // disconnected state. In that case, just force the net handle in
+  // disconnected state as well.
+  if(n->state == NETST_DIS)
+    net_disconnect(n);
+  else
+    cc_disconnect(n->handle, action == NETERR_TIMEOUT);
 }
 
 
