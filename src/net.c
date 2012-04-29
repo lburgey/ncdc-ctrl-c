@@ -879,12 +879,26 @@ void net_write(struct net *n, const char *buf, int len) {
 }
 
 
+// Logs the write for debugging. Does not log a trailing newline if there is one.
+static void asy_debugwrite(struct net *n, int oldlen) {
+  if(n->wbuf->len && n->wbuf->len > oldlen) {
+    char end = n->wbuf->str[n->wbuf->len-1];
+    if(end == '\n')
+      n->wbuf->str[n->wbuf->len-1] = 0;
+    g_debug("%s> %s", net_remoteaddr(n), n->wbuf->str+oldlen);
+    if(end == '\n')
+      n->wbuf->str[n->wbuf->len-1] = end;
+  }
+}
+
+
 void net_writestr(struct net *n, const char *msg) {
   if(n->state != NETST_ASY || n->syn)
     g_warning("%s: Writestr in incorrect state: %s", net_remoteaddr(n), msg);
   else {
-    g_debug("%s> %s", net_remoteaddr(n), msg);
+    int old = n->wbuf->len;
     g_string_append(n->wbuf, msg);
+    asy_debugwrite(n, old);
     flush;
   }
 }
@@ -899,7 +913,7 @@ void net_writef(struct net *n, const char *fmt, ...) {
     va_start(va, fmt);
     g_string_append_vprintf(n->wbuf, fmt, va);
     va_end(va);
-    g_debug("%s> %s", net_remoteaddr(n), n->wbuf->str+old);
+    asy_debugwrite(n, old);
     flush;
   }
 }
