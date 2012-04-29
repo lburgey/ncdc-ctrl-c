@@ -945,7 +945,8 @@ void net_settls(struct net *n, gboolean serv, void (*cb)(struct net *, const cha
   g_return_if_fail(!n->tls);
   gnutls_init(&n->tls, serv ? GNUTLS_SERVER : GNUTLS_CLIENT);
   gnutls_credentials_set(n->tls, GNUTLS_CRD_CERTIFICATE, db_certificate);
-  gnutls_priority_set_direct(n->tls, "NORMAL", NULL); // TODO: Make this configurable. No, really.
+  const char *pos;
+  gnutls_priority_set_direct(n->tls, var_get(0, VAR_tls_priority), &pos);
 
   gnutls_transport_set_ptr(n->tls, n);
   gnutls_transport_set_push_function(n->tls, tls_push);

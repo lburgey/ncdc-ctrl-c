@@ -770,6 +770,19 @@ static gboolean s_tls_policy(guint64 hub, const char *key, const char *val, GErr
 }
 
 
+// tls_priority
+
+static char *p_tls_priority(const char *val, GError **err) {
+  gnutls_priority_t prio;
+  const char *pos;
+  if(gnutls_priority_init(&prio, val, &pos) != GNUTLS_E_SUCCESS) {
+    g_set_error(err, 1, 0, "Error parsing priority string at '%s'", pos);
+    return NULL;
+  }
+  gnutls_priority_deinit(prio);
+  return g_strdup(val);
+}
+
 
 
 
@@ -861,6 +874,7 @@ struct var {
   V(show_joinquit,    1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(slots,            1,0, f_int,          p_int_ge1,       NULL,          NULL,         s_hubinfo,       "10")\
   V(tls_policy,       1,1, f_tls_policy,   p_tls_policy,    su_tls_policy, g_tls_policy, s_tls_policy,    G_STRINGIFY(VAR_TLSP_PREFER))\
+  V(tls_priority,     1,0, f_id,           p_tls_priority,  su_old,        NULL,         NULL,            "NORMAL")\
   V(ui_time_format,   1,0, f_id,           p_id,            su_old,        NULL,         NULL,            "[%H:%M:%S]")\
   V(upload_rate,      1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)
 

@@ -520,6 +520,13 @@ static const struct doc_set {
   " that, even if you set this to `prefer', TLS will only be used if the"
   " connecting party also supports it."
 },
+{ "tls_priority", 0, "<string>",
+  "Set the GnuTLS priority string used for all TLS-enabled connections. See the"
+  " \"Priority strings\" section in the GnuTLS manual for details on what this"
+  " does and how it works. Currently it is not possible to set a different"
+  " priority string for different types of connections (e.g. hub or"
+  " incoming/outgoing client connections)."
+},
 { "ui_time_format", 0, "<string>",
   "The format of the time displayed in the lower-left of the screen. Set `-' to"
   " not display a time at all. The string is passed to the Glib"
