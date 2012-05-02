@@ -1348,6 +1348,8 @@ static gboolean udp_handle_out(gpointer dat) {
     g_message("Error sending UDP message: %s.", g_strerror(errno));
   else {
     ratecalc_add(&net_out, m->msglen);
+    if(m->msglen > 0 && m->msg[m->msglen-1] == '\n')
+      m->msg[m->msglen-1] = 0;
     g_debug("UDP:%s:%d> %s", inet_ntoa(m->addr.sin_addr), ntohs(m->addr.sin_port), m->msg);
   }
   g_free(m->msg);
