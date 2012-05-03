@@ -9,6 +9,7 @@ config.h.in
 configure
 depcomp
 .deps/
+.dirstamp
 install-sh
 missing
 stamp-h1
@@ -17,9 +18,9 @@ stamp-h1
 *.h
 !src/ncdc.h
 !src/doc.h
-src/ncdc
-doc/gendoc
+ncdc
+gendoc
 doc/*.1
 doc/ncdc.pod
-util/ncdc-db-upgrade
+ncdc-db-upgrade
 INSTALL

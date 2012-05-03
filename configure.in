@@ -2,7 +2,7 @@
 AC_INIT([ncdc], [1.9g], [projects@yorhel.nl])
 AC_CONFIG_SRCDIR([src/ncdc.h])
 AC_CONFIG_HEADER([config.h])
-AM_INIT_AUTOMAKE([foreign])
+AM_INIT_AUTOMAKE([foreign subdir-objects])
 PKG_PROG_PKG_CONFIG([0.18])
 
 
@@ -181,7 +181,7 @@ AM_CONDITIONAL(USE_GIT_VERSION, test "x$usegitver" = "xyes")
 
 
 
-AC_OUTPUT([GNUmakefile doc/GNUmakefile src/GNUmakefile util/GNUmakefile])
+AC_OUTPUT([GNUmakefile])
 
 
 # Notify user about missing makeheaders
