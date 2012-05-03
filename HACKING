@@ -127,50 +127,6 @@ that some of the reported problems, especially memory leaks, may not
 necessarily come from ncdc itself, but are harmless issues within glib or other
 libraries.
 
-The following is an attempt at a simple valgrind suppression file, save this to
-a file and add the C<--suppressions=$file> argument to the valgrind command in
-order to use it. These suppressions don't cover everything, but will
-significantly reduce the amount of problems reported. Hopefully they aren't so
-general that they might masquerade actual bugs. Note that these suppressions
-may require that your glib library has also been compiled with debugging
-symbols.
-
-  {
-    init keeps memory around
-    Memcheck:Leak
-    ...
-    fun:g_type_init_with_debug_flags
-  }
-  {
-    interfaces are registered dynamically and never freed
-    Memcheck:Leak
-    ...
-    fun:g_type_add_interface_static
-  }
-  {
-    same for types
-    Memcheck:Leak
-    ...
-    fun:g_type_register_static
-  }
-  {
-    class initializations are kept around
-    Memcheck:Leak
-    ...
-    fun:type_class_init_Wm
-  }
-
-If you see a lot of error reports about overlapping memory regions passed to
-C<memcpy()>, then you're probably running a too old version of valgrind with a
-too new version of libc. You can either upgrade valgrind or add the following
-to your suppression file:
-
-  {
-    Valgrind thinks memmove() is a memcpy()
-    Memcheck:Overlap
-    fun:memcpy
-  }
-
 
 
 
@@ -184,7 +140,7 @@ Ncdc uses all kinds of identifiers internally, let's explain some of them.
 =item hubid
 
 A "hub id" is 64bit integer that uniquely identifies a hub. The number is
-randomly generated and assigned upon the first run of </open> for a hub with
+randomly generated and assigned upon the first run of C</open> for a hub with
 that name. The use of hub IDs allow a user to change the name of a hub tab
 without compromising any other IDs or related configuration.
 
