@@ -1,3 +1,24 @@
+1.10 - 2012-05-03
+	- Rewrote network backend to use plain sockets instead of GIO
+	- Added GnuTLS as required dependency
+	- Removed GIO and glib-networking dependencies
+	- Removed 'ncdc-gen-cert' utility - ncdc can now generate certs by itself
+	- Enable client-to-client TLS by default
+	- Added 'tls_priority' setting
+	- Added 'reconnect_timeout' setting
+	- Don't quit ncdc on Ctrl+C
+	- Display age of file list in the title bar
+	- Don't build the 'ncdc-db-upgrade' tool by default
+	- Switched to a single top-level Makefile
+	- Fix '/browse user -f' ('-f' argument after username)
+	- Fix hub login when it checks for public hubs = 0
+	- Fix overflow of long tab titles
+	- Fix loading of microdc2-generated file lists
+	- Fix loading of file lists with an invalid character
+	- Fix occasional crash when TLS is enabled
+	- Fix transfer rate indication and limiting with TLS connections
+	- Fix small memory leak when 'upload_rate' is set
+
 1.9 - 2012-03-14
 	- Allow all 'active_' settings to be changed on a per-hub basis
 	- Allow 'active_ip' to be unset and automatically get IP from hub
