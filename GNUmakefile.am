@@ -26,6 +26,7 @@ ncdc_SOURCES=\
 	src/db.c\
 	src/dl.c\
 	src/fl_local.c\
+	src/fl_save.c\
 	src/fl_util.c\
 	src/hub.c\
 	src/listen.c\
