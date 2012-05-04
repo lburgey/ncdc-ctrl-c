@@ -28,194 +28,235 @@
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <libxml/xmlwriter.h>
 #include <bzlib.h>
 
 
-struct fl_save_context {
-  char *file;     // some name, for debugging purposes
-  BZFILE *fh_bz;  // if BZ2 compression is enabled (implies fh_h!=NULL)
-  FILE *fh_f;     // if we're working with a file
-  GString *buf;   // if we're working with a buffer
-  GError **err;
+#define BUFSIZE (32*1024)
+
+
+struct ctx {
+  GString *buf;     // we're always writing to a (temporary) buffer
+  BZFILE *fh_bz;    // if BZ2 compression is enabled (implies fh_h!=NULL)
+  FILE *fh_f;       // if we're writing to a file
+  const char *file; // Filename
+  char *tmpfile;    // Temp filename
+  gboolean freebuf; // Whether we should free the buffer on close (otherwise it's passed back to the application)
+  GError *err;
 };
 
 
-static int fl_save_write(void *context, const char *buf, int len) {
-  struct fl_save_context *xc = context;
-  if(xc->fh_bz) {
+// Flushes the write buffer to the underlying bzip2/file object (if any).
+static int doflush(struct ctx *x) {
+  if(x->fh_bz) {
     int bzerr;
-    BZ2_bzWrite(&bzerr, xc->fh_bz, (char *)buf, len);
-    if(bzerr == BZ_OK)
-      return len;
+    BZ2_bzWrite(&bzerr, x->fh_bz, x->buf->str, x->buf->len);
     if(bzerr == BZ_IO_ERROR) {
-      g_set_error_literal(xc->err, 1, 0, "bzip2 write error.");
+      g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
-    g_return_val_if_reached(-1);
-  } else if(xc->fh_f) {
-    int r = fwrite(buf, 1, len, xc->fh_f);
-    if(r < 0)
-      g_set_error(xc->err, 1, 0, "Write error: %s", g_strerror(errno));
-    return r;
-  } else if(xc->buf) {
-    g_string_append_len(xc->buf, buf, len);
-    return len;
-  } else
-    g_return_val_if_reached(-1);
-}
+    g_return_val_if_fail(bzerr == BZ_OK, -1);
+    x->buf->len = 0;
 
+  } else if(x->fh_f) {
+    int r = fwrite(x->buf, 1, x->buf->len, x->fh_f);
+    if(r < 0) {
+      g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
+      return -1;
+    }
+    x->buf->len = 0;
+  }
 
-static int fl_save_close(void *context) {
-  struct fl_save_context *xc = context;
-  int bzerr;
-  if(xc->fh_bz)
-    BZ2_bzWriteClose(&bzerr, xc->fh_bz, 0, NULL, NULL);
-  if(xc->fh_f)
-    fclose(xc->fh_f);
-  g_free(xc->file);
-  g_slice_free(struct fl_save_context, xc);
   return 0;
 }
 
 
-// recursive
-static gboolean fl_save_childs(xmlTextWriterPtr writer, struct fl_list *fl, int level) {
-  int i;
-  for(i=0; i<fl->sub->len; i++) {
-    struct fl_list *cur = g_ptr_array_index(fl->sub, i);
-#define CHECKFAIL(f) if(f < 0) return FALSE
-    if(cur->isfile && cur->hastth) {
-      char tth[40];
-      base32_encode(cur->tth, tth);
-      tth[39] = 0;
-      CHECKFAIL(xmlTextWriterStartElement(writer, (xmlChar *)"File"));
-      CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"Name", (xmlChar *)cur->name));
-      CHECKFAIL(xmlTextWriterWriteFormatAttribute(writer, (xmlChar *)"Size", "%"G_GUINT64_FORMAT, cur->size));
-      CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"TTH", (xmlChar *)tth));
-      CHECKFAIL(xmlTextWriterEndElement(writer));
+#define checkflush if(x->buf->len >= BUFSIZE && doflush(x)) return -1
+
+// Append a single character, returns the calling function on error.
+#define ac(c) do {\
+    g_string_append_c(x->buf, c);\
+    checkflush;\
+  } while(0)
+
+// Append a string
+#define as(s) do {\
+    g_string_append(x->buf, s);\
+    checkflush;\
+  } while(0)
+
+// Append an unsigned 64-bit integer
+#define a64(i) do {\
+    g_string_append_printf(x->buf, "%"G_GUINT64_FORMAT, i);\
+    checkflush;\
+  } while(0)
+
+
+// XML-escape and write a string literal
+static int al(struct ctx *x, const char *str) {
+  while(*str) {
+    switch(*str) {
+    case '&': as("&amp;"); break;
+    case '>': as("&gt;"); break;
+    case '<': as("&lt;"); break;
+    case '"': as("&quot;"); break;
+    default: ac(*str);
     }
-    if(!cur->isfile) {
-      CHECKFAIL(xmlTextWriterStartElement(writer, (xmlChar *)"Directory"));
-      CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"Name", (xmlChar *)cur->name));
-      if(level < 1 && fl_list_isempty(cur))
-        CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"Incomplete", (xmlChar *)"1"));
-      if(level > 0)
-        fl_save_childs(writer, cur, level-1);
-      CHECKFAIL(xmlTextWriterEndElement(writer));
-    }
-#undef CHECKFAIL
+    str++;
   }
-  return TRUE;
 }
 
 
-static xmlTextWriterPtr fl_save_open(const char *file, gboolean isbz2, GString *buf, GError **err) {
-  // open file (if any)
-  FILE *f = NULL;
+// Recursively write the child nodes of an fl_list item.
+static int af(struct ctx *x, struct fl_list *fl, int level) {
+  int i;
+  for(i=0; i<fl->sub->len; i++) {
+    struct fl_list *cur = g_ptr_array_index(fl->sub, i);
+
+    if(cur->isfile && cur->hastth) {
+      char tth[40] = {};
+      base32_encode(cur->tth, tth);
+      as("<File Name=\"");
+      if(al(x, cur->name))
+        return -1;
+      as("\" Size=\"");
+      a64(cur->size);
+      as("\" TTH=\"");
+      as(tth); // No need to escape this, it's base32
+      as("\"/>\n");
+    }
+
+    if(!cur->isfile) {
+      as("<Directory Name=\"");
+      if(al(x, cur->name))
+        return -1;
+      ac('"');
+      if(level < 1 && !fl_list_isempty(cur))
+        as(" Incomplete=\"1\"");
+
+      if(level > 0) {
+        as(">\n");
+        if(af(x, cur, level-1))
+          return 0;
+        as("</Directory>\n");
+      } else
+        as("/>\n");
+    }
+  }
+  return 0;
+}
+
+
+// Write the top-level XML
+static int at(struct ctx *x, struct fl_list *fl, int level) {
+  as("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
+  as("<FileListing Version=\"1\" Generator=\"");
+  if(al(x, PACKAGE_STRING))
+    return -1;
+  as("\" CID=\"");
+  as(var_get(0, VAR_cid)); // No need to escape this, it's base32
+  as("\" Base=\"");
+  if(fl) {
+    char *path = fl_list_path(fl);
+    if(al(x, path)) {
+      g_free(path);
+      return -1;
+    }
+    // Make sure the base path always ends with a slash, some clients will fail otherwise.
+    if(path[strlen(path)-1] != '/')
+      ac('/');
+    g_free(path);
+  } else
+    ac('/');
+  as("\">\n");
+
+  // all <Directory ..> elements
+  if(fl && fl->sub)
+    if(af(x, fl, level-1))
+      return -1;
+
+  as("</FileListing>\n");
+}
+
+
+static int ctx_open(struct ctx *x, const char *file, GString *buf) {
+  memset(x, 0, sizeof(struct ctx));
+  x->buf = buf;
+  x->file = file;
+
+  // Always make sure we have a buffer
+  if(!x->buf) {
+    x->buf = g_string_new("");
+    x->freebuf = TRUE;
+  }
+
+  gboolean isbz2 = FALSE;
   if(file) {
-    f = fopen(file, "w");
-    if(!f) {
-      g_set_error_literal(err, 1, 0, g_strerror(errno));
-      return NULL;
+    isbz2 = strlen(file) > 4 && strcmp(file+(strlen(file)-4), ".bz2") == 0;
+    x->tmpfile = g_strdup_printf("%s.tmp-%d", file, rand());
+  }
+
+  // open temp file
+  if(x->tmpfile) {
+    x->fh_f = fopen(x->tmpfile, "w");
+    if(!x->fh_f) {
+      g_set_error_literal(&x->err, 1, 0, g_strerror(errno));
+      return -1;
     }
   }
 
   // open compressor (if needed)
-  BZFILE *bzf = NULL;
-  if(f && isbz2) {
+  if(isbz2 && x->fh_f) {
     int bzerr;
-    bzf = BZ2_bzWriteOpen(&bzerr, f, 7, 0, 0);
+    x->fh_bz = BZ2_bzWriteOpen(&bzerr, x->fh_f, 7, 0, 0);
     if(bzerr != BZ_OK) {
-      g_set_error(err, 1, 0, "Unable to create BZ2 file (%d)", bzerr);
-      fclose(f);
-      return NULL;
+      g_set_error(&x->err, 1, 0, "Unable to create bzip2 file (%d): %s", bzerr, g_strerror(errno));
+      return -1;
     }
   }
 
-  // create writer
-  struct fl_save_context *xc = g_slice_new0(struct fl_save_context);
-  xc->err = err;
-  xc->file = file ? g_strdup(file) : g_strdup("string buffer");
-  xc->fh_f = f;
-  xc->fh_bz = bzf;
-  xc->buf = buf;
-  xmlTextWriterPtr writer = xmlNewTextWriter(xmlOutputBufferCreateIO(fl_save_write, fl_save_close, xc, NULL));
+  return 0;
+}
 
-  if(!writer) {
-    fl_save_close(xc);
-    if(err && !*err)
-      g_set_error_literal(err, 1, 0, "Failed to open file.");
-    return NULL;
+
+// Flushes the buffer, closes/renames the file and frees some memory. Does not
+// free x->file (not our property) and x->err (still used).
+static int ctx_close(struct ctx *x) {
+  if(!x->err)
+    doflush(x);
+
+  if(x->freebuf)
+    g_string_free(x->buf, TRUE);
+
+  if(x->fh_bz) {
+    int bzerr;
+    BZ2_bzWriteClose(&bzerr, x->fh_bz, 0, NULL, NULL);
+    if(bzerr != BZ_OK && !x->err)
+      g_set_error(&x->err, 1, 0, "Error closing bzip2 stream (%d): %s", bzerr, g_strerror(errno));
   }
-  return writer;
+
+  if(x->fh_f && fclose(x->fh_f) && !x->err)
+    g_set_error(&x->err, 1, 0, "Error closing file: %s", g_strerror(errno));
+
+  if(x->tmpfile && !x->err && rename(x->tmpfile, x->file) < 0)
+    g_set_error(&x->err, 1, 0, "Error moving file: %s", g_strerror(errno));
+
+  if(x->tmpfile && x->err)
+    unlink(x->tmpfile);
+  g_free(x->tmpfile);
+  return x->err ? -1 : 0;
 }
 
 
 gboolean fl_save(struct fl_list *fl, const char *file, GString *buf, int level, GError **err) {
   g_return_val_if_fail(err == NULL || *err == NULL, FALSE);
 
-  // open a temporary file for writing
-  gboolean isbz2 = FALSE;
-  char *tmpfile = NULL;
-  if(file) {
-    isbz2 = strlen(file) > 4 && strcmp(file+(strlen(file)-4), ".bz2") == 0;
-    tmpfile = g_strdup_printf("%s.tmp-%d", file, rand());
-  }
+  struct ctx x;
+  if(!ctx_open(&x, file, buf))
+    at(&x, fl, level);
+  ctx_close(&x);
+  if(x.err)
+    g_propagate_error(err, x.err);
 
-  xmlTextWriterPtr writer = fl_save_open(tmpfile, isbz2, buf, err);
-  if(!writer) {
-    g_free(tmpfile);
-    return FALSE;
-  }
-
-  // write
-  gboolean success = TRUE;
-#define CHECKFAIL(f) if((f) < 0) { success = FALSE; goto fl_save_error; }
-  CHECKFAIL(xmlTextWriterSetIndent(writer, 1));
-  CHECKFAIL(xmlTextWriterSetIndentString(writer, (xmlChar *)"\t"));
-  // <FileListing ..>
-  CHECKFAIL(xmlTextWriterStartDocument(writer, NULL, "utf-8", "yes"));
-  CHECKFAIL(xmlTextWriterStartElement(writer, (xmlChar *)"FileListing"));
-  CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"Version", (xmlChar *)"1"));
-  CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"Generator", (xmlChar *)PACKAGE_STRING));
-  CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"CID", (xmlChar *)var_get(0, VAR_cid)));
-
-  char *path = fl ? fl_list_path(fl) : g_strdup("/");
-  // Make sure the base path always ends with a slash, some clients will fail otherwise.
-  if(path[strlen(path)-1] != '/') {
-    char *tmp = g_strdup_printf("%s/", path);
-    g_free(path);
-    path = tmp;
-  }
-  CHECKFAIL(xmlTextWriterWriteAttribute(writer, (xmlChar *)"Base", (xmlChar *)path));
-  g_free(path);
-
-  // all <Directory ..> elements
-  if(fl && fl->sub) {
-    if(!fl_save_childs(writer, fl, level-1)) {
-      success = FALSE;
-      goto fl_save_error;
-    }
-  }
-
-  CHECKFAIL(xmlTextWriterEndElement(writer));
-
-  // close
-fl_save_error:
-  xmlTextWriterEndDocument(writer);
-  xmlFreeTextWriter(writer);
-
-  // rename or unlink file
-  if(file) {
-    if(success && rename(tmpfile, file) < 0) {
-      if(err && !*err)
-        g_set_error_literal(err, 1, 0, g_strerror(errno));
-      success = FALSE;
-    }
-    if(!success)
-      unlink(tmpfile);
-    g_free(tmpfile);
-  }
-  return success;
+  return x.err ? FALSE : TRUE;
 }
+
