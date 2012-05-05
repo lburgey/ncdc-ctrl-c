@@ -50,16 +50,15 @@ static int doflush(struct ctx *x) {
   if(x->fh_bz) {
     int bzerr;
     BZ2_bzWrite(&bzerr, x->fh_bz, x->buf->str, x->buf->len);
-    if(bzerr == BZ_IO_ERROR) {
+    if(bzerr != BZ_OK) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
-    g_return_val_if_fail(bzerr == BZ_OK, -1);
     x->buf->len = 0;
 
   } else if(x->fh_f) {
     int r = fwrite(x->buf, 1, x->buf->len, x->fh_f);
-    if(r < 0) {
+    if(r != x->buf->len) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
