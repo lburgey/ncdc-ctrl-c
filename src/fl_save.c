@@ -26,6 +26,7 @@
 
 #include "ncdc.h"
 #include <errno.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <bzlib.h>
@@ -102,6 +103,7 @@ static int al(struct ctx *x, const char *str) {
     }
     str++;
   }
+  return 0;
 }
 
 
@@ -174,6 +176,7 @@ static int at(struct ctx *x, struct fl_list *fl, int level) {
       return -1;
 
   as("</FileListing>\n");
+  return 0;
 }
 
 
