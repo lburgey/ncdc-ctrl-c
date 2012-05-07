@@ -89,4 +89,5 @@ struct var;
 #include "ui_util.h"
 #include "util.h"
 #include "vars.h"
+#include "xmlread.h"
 

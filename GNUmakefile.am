@@ -37,7 +37,8 @@ ncdc_SOURCES=\
 	src/ui.c\
 	src/ui_util.c\
 	src/util.c\
-	src/vars.c
+	src/vars.c\
+	src/xmlread.c
 
 auto_headers=$(ncdc_SOURCES:.c=.h)
 noinst_HEADERS=src/doc.h src/ncdc.h ${auto_headers}
