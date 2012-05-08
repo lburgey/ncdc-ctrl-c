@@ -66,7 +66,7 @@ ${ncdc_OBJECTS}: ${auto_headers}
 
 # append -DGIT_VERSION, when enabled
 if USE_GIT_VERSION
-GIT_VERSION := $(shell sh -c 'git describe --abbrev=4 --dirty=-d | sed s/^v//')
+GIT_VERSION := $(shell sh -c 'cd "$(top_srcdir)"; git describe --abbrev=4 --dirty=-d | sed s/^v//')
 ncdc_CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
 endif
 
