@@ -76,6 +76,7 @@ struct var;
 #include "commands.h"
 #include "db.h"
 #include "dl.h"
+#include "fl_load.h"
 #include "fl_local.h"
 #include "fl_save.h"
 #include "fl_util.h"
