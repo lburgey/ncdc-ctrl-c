@@ -58,7 +58,7 @@ static int doflush(struct ctx *x) {
     x->buf->len = 0;
 
   } else if(x->fh_f) {
-    int r = fwrite(x->buf, 1, x->buf->len, x->fh_f);
+    int r = fwrite(x->buf->str, 1, x->buf->len, x->fh_f);
     if(r != x->buf->len) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
