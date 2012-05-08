@@ -68,9 +68,10 @@
 
 #if INTERFACE
 
-#define XMLT_OPEN   1 // arg1 = tag name
-#define XMLT_CLOSE  2 // arg1 = tag name or NULL for self-closing tags
-#define XMLT_ATTR   3 // arg1 = name, arg2 = value (not validated to be correct UTF-8)
+#define XMLT_OPEN    1 // arg1 = tag name
+#define XMLT_CLOSE   2 // arg1 = tag name or NULL for self-closing tags
+#define XMLT_ATTR    3 // arg1 = name, arg2 = value (not validated to be correct UTF-8)
+#define XMLT_ATTDONE 4 // no args, indicates that there are no more attributes for the last opened tag
 
 // Called whenever an XMLT_ entity has been found. Should return 0 to
 // continue processing, anything else to abort.
@@ -122,6 +123,14 @@ static void err(struct ctx *x, const char *fmt, ...) {
   }
   va_end(arg);
   longjmp(x->jmp, 1);
+}
+
+
+static void callcb(struct ctx *x, int type, const char *arg1, const char *arg2) {
+  if(x->cb(x->dat, type, arg1, arg2, &x->err)) {
+    g_prefix_error(&x->err, "Line %d:%d: ", x->line, x->byte);
+    err(x, "Processing aborted by the application");
+  }
 }
 
 
@@ -407,8 +416,7 @@ static void element(struct ctx *x) {
 
   lit(x, "<");
   Name(x);
-  if(x->cb(x->dat, XMLT_OPEN, x->name, NULL, &x->err))
-    err(x, "Processing aborted by the application");
+  callcb(x, XMLT_OPEN, x->name, NULL);
 
   while(1) {
     // Is this tag ending yet?
@@ -423,15 +431,15 @@ static void element(struct ctx *x) {
     Name(x);
     Eq(x);
     AttValue(x);
-    if(x->cb(x->dat, XMLT_ATTR, x->name, x->val, &x->err))
-      err(x, "Processing aborted by the application");
+    callcb(x, XMLT_ATTR, x->name, x->val);
   }
+
+  callcb(x, XMLT_ATTDONE, NULL, NULL);
 
   // EmptyElementTag
   if(*x->buf == '/') {
     lit(x, "/>");
-    if(x->cb(x->dat, XMLT_CLOSE, NULL, NULL, &x->err))
-      err(x, "Processing aborted by the application");
+    callcb(x, XMLT_CLOSE, NULL, NULL);
     return;
   }
 
@@ -443,8 +451,7 @@ static void element(struct ctx *x) {
   lit(x, "</");
   Name(x);
   lit(x, ">");
-  if(x->cb(x->dat, XMLT_CLOSE, x->name, NULL, &x->err))
-    err(x, "Processing aborted by the application");
+  callcb(x, XMLT_CLOSE, x->name, NULL);
 }
 
 
