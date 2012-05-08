@@ -18,11 +18,13 @@ REQUIREMENTS
   bzip2
   sqlite3
   glib2
-  libxml2
   gnutls
 
-  If you are upgrading from version 1.5 or earlier, you will also need gdbm in
-  order to build the ncdc-db-upgrade utility.
+  To build the ncdc-db-upgrade utility (disabled by default), the following
+  libraries are also required:
+
+  gdbm
+  libxml2
 
 
 
@@ -40,6 +42,9 @@ BUILDING FROM A RELEASE TARBALL
     ./configure --prefix=/usr
     make (or gmake)
     (sudo) make install
+
+  To build the ncdc-db-upgrade utility, append --enable-db-upgrade to the
+  configure script.
 
 
 

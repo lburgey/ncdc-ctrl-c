@@ -130,19 +130,6 @@ AC_CHECK_LIB([bz2],
              [AC_SUBST([BZ2_LIBS],[-lbz2])],
              [AC_MSG_ERROR(bzip2 library is required)])
 
-# Check for gdbm
-if test "x$enable_db_upgrade" = "xyes"; then
-  have_gdbm=no
-  AC_CHECK_LIB([gdbm],
-               [gdbm_open],
-               [AC_CHECK_HEADERS([gdbm.h], [have_gdbm=yes])])
-  if test "x$have_gdbm" != "xyes"; then
-    AC_MSG_ERROR([--enable-db-upgrade set, but GDBM is not available])
-  fi
-  AC_SUBST([GDBM_LIBS],[-lgdbm])
-fi
-
-
 # Check for SQLite3
 PKG_CHECK_EXISTS([sqlite3],[
     PKG_CHECK_MODULES([SQLITE],[sqlite3])
@@ -158,8 +145,26 @@ PKG_CHECK_EXISTS([sqlite3],[
 
 # Check for modules
 PKG_CHECK_MODULES([GLIB],   [glib-2.0 >= 2.24 gthread-2.0])
-PKG_CHECK_MODULES([LIBXML], [libxml-2.0])
 PKG_CHECK_MODULES([GNUTLS], [gnutls >= 2.4])
+
+
+
+# Check for extra dependencies for ncdc-db-upgrade
+if test "x$enable_db_upgrade" = "xyes"; then
+  # GDBM
+  have_gdbm=no
+  AC_CHECK_LIB([gdbm],
+               [gdbm_open],
+               [AC_CHECK_HEADERS([gdbm.h], [have_gdbm=yes])])
+  if test "x$have_gdbm" != "xyes"; then
+    AC_MSG_ERROR([--enable-db-upgrade set, but GDBM is not available])
+  fi
+  AC_SUBST([GDBM_LIBS],[-lgdbm])
+
+  # libxml2
+  PKG_CHECK_MODULES([LIBXML], [libxml-2.0])
+fi
+
 
 
 # Check whether we should use the version string from AC_INIT(), or use
