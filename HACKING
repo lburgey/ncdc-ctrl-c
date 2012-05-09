@@ -6,15 +6,6 @@ these programs should come with a default Perl installation.
 
 =head1 DEBUGGING
 
-=head2 Known issues
-
-If you experience random crashes while using ncdc, try setting the I<tls_policy>
-setting to I<disabled>. If this gets rid of the crashes, then most likely you're
-hit by bugs in glib-networking:
-L<#659821|https://bugzilla.gnome.org/show_bug.cgi?id=659821> and
-L<#660252|https://bugzilla.gnome.org/show_bug.cgi?id=660252>.
-
-
 =head2 General
 
 Any debugging messages are written to C<~/.ncdc/stderr.log>. Note that this
