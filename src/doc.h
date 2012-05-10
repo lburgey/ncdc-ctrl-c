@@ -273,18 +273,16 @@ static const struct doc_set {
 },
 { "active_port", 1, "<integer>",
   "The listen port for incoming connections in active mode. Set to `0' to"
-  " automatically assign a random port. If TLS support is enabled, another"
-  " TCP port will be opened on the configured port + 1. See the"
-  " `active_tls_port' setting to change this. This setting is by default also"
-  " used for the UDP port, see the `active_udp_port' setting for that. If you"
-  " are behind a router or firewall, make sure that you have configured it to"
-  " forward and allow these ports."
+  " automatically assign a random port. This setting is by default also used"
+  " for the UDP and TLS ports, see the `active_udp_port' and `active_tls_port'"
+  " settings to change those. If you are behind a router or firewall, make"
+  " sure that you have configured it to forward and allow these ports."
 },
 { "active_tls_port", 1, "<integer>",
-  "The listen port for incoming TLS connections in active mode. Defaults to the"
-  " `active_port' setting plus one, or to a random number of `active_port' is"
-  " not set. This setting has no effect when the `tls_policy' setting has been"
-  " disabled."
+  "The listen port for incoming TLS connections in active mode. Incoming TLS"
+  " connections by default use the same port as non-TLS connections, but when"
+  " traffic shaping is in effect it may be beneficial to separate these ports."
+  " This setting has no effect when the `tls_policy' setting has been disabled."
 },
 { "active_udp_port", 1, "<integer>",
   "The listen port for incoming UDP connections in active mode. Defaults to the"

@@ -90,6 +90,7 @@ struct net {
   gboolean writing : 8; // state ASY. Whether 'socksrc' is write poll event.
   gboolean wantwrite : 8; // state ASY. Whether we want a write on sock.
 
+  GString *tlsrbuf; // state ASY. Temporary buffer for data read before switching to TLS. (To be fed to GnuTLS)
   GString *rbuf; // state ASY. Read buffer.
   GString *wbuf; // state ASY. Write buffer.
 
@@ -138,6 +139,19 @@ struct net {
 
 static ssize_t tls_pull(gnutls_transport_ptr_t dat, void *buf, size_t len) {
   struct net *n = dat;
+
+  // Special buffer to allow passing read data back to the GnuTLS stream.
+  if(n->tlsrbuf) {
+    memcpy(buf, n->tlsrbuf->str, MIN(len, n->tlsrbuf->len));
+    if(len >= n->tlsrbuf->len) {
+      g_string_free(n->tlsrbuf, TRUE);
+      n->tlsrbuf = NULL;
+    } else
+      g_string_erase(n->tlsrbuf, 0, len);
+    return len;
+  }
+
+  // Otherwise, get the data directly from the network.
   int r = recv(n->sock, buf, len, 0);
   if(r < 0)
     gnutls_transport_set_errno(n->tls, errno == EWOULDBLOCK ? EAGAIN : errno);
@@ -948,15 +962,21 @@ void net_shutdown(struct net *n, void(*cb)(struct net *)) {
 
 
 // Enables TLS-mode and initates the handshake. May not be called when there's
-// something in the read or write buffer.
+// something in the write buffer. If the read buffer is not empty, its contents
+// are assumed to be valid TLS packets and will be forwarded to gnutls.
 // The callback function, if set, will be called when the handshake has
 // completed. If a certificate of the peer has been received, its keyprint will
 // be sent as first argument. NULL otherwise.
-// TODO: Probably want to allow something in the read buffer in the future.
+// Once TLS is enabled, it's not possible to switch back to a raw connection
+// again.
 void net_settls(struct net *n, gboolean serv, void (*cb)(struct net *, const char *)) {
   g_return_if_fail(n->state == NETST_ASY);
-  g_return_if_fail(!n->rbuf->len && !n->wbuf->len);
+  g_return_if_fail(!n->wbuf->len);
   g_return_if_fail(!n->tls);
+  if(n->rbuf->len) {
+    n->tlsrbuf = n->rbuf;
+    n->rbuf = g_string_sized_new(1024);
+  }
   gnutls_init(&n->tls, serv ? GNUTLS_SERVER : GNUTLS_CLIENT);
   gnutls_credentials_set(n->tls, GNUTLS_CRD_CERTIFICATE, db_certificate);
   const char *pos;
@@ -1294,6 +1314,11 @@ void net_disconnect(struct net *n) {
     g_string_free(n->rbuf, TRUE);
     g_string_free(n->wbuf, TRUE);
     n->rbuf = n->wbuf = NULL;
+  }
+
+  if(n->tlsrbuf) {
+    g_string_free(n->tlsrbuf, TRUE);
+    n->tlsrbuf = NULL;
   }
 
   if(n->socksrc) {

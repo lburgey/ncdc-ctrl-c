@@ -288,8 +288,9 @@ struct cc {
   gboolean slot_granted : 1;
   gboolean dl : 1;
   guint16 port;
+  guint16 state;
+  guint16 active_type; // listen.c:LBT_*
   int dir;        // (NMDC) our direction. -1 = Upload, otherwise: Download $dir
-  int state;
   char cid[24];   // (ADC) only the first 8 bytes are used for checking,
                   // but the full 24 bytes are stored after receiving CINF (for logging)
   int timeout_src;
@@ -1473,24 +1474,30 @@ void cc_adc_connect(struct cc *cc, struct hub_user *u, const char *laddr, unsign
 }
 
 
-// TODO: Also detect and handle TLS, to allow combining the incoming TCP/TLS
-// ports into a single port.
 static void handle_detectprotocol(struct net *net, char *dat, int len) {
   g_return_if_fail(len > 0);
   struct cc *cc = net->handle;
+
+  // Enable TLS
+  if(!cc->tls && (cc->active_type == LBT_TLS || ((cc->active_type & LBT_TLS) && *dat >= 0x14 && *dat <= 0x17))) {
+    cc->tls = TRUE;
+    net_settls(cc->net, TRUE, handle_handshake);
+    if(net_is_connected(cc->net))
+      net_peekbytes(cc->net, 1, handle_detectprotocol); // Queue another detectprotocol to detect NMDC/ADC
+    return;
+  }
+
   if(dat[0] == 'C')
     cc->adc = TRUE;
   net_readmsg(cc->net, cc->adc ? '\n' : '|', cc->adc ? adc_handle : nmdc_handle);
 }
 
 
-void cc_incoming(struct cc *cc, guint16 port, int sock, const char *addr, gboolean tls) {
+void cc_incoming(struct cc *cc, guint16 port, int sock, const char *addr, int type) {
   net_connected(cc->net, sock, addr);
-  if(tls)
-    net_settls(cc->net, TRUE, handle_handshake);
   if(!net_is_connected(cc->net))
     return;
-  cc->tls = tls;
+  cc->active_type = type;
   cc->port = port;
   cc->active = TRUE;
   cc->state = CCS_HANDSHAKE;
