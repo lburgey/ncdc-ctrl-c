@@ -222,20 +222,20 @@ static gboolean int_in_array(const int *arr, int needle) {
 }
 
 
-void adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
+gboolean adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
   if(!g_utf8_validate(str, -1, NULL)) {
     g_set_error_literal(err, 1, 0, "Invalid encoding.");
-    return;
+    return FALSE;
   }
 
   if(strlen(str) < 4) {
     g_set_error_literal(err, 1, 0, "Message too short.");
-    return;
+    return FALSE;
   }
 
   if(*str != 'B' && *str != 'C' && *str != 'D' && *str != 'E' && *str != 'F' && *str != 'H' && *str != 'I' && *str != 'U') {
     g_set_error_literal(err, 1, 0, "Invalid ADC type");
-    return;
+    return FALSE;
   }
   c->type = *str;
   c->cmd = ADC_TOCMD(str+1);
@@ -243,7 +243,7 @@ void adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
   const char *off = str+4;
   if(off[0] && off[0] != ' ') {
     g_set_error_literal(err, 1, 0, "Invalid characters after command.");
-    return;
+    return FALSE;
   }
   off++;
 
@@ -253,12 +253,12 @@ void adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
   if(c->type == 'B' || c->type == 'D' || c->type == 'E' || c->type == 'F') {
     if(strlen(off) < 4) {
       g_set_error_literal(err, 1, 0, "Message too short");
-      return;
+      return FALSE;
     }
     c->source = ADC_DFCC(off);
     if(off[4] && off[4] != ' ') {
       g_set_error_literal(err, 1, 0, "Invalid characters after argument.");
-      return;
+      return FALSE;
     }
     off += off[4] ? 5 : 4;
   }
@@ -267,12 +267,12 @@ void adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
   if(c->type == 'D' || c->type == 'E') {
     if(strlen(off) < 4) {
       g_set_error_literal(err, 1, 0, "Message too short");
-      return;
+      return FALSE;
     }
     c->dest = ADC_DFCC(off);
     if(off[4] && off[4] != ' ') {
       g_set_error_literal(err, 1, 0, "Invalid characters after argument.");
-      return;
+      return FALSE;
     }
     off += off[4] ? 5 : 4;
   }
@@ -285,18 +285,18 @@ void adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
     int l = strchr(off, ' ') ? strchr(off, ' ')-off : strlen(off);
     if((l % 5) != 0) {
       g_set_error_literal(err, 1, 0, "Message too short");
-      return;
+      return FALSE;
     }
     int i;
     for(i=0; i<l/5; i++) {
       int f = ADC_DFCC(off+i*5+1);
       if(off[i*5] == '+' && !int_in_array(feats, f)) {
         g_set_error_literal(err, 1, 0, "Feature broadcast for a feature we don't have.");
-        return;
+        return FALSE;
       }
       if(off[i*5] == '-' && int_in_array(feats, f)) {
         g_set_error_literal(err, 1, 0, "Feature broadcast excluding a feature we have.");
-        return;
+        return FALSE;
       }
     }
     off += off[l] ? l+1 : l;
@@ -318,11 +318,13 @@ void adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
     g_strfreev(s);
     if(i < c->argc) {
       g_strfreev(a);
-      return;
+      return FALSE;
     }
     c->argv = a;
   } else
     c->argv = NULL;
+
+  return TRUE;
 }
 
 

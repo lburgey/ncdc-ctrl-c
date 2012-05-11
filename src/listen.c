@@ -155,44 +155,13 @@ static gboolean listen_tcp_handle(gpointer dat) {
 }
 
 
-static void listen_udp_handle_msg(char *addr, char *msg, gboolean adc) {
-  if(!msg[0])
-    return;
-  struct search_r *r = NULL;
-
-  // ADC
-  if(adc) {
-    GError *err = NULL;
-    struct adc_cmd cmd;
-    adc_parse(msg, &cmd, NULL, &err);
-    if(err) {
-      g_message("ADC parse error from UDP:%s: %s. --> %s", addr, err->message, msg);
-      g_error_free(err);
-      return;
-    }
-    r = search_parse_adc(NULL, &cmd);
-    g_strfreev(cmd.argv);
-
-  // NMDC
-  } else
-    r = search_parse_nmdc(NULL, msg);
-
-  // Handle search result
-  if(r) {
-    ui_search_global_result(r);
-    search_r_free(r);
-  } else
-    g_message("Invalid search result from UDP:%s: %s", addr, msg);
-}
-
-
 static gboolean listen_udp_handle(gpointer dat) {
   static char buf[5000]; // can be static, this function is only called in the main thread.
   struct listen_bind *b = dat;
 
   struct sockaddr_in a = {};
   socklen_t len = sizeof(a);
-  int r = recvfrom(b->sock, buf, sizeof(buf), 0, (struct sockaddr *)&a, &len);
+  int r = recvfrom(b->sock, buf, sizeof(buf)-1, 0, (struct sockaddr *)&a, &len);
 
   // handle error
   if(r < 0) {
@@ -209,24 +178,13 @@ static gboolean listen_udp_handle(gpointer dat) {
   char addr_str[100];
   g_snprintf(addr_str, 100, "%s:%d", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
 
-  // check for ADC or NMDC
-  gboolean adc = FALSE;
-  if(buf[0] == 'U')
-    adc = TRUE;
-  else if(buf[0] != '$') {
-    g_message("CC:UDP:%s: Received invalid message: %s", addr_str, buf);
-    return TRUE;
+  // Since all incoming messages must be search results, just pass the messages to search.c
+  buf[r] = 0;
+  if(!search_handle_udp(addr_str, buf)) {
+    // buf may have been modified, and with SUDP it may even be encrypted, so
+    // this error reporting may not be too useful.
+    g_message("UDP:%s: Invalid message: %s", addr_str, buf);
   }
-
-  // handle message. since all we receive is either URES or $SR, we can handle that here
-  char *cur = buf, *next = buf;
-  while((next = strchr(cur, adc ? '\n' : '|')) != NULL) {
-    *(next++) = 0;
-    g_debug("UDP:%s< %s", addr_str, cur);
-    listen_udp_handle_msg(addr_str, cur, adc);
-    cur = next;
-  }
-
   return TRUE;
 }
 

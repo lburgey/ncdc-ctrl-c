@@ -1170,14 +1170,8 @@ static void adc_handle(struct net *net, char *msg, int _len) {
   case ADCC_RES:
     if(cmd.type != 'D' || cmd.argc < 3)
       g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
-    else {
-      struct search_r *r = search_parse_adc(hub, &cmd);
-      if(r) {
-        ui_search_global_result(r);
-        search_r_free(r);
-      } else
-        g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
-    }
+    else if(!search_handle_adc(hub, &cmd))
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     break;
 
   default:
@@ -1589,12 +1583,8 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
 
   // $SR
   if(strncmp(cmd, "$SR", 3) == 0) {
-    struct search_r *r = search_parse_nmdc(hub, cmd);
-    if(r) {
-      ui_search_global_result(r);
-      search_r_free(r);
-    } else
-      g_message("Received invalid $SR: %s", cmd);
+    if(!search_handle_nmdc(hub, cmd))
+      g_message("Received invalid $SR from %s", net_remoteaddr(hub->net));
   }
 
   // global hub message

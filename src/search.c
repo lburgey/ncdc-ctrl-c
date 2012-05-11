@@ -29,8 +29,8 @@
 #include <string.h>
 
 
+// TODO: Keep a list of active searches and remove the ui_search_* dependency.
 
-// Search related helper functions
 
 #if INTERFACE
 
@@ -95,195 +95,6 @@ struct search_r *search_r_copy(struct search_r *r) {
   struct search_r *res = g_slice_dup(struct search_r, r);
   res->file = g_strdup(r->file);
   return res;
-}
-
-
-// Currently requires hub to be valid. Modifies msg in-place for temporary stuff.
-struct search_r *search_parse_nmdc(struct hub *hub, char *msg) {
-  struct search_r r = {};
-  char *tmp, *tmp2;
-  gboolean hastth = FALSE;
-
-  // forward search to get the username and offset to the filename
-  if(strncmp(msg, "$SR ", 4) != 0)
-    return NULL;
-  msg += 4;
-  char *user = msg;
-  msg = strchr(msg, ' ');
-  if(!msg)
-    return NULL;
-  *(msg++) = 0;
-  r.file = msg;
-
-  // msg is now searched backwards, because we can't reliably determine the end
-  // of the filename otherwise.
-
-  // <space>(hub_ip:hub_port).
-  tmp = strrchr(msg, ' ');
-  if(!tmp)
-    return NULL;
-  *(tmp++) = 0;
-  if(*(tmp++) != '(')
-    return NULL;
-  char *hubaddr = tmp;
-  tmp = strchr(tmp, ')');
-  if(!tmp)
-    return NULL;
-  *tmp = 0;
-
-  // <0x05>TTH:stuff
-  tmp = strrchr(msg, 5);
-  if(!tmp)
-    return NULL;
-  *(tmp++) = 0;
-  if(strncmp(tmp, "TTH:", 4) == 0) {
-    if(!istth(tmp+4))
-      return NULL;
-    base32_decode(tmp+4, r.tth);
-    hastth = TRUE;
-  }
-
-  // <space>free_slots/total_slots. We only care about the free slots.
-  tmp = strrchr(msg, ' ');
-  if(!tmp)
-    return NULL;
-  *(tmp++) = 0;
-  r.slots = g_ascii_strtoull(tmp, &tmp2, 10);
-  if(tmp == tmp2 || !tmp2 || *tmp2 != '/')
-    return NULL;
-
-  // At this point, msg contains either "filename<0x05>size" in the case of a
-  // file or "path" in the case of a directory.
-  tmp = strrchr(msg, 5);
-  if(tmp) {
-    // files must have a TTH
-    if(!hastth)
-      return NULL;
-    *(tmp++) = 0;
-    r.size = g_ascii_strtoull(tmp, &tmp2, 10);
-    if(tmp == tmp2 || !tmp2 || *tmp2)
-      return NULL;
-  } else
-    r.size = G_MAXUINT64;
-
-  // \ -> /, and remove trailing slashes
-  for(tmp = r.file; *tmp; tmp++)
-    if(*tmp == '\\')
-      *tmp = '/';
-  while(--tmp > r.file && *tmp == '/')
-    *tmp = 0;
-
-  // For active search results: figure out the hub
-  // TODO: Use the hub list associated with the incoming port of listen.c?
-  if(!hub) {
-    tmp = strchr(hubaddr, ':') ? g_strdup(hubaddr) : g_strdup_printf("%s:411", hubaddr);
-    int colon = strchr(tmp, ':') - tmp;
-    GList *n;
-    for(n=ui_tabs; n; n=n->next) {
-      struct ui_tab *t = n->data;
-      if(t->type != UIT_HUB || !t->hub->nick_valid || t->hub->adc)
-        continue;
-      // Excact hub:ip match, stop searching
-      if(strcmp(tmp, net_remoteaddr(t->hub->net)) == 0) {
-        hub = t->hub;
-        break;
-      }
-      // Otherwise, try a fuzzy search (ignoring the port)
-      tmp[colon] = 0;
-      if(strncmp(tmp, net_remoteaddr(t->hub->net), colon) == 0)
-        hub = t->hub;
-      tmp[colon] = ':';
-    }
-    g_free(tmp);
-    if(!hub)
-      return NULL;
-  }
-
-  // Figure out r.uid
-  struct hub_user *u = g_hash_table_lookup(hub->users, user);
-  if(!u)
-    return NULL;
-  r.uid = u->uid;
-
-  // If we're here, then we can safely copy and return the result.
-  struct search_r *res = g_slice_dup(struct search_r, &r);
-  res->file = nmdc_unescape_and_decode(hub, r.file);
-  return res;
-}
-
-
-struct search_r *search_parse_adc(struct hub *hub, struct adc_cmd *cmd) {
-  struct search_r r = {};
-  char *tmp, *tmp2;
-
-  // If this came from UDP, fetch the users' CID
-  if(!hub && (cmd->type != 'U' || cmd->argc < 1 || !istth(cmd->argv[0])))
-    return NULL;
-  char cid[24];
-  if(!hub)
-    base32_decode(cmd->argv[0], cid);
-  char **argv = hub ? cmd->argv : cmd->argv+1;
-
-  // file
-  r.file = adc_getparam(argv, "FN", NULL);
-  if(!r.file)
-    return NULL;
-  gboolean isfile = TRUE;
-  while(strlen(r.file) > 1 && r.file[strlen(r.file)-1] == '/') {
-    r.file[strlen(r.file)-1] = 0;
-    isfile = FALSE;
-  }
-
-  // tth & size
-  tmp = isfile ? adc_getparam(argv, "TR", NULL) : NULL;
-  if(tmp) {
-    if(!istth(tmp))
-      return NULL;
-    base32_decode(tmp, r.tth);
-    tmp = adc_getparam(argv, "SI", NULL);
-    if(!tmp)
-      return NULL;
-    r.size = g_ascii_strtoull(tmp, &tmp2, 10);
-    if(tmp == tmp2 || !tmp2 || *tmp2)
-      return NULL;
-  } else
-    r.size = G_MAXUINT64;
-
-  // slots
-  tmp = adc_getparam(argv, "SL", NULL);
-  if(tmp) {
-    r.slots = g_ascii_strtoull(tmp, &tmp2, 10);
-    if(tmp == tmp2 || !tmp2 || *tmp2)
-      return NULL;
-  }
-
-  // uid - passive
-  if(hub) {
-    struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd->source));
-    if(!u)
-      return NULL;
-    r.uid = u->uid;
-
-  // uid - active. Active responses must have the hubid in the token, from
-  // which we can generate the uid.
-  } else {
-    tmp = adc_getparam(argv, "TO", NULL);
-    if(!tmp)
-      return NULL;
-    guint64 hubid = g_ascii_strtoull(tmp, &tmp2, 10);
-    if(tmp == tmp2 || !tmp2 || *tmp2)
-      return NULL;
-    struct tiger_ctx t;
-    tiger_init(&t);
-    tiger_update(&t, (char *)&hubid, 8);
-    tiger_update(&t, cid, 24);
-    char res[24];
-    tiger_final(&t, res);
-    memcpy(&r.uid, res, 8);
-  }
-
-  // If we're here, then we can safely copy and return the result.
-  return search_r_copy(&r);
 }
 
 
@@ -412,3 +223,255 @@ gboolean search_alltth(char *tth, struct ui_tab *parent) {
   q->type = 9;
   return search_do(q, NULL, parent);
 }
+
+
+
+
+// Modifies msg in-place for temporary stuff.
+static struct search_r *parse_nmdc(struct hub *hub, char *msg) {
+  struct search_r r = {};
+  char *tmp, *tmp2;
+  gboolean hastth = FALSE;
+
+  // forward search to get the username and offset to the filename
+  if(strncmp(msg, "$SR ", 4) != 0)
+    return NULL;
+  msg += 4;
+  char *user = msg;
+  msg = strchr(msg, ' ');
+  if(!msg)
+    return NULL;
+  *(msg++) = 0;
+  r.file = msg;
+
+  // msg is now searched backwards, because we can't reliably determine the end
+  // of the filename otherwise.
+
+  // <space>(hub_ip:hub_port).
+  tmp = strrchr(msg, ' ');
+  if(!tmp)
+    return NULL;
+  *(tmp++) = 0;
+  if(*(tmp++) != '(')
+    return NULL;
+  char *hubaddr = tmp;
+  tmp = strchr(tmp, ')');
+  if(!tmp)
+    return NULL;
+  *tmp = 0;
+
+  // <0x05>TTH:stuff
+  tmp = strrchr(msg, 5);
+  if(!tmp)
+    return NULL;
+  *(tmp++) = 0;
+  if(strncmp(tmp, "TTH:", 4) == 0) {
+    if(!istth(tmp+4))
+      return NULL;
+    base32_decode(tmp+4, r.tth);
+    hastth = TRUE;
+  }
+
+  // <space>free_slots/total_slots. We only care about the free slots.
+  tmp = strrchr(msg, ' ');
+  if(!tmp)
+    return NULL;
+  *(tmp++) = 0;
+  r.slots = g_ascii_strtoull(tmp, &tmp2, 10);
+  if(tmp == tmp2 || !tmp2 || *tmp2 != '/')
+    return NULL;
+
+  // At this point, msg contains either "filename<0x05>size" in the case of a
+  // file or "path" in the case of a directory.
+  tmp = strrchr(msg, 5);
+  if(tmp) {
+    // files must have a TTH
+    if(!hastth)
+      return NULL;
+    *(tmp++) = 0;
+    r.size = g_ascii_strtoull(tmp, &tmp2, 10);
+    if(tmp == tmp2 || !tmp2 || *tmp2)
+      return NULL;
+  } else
+    r.size = G_MAXUINT64;
+
+  // \ -> /, and remove trailing slashes
+  for(tmp = r.file; *tmp; tmp++)
+    if(*tmp == '\\')
+      *tmp = '/';
+  while(--tmp > r.file && *tmp == '/')
+    *tmp = 0;
+
+  // For active search results: figure out the hub
+  // TODO: Use the hub list associated with the incoming port of listen.c?
+  if(!hub) {
+    tmp = strchr(hubaddr, ':') ? g_strdup(hubaddr) : g_strdup_printf("%s:411", hubaddr);
+    int colon = strchr(tmp, ':') - tmp;
+    GList *n;
+    for(n=ui_tabs; n; n=n->next) {
+      struct ui_tab *t = n->data;
+      if(t->type != UIT_HUB || !t->hub->nick_valid || t->hub->adc)
+        continue;
+      // Excact hub:ip match, stop searching
+      if(strcmp(tmp, net_remoteaddr(t->hub->net)) == 0) {
+        hub = t->hub;
+        break;
+      }
+      // Otherwise, try a fuzzy search (ignoring the port)
+      tmp[colon] = 0;
+      if(strncmp(tmp, net_remoteaddr(t->hub->net), colon) == 0)
+        hub = t->hub;
+      tmp[colon] = ':';
+    }
+    g_free(tmp);
+    if(!hub)
+      return NULL;
+  }
+
+  // Figure out r.uid
+  struct hub_user *u = g_hash_table_lookup(hub->users, user);
+  if(!u)
+    return NULL;
+  r.uid = u->uid;
+
+  // If we're here, then we can safely copy and return the result.
+  struct search_r *res = g_slice_dup(struct search_r, &r);
+  res->file = nmdc_unescape_and_decode(hub, r.file);
+  return res;
+}
+
+
+static struct search_r *parse_adc(struct hub *hub, struct adc_cmd *cmd) {
+  struct search_r r = {};
+  char *tmp, *tmp2;
+
+  // If this came from UDP, fetch the users' CID
+  if(!hub && (cmd->type != 'U' || cmd->argc < 1 || !istth(cmd->argv[0])))
+    return NULL;
+  char cid[24];
+  if(!hub)
+    base32_decode(cmd->argv[0], cid);
+  char **argv = hub ? cmd->argv : cmd->argv+1;
+
+  // file
+  r.file = adc_getparam(argv, "FN", NULL);
+  if(!r.file)
+    return NULL;
+  gboolean isfile = TRUE;
+  while(strlen(r.file) > 1 && r.file[strlen(r.file)-1] == '/') {
+    r.file[strlen(r.file)-1] = 0;
+    isfile = FALSE;
+  }
+
+  // tth & size
+  tmp = isfile ? adc_getparam(argv, "TR", NULL) : NULL;
+  if(tmp) {
+    if(!istth(tmp))
+      return NULL;
+    base32_decode(tmp, r.tth);
+    tmp = adc_getparam(argv, "SI", NULL);
+    if(!tmp)
+      return NULL;
+    r.size = g_ascii_strtoull(tmp, &tmp2, 10);
+    if(tmp == tmp2 || !tmp2 || *tmp2)
+      return NULL;
+  } else
+    r.size = G_MAXUINT64;
+
+  // slots
+  tmp = adc_getparam(argv, "SL", NULL);
+  if(tmp) {
+    r.slots = g_ascii_strtoull(tmp, &tmp2, 10);
+    if(tmp == tmp2 || !tmp2 || *tmp2)
+      return NULL;
+  }
+
+  // uid - passive
+  if(hub) {
+    struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd->source));
+    if(!u)
+      return NULL;
+    r.uid = u->uid;
+
+  // uid - active. Active responses must have the hubid in the token, from
+  // which we can generate the uid.
+  } else {
+    tmp = adc_getparam(argv, "TO", NULL);
+    if(!tmp)
+      return NULL;
+    guint64 hubid = g_ascii_strtoull(tmp, &tmp2, 10);
+    if(tmp == tmp2 || !tmp2 || *tmp2)
+      return NULL;
+    struct tiger_ctx t;
+    tiger_init(&t);
+    tiger_update(&t, (char *)&hubid, 8);
+    tiger_update(&t, cid, 24);
+    char res[24];
+    tiger_final(&t, res);
+    memcpy(&r.uid, res, 8);
+  }
+
+  // If we're here, then we can safely copy and return the result.
+  return search_r_copy(&r);
+}
+
+
+gboolean search_handle_adc(struct hub *hub, struct adc_cmd *cmd) {
+  struct search_r *r = parse_adc(hub, cmd);
+  if(!r)
+    return FALSE;
+
+  ui_search_global_result(r);
+  search_r_free(r);
+  return TRUE;
+}
+
+
+// May modify *msg in-place.
+gboolean search_handle_nmdc(struct hub *hub, char *msg) {
+  struct search_r *r = parse_nmdc(hub, msg);
+  if(!r)
+    return FALSE;
+
+  ui_search_global_result(r);
+  search_r_free(r);
+  return TRUE;
+}
+
+
+// May modify *msg in-place.
+gboolean search_handle_udp(const char *addr, char *msg) {
+  if(!*msg)
+    return TRUE;
+
+  // check for ADC or NMDC
+  gboolean adc = FALSE;
+  if(msg[0] == 'U')
+    adc = TRUE;
+  else if(msg[0] != '$')
+    return FALSE;
+
+  // handle message
+  char *next = msg;
+  while((next = strchr(msg, adc ? '\n' : '|')) != NULL) {
+    *(next++) = 0;
+    g_debug("UDP:%s< %s", addr, msg);
+
+    if(adc) {
+      struct adc_cmd cmd;
+      if(!adc_parse(msg, &cmd, NULL, NULL))
+        return FALSE;
+      gboolean r = search_handle_adc(NULL, &cmd);
+      g_strfreev(cmd.argv);
+      if(!r)
+        return FALSE;
+
+    } else if(!search_handle_nmdc(NULL, msg))
+      return FALSE;
+
+    msg = next;
+  }
+
+  return TRUE;
+}
+
