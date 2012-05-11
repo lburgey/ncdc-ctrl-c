@@ -336,7 +336,7 @@ static void c_disconnect(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type == UIT_HUB) {
-    if(net_is_idle(tab->hub->net))
+    if(net_is_idle(tab->hub->net) && !tab->hub->reconnect_timer)
       ui_m(NULL, 0, "Not connected.");
     else
       hub_disconnect(tab->hub, FALSE);
