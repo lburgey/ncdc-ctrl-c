@@ -34,6 +34,7 @@ ncdc_SOURCES=\
 	src/main.c\
 	src/net.c\
 	src/proto.c\
+	src/search.c\
 	src/tth.c\
 	src/ui.c\
 	src/ui_util.c\
