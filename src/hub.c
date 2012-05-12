@@ -26,6 +26,9 @@
 
 #include "ncdc.h"
 #include <stdlib.h>
+#if SUDP_SUPPORT
+# include <gnutls/crypto.h>
+#endif
 
 
 #if INTERFACE
@@ -799,6 +802,100 @@ static void setownip(struct hub *hub, guint32 ip) {
 }
 
 
+static void adc_sch_reply_send(struct hub *hub, const char *dest, GString *r, gboolean udp, const char *key) {
+  if(!udp) {
+    net_writestr(hub->net, r->str);
+    return;
+  } else if(!key) {
+    net_udp_send(dest, r->str);
+    return;
+  }
+
+#if SUDP_SUPPORT
+  // net_udp_* can't log this since it will be encrypted, so log it here.
+  char end = r->len > 0 ? r->str[r->len-1] : 0;
+  if(end == '\n')
+    r->str[r->len-1] = 0;
+  g_debug("SUDP:%s: %s", dest, r->str);
+  if(end == '\n')
+    r->str[r->len-1] = end;
+
+  char iv[16];
+  gnutls_datum_t ivd = { (unsigned char *)iv, 16 };
+  gnutls_datum_t keyd = { (unsigned char *)key, 16 };
+
+  // prepend 16 random bytes to message
+  g_warn_if_fail(gnutls_rnd(GNUTLS_RND_NONCE, iv, 16) == 0);
+  g_string_prepend_len(r, iv, 16);
+
+  // use PKCS#5 padding to align the message length to the cypher block size (16)
+  int pad = 16 - (r->len & 15);
+  int i;
+  for(i=0; i<pad; i++)
+    g_string_append_c(r, pad);
+
+  // Now encrypt & send
+  gnutls_cipher_hd_t ciph;
+  memset(iv, 0, 16);
+  gnutls_cipher_init(&ciph, GNUTLS_CIPHER_AES_128_CBC, &keyd, &ivd);
+  g_warn_if_fail(gnutls_cipher_encrypt(ciph, r->str, r->len) == 0);
+  gnutls_cipher_deinit(ciph);
+  net_udp_send_raw(dest, r->str, r->len);
+#endif
+}
+
+
+static void adc_sch_reply(struct hub *hub, struct adc_cmd *cmd, struct hub_user *u, struct fl_list **res, int len) {
+#if SUDP_SUPPORT
+  char *ky = adc_getparam(cmd->argv, "KY", NULL); // SUDP key
+#else
+  char *ky = NULL;
+#endif
+  char *to = adc_getparam(cmd->argv, "TO", NULL); // token
+
+  char sudpkey[16];
+  if(ky && isbase32(ky) && strlen(ky) == 26)
+    base32_decode(ky, sudpkey);
+
+  int slots = var_get_int(0, VAR_slots);
+  int slots_free = slots - cc_slots_in_use(NULL);
+  if(slots_free < 0)
+    slots_free = 0;
+
+  char tth[40] = {};
+  char *cid = NULL;
+  char *dest = NULL;
+  if(u->hasudp4) {
+    cid = var_get(0, VAR_cid);
+    dest = g_strdup_printf("%s:%d", ip4_unpack(u->ip4), u->udp4);
+  }
+
+  int i;
+  for(i=0; i<len; i++) {
+    GString *r = u->hasudp4 ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
+    if(u->hasudp4)
+      g_string_append_printf(r, " %s", cid);
+    if(to)
+      adc_append(r, "TO", to);
+    g_string_append_printf(r, " SL%d SI%"G_GUINT64_FORMAT, slots_free, res[i]->size);
+    char *path = fl_list_path(res[i]);
+    adc_append(r, "FN", path);
+    g_free(path);
+    if(res[i]->isfile) {
+      base32_encode(res[i]->tth, tth);
+      g_string_append_printf(r, " TR%s", tth);
+    } else
+      g_string_append_c(r, '/'); // make sure a directory path ends with a slash
+    g_string_append_c(r, '\n');
+
+    adc_sch_reply_send(hub, dest, r, u->hasudp4, ky ? sudpkey : NULL);
+    g_string_free(r, TRUE);
+  }
+
+  g_free(dest);
+}
+
+
 static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
   char *an = adc_getparam(cmd->argv, "AN", NULL); // and
   char *no = adc_getparam(cmd->argv, "NO", NULL); // not
@@ -806,7 +903,6 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
   char *le = adc_getparam(cmd->argv, "LE", NULL); // less-than
   char *ge = adc_getparam(cmd->argv, "GE", NULL); // greater-than
   char *eq = adc_getparam(cmd->argv, "EQ", NULL); // equal
-  char *to = adc_getparam(cmd->argv, "TO", NULL); // token
   char *ty = adc_getparam(cmd->argv, "TY", NULL); // type (1=file, 2=dir)
   char *tr = adc_getparam(cmd->argv, "TR", NULL); // TTH root
   char *td = adc_getparam(cmd->argv, "TD", NULL); // tree depth
@@ -867,51 +963,9 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
   } else
     i = fl_search_rec(fl_local_list, &s, res, max);
 
-  if(!i)
-    goto adc_search_cleanup;
+  if(i)
+    adc_sch_reply(hub, cmd, u, res, i);
 
-  int slots = var_get_int(0, VAR_slots);
-  int slots_free = slots - cc_slots_in_use(NULL);
-  if(slots_free < 0)
-    slots_free = 0;
-  char tth[40] = {};
-  char *cid = NULL;
-  char *dest = NULL;
-  if(u->hasudp4) {
-    cid = var_get(0, VAR_cid);
-    dest = g_strdup_printf("%s:%d", ip4_unpack(u->ip4), u->udp4);
-  }
-
-  // reply
-  while(--i>=0) {
-    // create reply
-    GString *r = u->hasudp4 ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
-    if(u->hasudp4)
-      g_string_append_printf(r, " %s", cid);
-    if(to)
-      adc_append(r, "TO", to);
-    g_string_append_printf(r, " SL%d SI%"G_GUINT64_FORMAT, slots_free, res[i]->size);
-    char *path = fl_list_path(res[i]);
-    adc_append(r, "FN", path);
-    g_free(path);
-    if(res[i]->isfile) {
-      base32_encode(res[i]->tth, tth);
-      g_string_append_printf(r, " TR%s", tth);
-    } else
-      g_string_append_c(r, '/'); // make sure a directory path ends with a slash
-    g_string_append_c(r, '\n');
-
-    // send
-    if(u->hasudp4)
-      net_udp_send(dest, r->str);
-    else
-      net_writestr(hub->net, r->str);
-    g_string_free(r, TRUE);
-  }
-
-  g_free(dest);
-
-adc_search_cleanup:
   fl_search_free_and(s.and);
   if(s.not)
     g_regex_unref(s.not);

@@ -50,6 +50,10 @@
 
 #define TIMEOUT_SUPPORT GLIB_CHECK_VERSION(2, 26, 0)
 
+// SUDP requires gnutls_rnd(), added in 2.12.0
+#define SUDP_SUPPORT (GNUTLS_VERSION_MAJOR > 2 || (GNUTLS_VERSION_MAJOR == 2 && GNUTLS_VERSION_MINOR >= 12))
+
+
 // forward declaration for data types
 // (some of these remain incomplete, others are defined in interfaces)
 struct cc;
