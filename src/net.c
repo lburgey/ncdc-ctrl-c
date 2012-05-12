@@ -1373,9 +1373,6 @@ static gboolean udp_handle_out(gpointer dat) {
     g_message("Error sending UDP message: %s.", g_strerror(errno));
   else {
     ratecalc_add(&net_out, m->msglen);
-    if(m->msglen > 0 && m->msg[m->msglen-1] == '\n')
-      m->msg[m->msglen-1] = 0;
-    g_debug("UDP:%s:%d> %s", inet_ntoa(m->addr.sin_addr), ntohs(m->addr.sin_port), m->msg);
   }
   g_free(m->msg);
   g_slice_free(struct net_udp, m);
@@ -1389,13 +1386,14 @@ void net_udp_send_raw(const char *dest, const char *msg, int len) {
   char *ip = str_portsplit(dest, 412, &port);
 
   struct net_udp *m = g_slice_new0(struct net_udp);
-  m->msg = g_strdup(msg);
+  m->msg = g_memdup(msg, len);
   m->msglen = len;
   m->addr.sin_family = AF_INET;
   m->addr.sin_port = htons(port);
   if(inet_pton(AF_INET, ip, &m->addr.sin_addr) != 1) {
     g_debug("UDP: Invalid IP: %s", ip);
     g_free(ip);
+    return;
   }
   g_free(ip);
 
@@ -1409,8 +1407,22 @@ void net_udp_send_raw(const char *dest, const char *msg, int len) {
 }
 
 
+static void net_udp_debug() {
+  if(net_udp_queue->tail) {
+    struct net_udp *m = net_udp_queue->tail->data;
+    char end = m->msglen > 0 ? m->msg[m->msglen-1] : 0;
+    if(end == '\n')
+      m->msg[m->msglen-1] = 0;
+    g_debug("UDP:%s:%d> %s", inet_ntoa(m->addr.sin_addr), ntohs(m->addr.sin_port), m->msg);
+    if(end == '\n')
+      m->msg[m->msglen-1] = end;
+  }
+}
+
+
 void net_udp_send(const char *dest, const char *msg) {
   net_udp_send_raw(dest, msg, strlen(msg));
+  net_udp_debug();
 }
 
 
@@ -1421,6 +1433,7 @@ void net_udp_sendf(const char *dest, const char *fmt, ...) {
   va_end(va);
   net_udp_send_raw(dest, str, strlen(str));
   g_free(str);
+  net_udp_debug();
 }
 
 
