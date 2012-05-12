@@ -112,11 +112,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   // Handling the attributes of a Directory element.
   case S_DIROPEN:
     if(type == XMLT_ATTR && strcmp(arg1, "Name") == 0 && !x->name) {
-      if(!g_utf8_validate(arg2, -1, NULL)) {
-        g_set_error(err, 1, 0, "Invalid UTF-8");
-        return -1;
-      }
-      x->name = g_strdup(arg2);
+      x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
       return 0;
     }
     if(type == XMLT_ATTDONE) {
@@ -175,11 +171,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   // attributes with the same name, only the first is used.)
   case S_FILEOPEN:
     if(type == XMLT_ATTR && strcmp(arg1, "Name") == 0 && !x->name) {
-      if(!g_utf8_validate(arg2, -1, NULL)) {
-        g_set_error(err, 1, 0, "Invalid UTF-8");
-        return -1;
-      }
-      x->name = g_strdup(arg2);
+      x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
       return 0;
     }
     if(type == XMLT_ATTR && strcmp(arg1, "TTH") == 0 && !x->filehastth) {
