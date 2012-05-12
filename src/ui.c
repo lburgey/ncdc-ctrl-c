@@ -1573,7 +1573,7 @@ static void ui_fl_key(struct ui_tab *tab, guint64 key) {
     else if(!sel->hastth)
       ui_m(NULL, 0, "No TTH hash known.");
     else
-      search_alltth(sel->tth, tab);
+      ui_search_open_tth(sel->tth, tab);
     break;
   }
 
@@ -1941,7 +1941,7 @@ static void ui_dl_key(guint64 key) {
     else if(sel->islist)
       ui_m(NULL, 0, "Can't search for alternative sources for file lists.");
     else
-      search_alltth(sel->hash, ui_dl);
+      ui_search_open_tth(sel->hash, ui_dl);
     break;
   case INPT_CHAR('R'): // R - remove user from all queued files
   case INPT_CHAR('r'): // r - remove user from file
@@ -2054,23 +2054,19 @@ static gint ui_search_sort_func(gconstpointer da, gconstpointer db, gpointer dat
 }
 
 
-// Called when a new search result has been received. Looks through the opened
-// search tabs and adds the result to the list if it matches the query.
-void ui_search_global_result(struct search_r *r) {
-  GList *n;
-  for(n=ui_tabs; n; n=n->next) {
-    struct ui_tab *t = n->data;
-    if(t->type == UIT_SEARCH && search_match(t->search_q, r)) {
-      g_sequence_insert_sorted(t->list->list, search_r_copy(r), ui_search_sort_func, t);
-      ui_listing_inserted(t->list);
-      t->prio = MAX(t->prio, UIP_LOW);
-    }
-  }
+// Callback from search.c when we have a new result.
+void ui_search_result(struct search_r *r, void *dat) {
+  struct ui_tab *tab = dat;
+  g_sequence_insert_sorted(tab->list->list, search_r_copy(r), ui_search_sort_func, tab);
+  ui_listing_inserted(tab->list);
+  tab->prio = MAX(tab->prio, UIP_LOW);
 }
 
 
-// Ownership of q is passed to the tab, and will be freed on close.
-struct ui_tab *ui_search_create(struct hub *hub, struct search_q *q) {
+// Performs a seach and opens a new tab for the results.
+// May return NULL on error, behaves similarly to search_add() w.r.t *err.
+// Ownership of q is passed to the tab, and will be freed on error or close.
+struct ui_tab *ui_search_create(struct hub *hub, struct search_q *q, GError **err) {
   struct ui_tab *tab = g_new0(struct ui_tab, 1);
   tab->type = UIT_SEARCH;
   tab->search_q = q;
@@ -2078,6 +2074,14 @@ struct ui_tab *ui_search_create(struct hub *hub, struct search_q *q) {
   tab->search_hide_hub = hub ? TRUE : FALSE;
   tab->order = UISCH_FILE;
   time(&tab->t_open);
+
+  // Do the search
+  q->cb_dat = tab;
+  q->cb = ui_search_result;
+  if(!search_add(hub, q, err)) {
+    g_free(tab);
+    return NULL;
+  }
 
   // figure out a suitable tab->name
   if(q->type == 9) {
@@ -2100,8 +2104,22 @@ struct ui_tab *ui_search_create(struct hub *hub, struct search_q *q) {
 }
 
 
+// Open a new tab for a TTH search on all hubs, or write a message to ui_m() on
+// error.
+void ui_search_open_tth(const char *tth, struct ui_tab *parent) {
+  GError *err = NULL;
+  struct ui_tab *rtab = ui_search_create(NULL, search_q_new_tth(tth), &err);
+  if(err) {
+    ui_mf(NULL, 0, "%s%s", rtab ? "Warning: " : "", err->message);
+    g_error_free(err);
+  }
+  if(rtab)
+    ui_tab_open(rtab, TRUE, parent);
+}
+
+
 void ui_search_close(struct ui_tab *tab) {
-  search_q_free(tab->search_q);
+  search_remove(tab->search_q);
   g_sequence_free(tab->list->list);
   ui_listing_free(tab->list);
   ui_tab_remove(tab);
@@ -2302,7 +2320,7 @@ static void ui_search_key(struct ui_tab *tab, guint64 key) {
     else if(sel->size == G_MAXUINT64)
       ui_m(NULL, 0, "Can't look for alternative sources for directories.");
     else
-      search_alltth(sel->tth, tab);
+      ui_search_open_tth(sel->tth, tab);
     break;
   case INPT_CHAR('h'): // h - show/hide hub column
     tab->search_hide_hub = !tab->search_hide_hub;

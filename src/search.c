@@ -29,10 +29,11 @@
 #include <string.h>
 
 
-// TODO: Keep a list of active searches and remove the ui_search_* dependency.
-
-
 #if INTERFACE
+
+// Callback function, to be called when a search result has been received on an
+// active search_q.
+typedef void (*search_cb)(struct search_r *r, void *dat);
 
 struct search_q {
   char type;    // NMDC search type (if 9, ignore all fields except tth)
@@ -40,6 +41,9 @@ struct search_q {
   guint64 size; // 0 = disabled.
   char **query; // list of patterns to include
   char tth[24]; // only used when type = 9
+
+  search_cb cb;
+  void *cb_dat;
 };
 
 // Represents a search result, coming from either NMDC $SR or ADC RES.
@@ -57,6 +61,12 @@ struct search_type {
 };
 
 #endif
+
+
+// A set of search_q pointers, listing the searches we're currently interested in.
+static GHashTable *search_list = NULL;
+
+
 
 // NMDC search types and the relevant ADC SEGA extensions.
 struct search_type search_types[] = { {},
@@ -81,6 +91,15 @@ void search_q_free(struct search_q *q) {
 }
 
 
+// Convenience function to create a search_q for a TTH search.
+struct search_q * search_q_new_tth(const char *tth) {
+  struct search_q *q = g_slice_new0(struct search_q);
+  memcpy(q->tth, tth, 24);
+  q->type = 9;
+  return q;
+}
+
+
 // Can be used as a GDestroyNotify callback
 void search_r_free(gpointer data) {
   struct search_r *r = data;
@@ -95,42 +114,6 @@ struct search_r *search_r_copy(struct search_r *r) {
   struct search_r *res = g_slice_dup(struct search_r, r);
   res->file = g_strdup(r->file);
   return res;
-}
-
-
-// Matches a search result with a query.
-gboolean search_match(struct search_q *q, struct search_r *r) {
-  // TTH match is fast and easy
-  if(q->type == 9)
-    return r->size == G_MAXUINT64 ? FALSE : memcmp(q->tth, r->tth, 24) == 0 ? TRUE : FALSE;
-  // Match file/dir type
-  if(q->type == 8 && r->size != G_MAXUINT64)
-    return FALSE;
-  if((q->size || (q->type >= 2 && q->type <= 7)) && r->size == G_MAXUINT64)
-    return FALSE;
-  // Match size
-  if(q->size && !(q->ge ? r->size >= q->size : r->size <= q->size))
-    return FALSE;
-  // Match query
-  char **str = q->query;
-  for(; str&&*str; str++)
-    if(G_LIKELY(!str_casestr(r->file, *str)))
-      return FALSE;
-  // Match extension
-  char **ext = search_types[(int)q->type].exts;
-  if(ext && *ext) {
-    char *l = strrchr(r->file, '.');
-    if(G_UNLIKELY(!l || !l[1]))
-      return FALSE;
-    l++;
-    for(; *ext; ext++)
-      if(G_UNLIKELY(g_ascii_strcasecmp(l, *ext) == 0))
-        break;
-    if(!*ext)
-      return FALSE;
-  }
-  // Okay, we have a match
-  return TRUE;
 }
 
 
@@ -171,12 +154,16 @@ char *search_command(struct search_q *q, gboolean onhub) {
 
 
 // Performs the search query on the given hub, or on all hubs if hub=NULL.
-// Opens the search tab. Returns FALSE on error and throws an error message at
-// ui_m(). Ownership of the search_q struct is passed to this function, and
-// should not be relied upon after calling.
-gboolean search_do(struct search_q *q, struct hub *hub, struct ui_tab *parent) {
+// Returns FALSE on error and sets *err. *err may also be set when TRUE is
+// returned and there's a non-fatal warning.
+// Ownership of the search_q struct is passed to search.c. If this function
+// returns an error, it will be freed, otherwise it is added to the active
+// search list and must be freed/removed with search_remove() when there's no
+// interest in results anymore.
+// q->cb() will be called for each result that arrives, until search_remove().
+gboolean search_add(struct hub *hub, struct search_q *q, GError **err) {
   if((!q->query || !*q->query) && q->type != 9) {
-    ui_m(NULL, 0, "No search query given.");
+    g_set_error(err, 1, 0, "No search query given.");
     search_q_free(q);
     return FALSE;
   }
@@ -184,16 +171,17 @@ gboolean search_do(struct search_q *q, struct hub *hub, struct ui_tab *parent) {
   // Search a single hub
   if(hub) {
     if(!hub->nick_valid) {
-      ui_m(NULL, 0, "Not connected");
+      g_set_error(err, 1, 0, "Not connected");
       search_q_free(q);
       return FALSE;
     }
     if(var_get_bool(hub->id, VAR_chat_only))
-      ui_m(NULL, 0, "WARNING: Searching on a hub with the `chat_only' setting enabled.");
+      g_set_error(err, 1, 0, "Searching on a hub with the `chat_only' setting enabled.");
     hub_search(hub, q);
+  }
 
   // Search all hubs (excluding those with chat_only set)
-  } else {
+  else {
     GList *n;
     gboolean one = FALSE;
     for(n=ui_tabs; n; n=n->next) {
@@ -204,27 +192,75 @@ gboolean search_do(struct search_q *q, struct hub *hub, struct ui_tab *parent) {
       }
     }
     if(!one) {
-      ui_m(NULL, 0, "Not connected to any non-chat hubs.");
+      g_set_error(err, 1, 0, "Not connected to any non-chat hubs.");
       search_q_free(q);
       return FALSE;
     }
   }
 
-  // No errors? Then open a search tab and wait for the results.
-  ui_tab_open(ui_search_create(hub, q), TRUE, parent);
+  // Add to the active searches list
+  if(!search_list)
+    search_list = g_hash_table_new(g_direct_hash, g_direct_equal);
+  g_hash_table_insert(search_list, q, q);
   return TRUE;
 }
 
 
-// Shortcut for a TTH search_do() on all hubs.
-gboolean search_alltth(char *tth, struct ui_tab *parent) {
-  struct search_q *q = g_slice_new0(struct search_q);
-  memcpy(q->tth, tth, 24);
-  q->type = 9;
-  return search_do(q, NULL, parent);
+// Remove a query from the active searches.
+void search_remove(struct search_q *q) {
+  if(search_list && g_hash_table_remove(search_list, q))
+    search_q_free(q);
 }
 
 
+// Match a search result with a query.
+static gboolean match(struct search_q *q, struct search_r *r) {
+  // TTH match is fast and easy
+  if(q->type == 9)
+    return r->size == G_MAXUINT64 ? FALSE : memcmp(q->tth, r->tth, 24) == 0 ? TRUE : FALSE;
+  // Match file/dir type
+  if(q->type == 8 && r->size != G_MAXUINT64)
+    return FALSE;
+  if((q->size || (q->type >= 2 && q->type <= 7)) && r->size == G_MAXUINT64)
+    return FALSE;
+  // Match size
+  if(q->size && !(q->ge ? r->size >= q->size : r->size <= q->size))
+    return FALSE;
+  // Match query
+  char **str = q->query;
+  for(; str&&*str; str++)
+    if(G_LIKELY(!str_casestr(r->file, *str)))
+      return FALSE;
+  // Match extension
+  char **ext = search_types[(int)q->type].exts;
+  if(ext && *ext) {
+    char *l = strrchr(r->file, '.');
+    if(G_UNLIKELY(!l || !l[1]))
+      return FALSE;
+    l++;
+    for(; *ext; ext++)
+      if(G_UNLIKELY(g_ascii_strcasecmp(l, *ext) == 0))
+        break;
+    if(!*ext)
+      return FALSE;
+  }
+  // Okay, we have a match
+  return TRUE;
+}
+
+
+// Match the search result against any active searches and runs the q->cb
+// callbacks.
+static void dispatch(struct search_r *r) {
+  if(!search_list)
+    return;
+  GHashTableIter i;
+  g_hash_table_iter_init(&i, search_list);
+  struct search_q *q;
+  while(g_hash_table_iter_next(&i, (gpointer *)&q, NULL))
+    if(q->cb && match(q, r))
+      q->cb(r, q->cb_dat);
+}
 
 
 // Modifies msg in-place for temporary stuff.
@@ -421,7 +457,7 @@ gboolean search_handle_adc(struct hub *hub, struct adc_cmd *cmd) {
   if(!r)
     return FALSE;
 
-  ui_search_global_result(r);
+  dispatch(r);
   search_r_free(r);
   return TRUE;
 }
@@ -433,7 +469,7 @@ gboolean search_handle_nmdc(struct hub *hub, char *msg) {
   if(!r)
     return FALSE;
 
-  ui_search_global_result(r);
+  dispatch(r);
   search_r_free(r);
   return TRUE;
 }

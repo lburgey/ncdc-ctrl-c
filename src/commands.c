@@ -1001,7 +1001,14 @@ static void c_search(char *args) {
     goto c_search_clean;
   }
 
-  search_do(q, allhubs ? NULL : tab->hub, allhubs ? NULL : tab);
+  struct ui_tab *rtab = ui_search_create(allhubs ? NULL : tab->hub, q, &err);
+  if(err) {
+    ui_mf(NULL, 0, "%s%s", rtab ? "Warning: " : "", err->message);
+    g_error_free(err);
+  }
+  if(!rtab)
+    goto c_search_clean;
+  ui_tab_open(rtab, TRUE, allhubs ? NULL : tab);
   q = NULL; // make sure to not free it
 
 c_search_clean:
