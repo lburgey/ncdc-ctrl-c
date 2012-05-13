@@ -91,7 +91,7 @@ guint16 listen_hub_tcp(guint64 hub) {
 
 guint16 listen_hub_tls(guint64 hub) {
   struct listen_hub_bind *b = g_hash_table_lookup(listen_hub_binds, &hub);
-  return b && b->tls ? b->tls->port : b->tcp && (b->tcp->type & LBT_TLS) ? b->tcp->port : 0;
+  return b && b->tls ? b->tls->port : b && b->tcp && (b->tcp->type & LBT_TLS) ? b->tcp->port : 0;
 }
 
 guint16 listen_hub_udp(guint64 hub) {
