@@ -25,6 +25,7 @@
 
 
 #include "ncdc.h"
+#include "vars.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -865,7 +866,7 @@ struct var {
   V(ui_time_format,   1,0, f_id,           p_id,            su_old,        NULL,         NULL,            "[%H:%M:%S]")\
   V(upload_rate,      1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)
 
-enum var_names {
+enum var_type {
 #define V(n, gl, h, f, p, su, g, s, d) VAR_##n,
 #define C(n, d) VAR_color_##n,
   VARS
@@ -905,7 +906,7 @@ int vars_byname(const char *n) {
 
 
 // Calls setraw() on the specified var
-gboolean var_set(guint64 h, int n, const char *v, GError **err) {
+gboolean var_set(guint64 h, var_type n, const char *v, GError **err) {
   if(vars[n].setraw)
     return vars[n].setraw(h, vars[n].name, v, err);
   db_vars_set(h, vars[n].name, v);
@@ -913,10 +914,15 @@ gboolean var_set(guint64 h, int n, const char *v, GError **err) {
 }
 
 
+gboolean var_set_bool(guint64 h, var_type n, gboolean v) {
+  return var_set(h, n, v ? "true" : "false", NULL);
+}
+
+
 // Calls getraw() on the specified var. If h != 0 and no value is found for
 // that hub, then another getraw() will be called with h = 0. If that fails,
 // the default value is returned instead.
-char *var_get(guint64 h, int n) {
+char *var_get(guint64 h, var_type n) {
   char *r = NULL;
   if(vars[n].getraw)
     r = vars[n].getraw(h, vars[n].name);
@@ -926,17 +932,12 @@ char *var_get(guint64 h, int n) {
 }
 
 
-#if INTERFACE
-#define var_set_bool(h, n, v) var_set(h, n, v ? "true" : "false", NULL)
-#endif
-
-
-gboolean var_get_bool(guint64 h, int n) {
+gboolean var_get_bool(guint64 h, var_type n) {
   char *r = var_get(h, n);
   return bool_raw(r);
 }
 
-int var_get_int(guint64 h, int n) {
+int var_get_int(guint64 h, var_type n) {
   char *r = var_get(h, n);
   return int_raw(r);
 }

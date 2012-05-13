@@ -25,6 +25,8 @@
 
 
 #include "ncdc.h"
+#include "commands.h"
+
 #include <limits.h>
 #include <stdlib.h>
 #include <errno.h>

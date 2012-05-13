@@ -24,6 +24,7 @@
 */
 
 #include "ncdc.h"
+#include "listen.h"
 
 #include <errno.h>
 #include <unistd.h>

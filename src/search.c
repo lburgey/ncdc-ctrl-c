@@ -25,6 +25,7 @@
 
 
 #include "ncdc.h"
+#include "search.h"
 #include <stdlib.h>
 #include <string.h>
 #if SUDP_SUPPORT

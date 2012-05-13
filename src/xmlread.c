@@ -60,6 +60,7 @@
  */
 
 #include "ncdc.h"
+#include "xmlread.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>

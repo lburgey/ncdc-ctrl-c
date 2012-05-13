@@ -24,6 +24,7 @@
 */
 
 #include "ncdc.h"
+#include "ui_util.h"
 #include <stdlib.h>
 #include <stdarg.h>
 #include <errno.h>
@@ -79,7 +80,7 @@ struct ui_attr {
   int attr;
 }
 
-#define UIC(n) (ui_colors[UIC_##n].a)
+#define UIC(n) (ui_colors[(ui_coltype)UIC_##n].a)
 
 #endif // INTERFACE
 
@@ -716,6 +717,8 @@ void ui_cmdhist_close() {
 
 // Text input "widget"
 
+#if INTERFACE
+
 struct ui_textinput {
   int pos; // position of the cursor, in number of characters
   GString *str;
@@ -727,6 +730,8 @@ struct ui_textinput {
   char *c_q, *c_last, **c_sug;
   int c_cur;
 };
+
+#endif
 
 
 

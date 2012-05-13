@@ -25,6 +25,7 @@
 
 
 #include "ncdc.h"
+#include "hub.h"
 #include <stdlib.h>
 #if SUDP_SUPPORT
 # include <gnutls/crypto.h>

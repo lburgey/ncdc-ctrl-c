@@ -61,11 +61,10 @@ ncdc_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
 ncdc_LDADD=-lm $(NCURSES_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(SQLITE_LIBS)
 MOSTLYCLEANFILES=$(auto_headers)
 
-# This trick seems to work only with GNU make. I have no idea how to do this in
-# a portable way, other than writing a separate rule for each header file. :-(
-${auto_headers}: %.h: %.c $(mkhdr_dep)
-	$(AM_V_GEN)$(mkhdr) $<:$@
+mkhdr.done: $(mkhdr_dep) ${ncdc_SOURCES}
+	$(AM_V_GEN)$(mkhdr) $(shell echo $(ncdc_SOURCES) | sed 's#\([^ ]*\)\.c#$(srcdir)/\1.c:$(builddir)/\1.h#g') && touch mkhdr.done
 
+${auto_headers}: mkhdr.done
 ${ncdc_OBJECTS}: ${auto_headers}
 
 

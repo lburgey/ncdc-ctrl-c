@@ -25,6 +25,7 @@
 
 
 #include "ncdc.h"
+#include "proto.h"
 #include <stdlib.h>
 
 
@@ -172,7 +173,7 @@ char *adc_escape(const char *str, gboolean nmdc) {
 #define ADC_TOCMDV(a, b, c) ((a) + ((b)<<8) + ((c)<<16))
 #define ADC_TOCMD(str) ADC_TOCMDV((str)[0], (str)[1], (str)[2])
 
-enum adc_commands {
+enum adc_cmd_type {
 #define C(n, a, b, c) ADCC_##n = ADC_TOCMDV(a,b,c)
   // Base commands (copied from DC++ / AdcCommand.h)
   C(SUP, 'S','U','P'), // F,T,C    - PROTOCOL, NORMAL
@@ -195,10 +196,10 @@ enum adc_commands {
 
 
 struct adc_cmd {
-  char type;  // B|C|D|E|F|H|I|U
-  int cmd;    // ADCC_*, but can also be something else. Unhandled commands should be ignored anyway.
-  int source; // Only when type = B|D|E|F
-  int dest;   // Only when type = D|E
+  char type;        // B|C|D|E|F|H|I|U
+  adc_cmd_type cmd; // ADCC_*, but can also be something else. Unhandled commands should be ignored anyway.
+  int source;       // Only when type = B|D|E|F
+  int dest;         // Only when type = D|E
   char **argv;
   char argc;
 };

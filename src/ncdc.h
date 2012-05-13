@@ -1,6 +1,6 @@
 /* ncdc - NCurses Direct Connect client
 
-  Copyright (c) 2011 Yoran Heling
+  Copyright (c) 2011-2012 Yoran Heling
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -52,50 +52,4 @@
 
 // SUDP requires gnutls_rnd(), added in 2.12.0
 #define SUDP_SUPPORT (GNUTLS_VERSION_MAJOR > 2 || (GNUTLS_VERSION_MAJOR == 2 && GNUTLS_VERSION_MINOR >= 12))
-
-
-// forward declaration for data types
-// (some of these remain incomplete, others are defined in interfaces)
-struct cc;
-struct cc_expect;
-struct dl;
-struct dl_user;
-struct dl_user_dl;
-struct fl_list;
-struct hub;
-struct hub_user;
-struct logfile;
-struct net;
-struct search_q;
-struct search_r;
-struct tiger_ctx;
-struct tth_ctx;
-struct ui_listing;
-struct ui_logwindow;
-struct ui_tab;
-struct ui_textinput;
-struct var;
-
-
-// include the auto-generated header files
-#include "cc.h"
-#include "commands.h"
-#include "db.h"
-#include "dl.h"
-#include "fl_load.h"
-#include "fl_local.h"
-#include "fl_save.h"
-#include "fl_util.h"
-#include "hub.h"
-#include "listen.h"
-#include "main.h"
-#include "net.h"
-#include "proto.h"
-#include "search.h"
-#include "tth.h"
-#include "ui.h"
-#include "ui_util.h"
-#include "util.h"
-#include "vars.h"
-#include "xmlread.h"
 

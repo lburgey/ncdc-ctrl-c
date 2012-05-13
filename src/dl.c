@@ -25,6 +25,7 @@
 
 
 #include "ncdc.h"
+#include "dl.h"
 #include <stdlib.h>
 #include <errno.h>
 #include <unistd.h>

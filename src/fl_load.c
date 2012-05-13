@@ -25,6 +25,7 @@
 
 
 #include "ncdc.h"
+#include "fl_load.h"
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
