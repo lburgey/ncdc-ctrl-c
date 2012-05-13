@@ -27,6 +27,9 @@
 #include "ncdc.h"
 #include <stdlib.h>
 #include <string.h>
+#if SUDP_SUPPORT
+# include <gnutls/crypto.h>
+#endif
 
 
 #if INTERFACE
@@ -44,6 +47,10 @@ struct search_q {
 
   search_cb cb;
   void *cb_dat;
+
+#if SUDP_SUPPORT
+  char key[16]; // SUDP key that we sent along with the SCH
+#endif
 };
 
 // Represents a search result, coming from either NMDC $SR or ADC RES.
@@ -167,6 +174,10 @@ gboolean search_add(struct hub *hub, struct search_q *q, GError **err) {
     search_q_free(q);
     return FALSE;
   }
+
+#if SUDP_SUPPORT
+  g_warn_if_fail(gnutls_rnd(GNUTLS_RND_NONCE, q->key, 16) == 0);
+#endif
 
   // Search a single hub
   if(hub) {
@@ -475,39 +486,111 @@ gboolean search_handle_nmdc(struct hub *hub, char *msg) {
 }
 
 
-// May modify *msg in-place.
-gboolean search_handle_udp(const char *addr, char *msg) {
-  if(!*msg)
+#if SUDP_SUPPORT
+
+// length(out) >= inlen.
+static char *try_decrypt(const char *key, const char *in, int inlen, char *out) {
+  if(inlen < 32 || inlen & 15)
+    return NULL;
+
+  // Decrypt
+  char iv[16] = {};
+  gnutls_datum_t ivd = { (unsigned char *)iv, 16 };
+  gnutls_datum_t keyd = { (unsigned char *)key, 16 };
+  gnutls_cipher_hd_t ciph;
+  gnutls_cipher_init(&ciph, GNUTLS_CIPHER_AES_128_CBC, &keyd, &ivd);
+  int r = gnutls_cipher_decrypt2(ciph, in, inlen, out, inlen);
+  gnutls_cipher_deinit(ciph);
+  if(r)
+    return NULL;
+
+  // Validate padding and replace with 0-bytes.
+  int padlen = out[inlen-1];
+  if(padlen < 1 || padlen > 16)
+    return NULL;
+  for(r=0; r<padlen; r++) {
+    if(out[inlen-padlen+r] != padlen)
+      return NULL;
+    else
+      out[inlen-padlen+r] = 0;
+  }
+
+  return out+16;
+}
+
+#endif
+
+
+gboolean search_handle_udp(const char *addr, char *pack, int len) {
+  if(len < 10)
     return TRUE;
 
-  // check for ADC or NMDC
+  pack = g_memdup(pack, len);
+  char *msg = pack;
+
+  // Check for protocol and encryption
   gboolean adc = FALSE;
-  if(msg[0] == 'U')
+  gboolean sudp = FALSE;
+  if(strncmp(msg, "$SR ", 4) == 0)
+    adc = FALSE;
+  else if(strncmp(msg, "URES ", 5) == 0)
     adc = TRUE;
-  else if(msg[0] != '$')
+#if SUDP_SUPPORT
+  else if(!(len & 15)) {
+    char *buf = g_malloc(len);
+    GHashTableIter i;
+    g_hash_table_iter_init(&i, search_list);
+    struct search_q *q;
+    while(g_hash_table_iter_next(&i, (gpointer *)&q, NULL)) {
+      char *new = try_decrypt(q->key, pack, len, buf);
+      if(new && (strncmp(new, "$SR ", 4) == 0 || strncmp(new, "URES ", 5) == 0)) {
+        g_free(pack);
+        pack = buf;
+        msg = new;
+        sudp = TRUE;
+        adc = msg[0] == 'U';
+      }
+    }
+    if(!sudp) {
+      g_free(pack);
+      g_free(buf);
+      return FALSE;
+    }
+  }
+#endif
+  else {
+    g_free(pack);
     return FALSE;
+  }
 
   // handle message
   char *next = msg;
   while((next = strchr(msg, adc ? '\n' : '|')) != NULL) {
     *(next++) = 0;
-    g_debug("UDP:%s< %s", addr, msg);
+    g_debug("%s:%s< %s", sudp ? "SUDP" : "UDP", addr, msg);
 
     if(adc) {
       struct adc_cmd cmd;
-      if(!adc_parse(msg, &cmd, NULL, NULL))
+      if(!adc_parse(msg, &cmd, NULL, NULL)) {
+        g_free(pack);
         return FALSE;
+      }
       gboolean r = search_handle_adc(NULL, &cmd);
       g_strfreev(cmd.argv);
-      if(!r)
+      if(!r) {
+        g_free(pack);
         return FALSE;
+      }
 
-    } else if(!search_handle_nmdc(NULL, msg))
+    } else if(!search_handle_nmdc(NULL, msg)) {
+      g_free(pack);
       return FALSE;
+    }
 
     msg = next;
   }
 
+  g_free(pack);
   return TRUE;
 }
 

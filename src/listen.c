@@ -180,9 +180,9 @@ static gboolean listen_udp_handle(gpointer dat) {
 
   // Since all incoming messages must be search results, just pass the messages to search.c
   buf[r] = 0;
-  if(!search_handle_udp(addr_str, buf)) {
-    // buf may have been modified, and with SUDP it may even be encrypted, so
-    // this error reporting may not be too useful.
+  if(!search_handle_udp(addr_str, buf, r)) {
+    // The message may habe been encrypted with SUDP, so this error reporting
+    // may not be too useful.
     g_message("UDP:%s: Invalid message: %s", addr_str, buf);
   }
   return TRUE;

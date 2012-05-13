@@ -574,6 +574,13 @@ void hub_search(struct hub *hub, struct search_q *q) {
       for(; *s; s++)
         g_string_append_printf(cmd, " AN%s", *s);
     }
+#if SUDP_SUPPORT
+    if(hub->tls) {
+      char key[27] = {};
+      base32_encode_dat(q->key, key, 16);
+      g_string_append_printf(cmd, " KY%s", key);
+    }
+#endif
     g_string_append_c(cmd, '\n');
     net_writestr(hub->net, cmd->str);
     g_string_free(cmd, TRUE);
@@ -676,10 +683,14 @@ void hub_send_nfo(struct hub *hub) {
     if(f || !eq(ip4))
       g_string_append_printf(cmd, " I4%s", ip4_unpack(ip4)); // ip4 = 0 == 0.0.0.0, which is exactly what we want
     if(f || !eq(ip4) || !beq(sup_tls)) {
-      g_string_append_printf(cmd, " SU%s%s%s",
-        ip4 ? "TCP4,UDP4" : "",
-        ip4 && sup_tls ? "," : "",
-        sup_tls ? "ADC0" : "");
+      g_string_append(cmd, " SU");
+      int comma = 0;
+      if(ip4)
+        g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "TCP4,UDP4");
+      if(sup_tls)
+        g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "ADC0,ADCS");
+      if(SUDP_SUPPORT && hub->tls)
+        g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "SUD1,SUDP");
     }
     if((f || !eq(udp_port))) {
       if(udp_port)
