@@ -35,9 +35,11 @@ BUILDING FROM A RELEASE TARBALL
   If you managed to fetch an ncdc tarball from somewhere, then you will need
   the following to build ncdc:
   - A C compiler
+  - Development files for the libraries mentioned above
   - GNU make
-  - pod2man (comes with a default Perl installation)
-  - Header files for the above REQUIREMENTS
+  - pkg-config
+  - pod2man (optional, comes with a default Perl installation)
+  - makeheaders (optional, included in the distribution if you don't have it)
 
   And the usual commands will get you up and running:
 
@@ -53,12 +55,8 @@ BUILDING FROM A RELEASE TARBALL
 BUILDING FROM THE GIT REPOSITORY
 
   To build the latest and greatest version from the git repository, you will
-  need the stuff mentioned above in addition to:
-  - GNU autotools
-  - The 'makeheaders' program, which is assumed to be in your $PATH
-    (Get it from http://www.hwaci.com/sw/mkhdr/index.html)
-
-  Then run the following command:
+  need the stuff mentioned above in addition to GNU autoconf and automake.
+  After checking out the git repo, run the following command:
 
     autoreconf -i
 

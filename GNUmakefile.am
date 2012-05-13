@@ -19,6 +19,18 @@ endif
 
 
 
+if HAVE_MH
+mkhdr=makeheaders
+mkhdr_dep=
+else
+mkhdr=./makeheaders
+mkhdr_dep=makeheaders
+noinst_PROGRAMS+=makeheaders
+endif
+makeheaders_SOURCES=deps/makeheaders.c
+
+
+
 bin_PROGRAMS=ncdc
 ncdc_SOURCES=\
 	src/cc.c\
@@ -43,24 +55,16 @@ ncdc_SOURCES=\
 	src/xmlread.c
 
 auto_headers=$(ncdc_SOURCES:.c=.h)
-noinst_HEADERS=src/doc.h src/ncdc.h ${auto_headers}
+noinst_HEADERS=src/doc.h src/ncdc.h
 ncdc_CPPFLAGS=-I$(top_builddir)/src
 ncdc_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
 ncdc_LDADD=-lm $(NCURSES_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(SQLITE_LIBS)
-
-# only clean header files when makeheaders is installed
-if USE_MH
-MOSTLYCLEANFILES = $(auto_headers)
-endif
+MOSTLYCLEANFILES=$(auto_headers)
 
 # This trick seems to work only with GNU make. I have no idea how to do this in
 # a portable way, other than writing a separate rule for each header file. :-(
-${auto_headers}: %.h: %.c
-if USE_MH
-	$(AM_V_GEN)makeheaders $<:$@
-else
-	@echo "WARNING: makeheaders not installed, not generating header file."
-endif
+${auto_headers}: %.h: %.c $(mkhdr_dep)
+	$(AM_V_GEN)$(mkhdr) $<:$@
 
 ${ncdc_OBJECTS}: ${auto_headers}
 

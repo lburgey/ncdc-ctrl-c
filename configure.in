@@ -22,17 +22,13 @@ AC_ARG_ENABLE([db-upgrade],
   AS_HELP_STRING([--enable-db-upgrade], [Compile and install the ncdc-db-upgrade utility]))
 AM_CONDITIONAL([ENABLE_DB_UPGRADE], [test "x$enable_db_upgrade" = "xyes"])
 
-# Check for pod2man (TODO: make this optional for tarball releases?)
+# Check for pod2man
 AC_CHECK_PROG([have_pod2man],[pod2man],[yes],[no])
 AM_CONDITIONAL([USE_POD2MAN], [test "x$have_pod2man" = "xyes"])
 
-# Check for makeheaders. Not having makeheaders is fatal if no header files are
-# present in this distribution. (Only main.h is checked, though)
+# Check for makeheaders. If the system does not provide it, compile our own copy in deps/
 AC_CHECK_PROG([have_mh],[makeheaders],[yes],[no])
-if test \( "x$have_mh" = "xno" \) -a \( ! -f "$srcdir/src/main.h" \) ; then
-  AC_MSG_ERROR([Could not find the makeheaders program.])
-fi
-AM_CONDITIONAL([USE_MH], [test "x$have_mh" = "xyes"])
+AM_CONDITIONAL([HAVE_MH], [test "x$have_mh" = "xyes"])
 
 
 # Check for header files.
@@ -195,16 +191,6 @@ AM_CONDITIONAL(USE_GIT_VERSION, test "x$usegitver" = "xyes")
 
 
 AC_OUTPUT([GNUmakefile])
-
-
-# Notify user about missing makeheaders
-if test "x$have_mh" = "xno"; then
-  echo ""
-  echo "Note: Could not find the makeheaders program."
-  echo " If you wish to make non-trivial changes to the source code, you"
-  echo " may want to install makeheaders and re-run this configure script."
-  echo ""
-fi
 
 
 # Information about SUDP or GDBM support
