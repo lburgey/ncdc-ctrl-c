@@ -16,10 +16,12 @@ REQUIREMENTS
 
   ncursesw
   bzip2
-  sqlite3
-  glib2
-  gnutls
+  sqlite  >= 3.0.7
+  glib    >= 2.24.0
+  gnutls  >= 2.4.0
 
+  Support for UDP encryption requires gnutls >= 2.12.0, this is detected
+  automatically.
   To build the ncdc-db-upgrade utility (disabled by default), the following
   libraries are also required:
 

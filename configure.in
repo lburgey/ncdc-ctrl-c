@@ -152,6 +152,9 @@ PKG_CHECK_EXISTS([sqlite3],[
 PKG_CHECK_MODULES([GLIB],   [glib-2.0 >= 2.24 gthread-2.0])
 PKG_CHECK_MODULES([GNUTLS], [gnutls >= 2.4])
 
+have_sudp=no
+PKG_CHECK_EXISTS([gnutls >= 2.12], [have_sudp=yes])
+
 
 
 # Check for extra dependencies for ncdc-db-upgrade
@@ -204,12 +207,18 @@ if test "x$have_mh" = "xno"; then
 fi
 
 
-# Information about TLS or GDBM support
+# Information about SUDP or GDBM support
 echo ""
-if test "x$enable_db_upgrade" = "xyes"; then
-  echo "db-upgrade  : enabled."
+if test "x$have_sudp" = "xyes"; then
+  echo "encrypted UDP : enabled."
 else
-  echo "db-upgrade  : disabled."
+  echo "encrypted UDP : disabled. (Requires gnutls >= 2.12.0)"
+fi
+
+if test "x$enable_db_upgrade" = "xyes"; then
+  echo "db-upgrade    : enabled."
+else
+  echo "db-upgrade    : disabled."
   echo "  The ncdc-db-upgrade utility will not be built."
 fi
 echo ""
