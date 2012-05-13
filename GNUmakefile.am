@@ -59,7 +59,7 @@ noinst_HEADERS=src/doc.h src/ncdc.h
 ncdc_CPPFLAGS=-I$(top_builddir)/src
 ncdc_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
 ncdc_LDADD=-lm $(NCURSES_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(SQLITE_LIBS)
-MOSTLYCLEANFILES=$(auto_headers)
+MOSTLYCLEANFILES=$(auto_headers) mkhdr.done
 
 mkhdr.done: $(mkhdr_dep) ${ncdc_SOURCES}
 	$(AM_V_GEN)$(mkhdr) $(shell echo $(ncdc_SOURCES) | sed 's#\([^ ]*\)\.c#$(srcdir)/\1.c:$(builddir)/\1.h#g') && touch mkhdr.done
