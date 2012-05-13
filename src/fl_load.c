@@ -42,7 +42,7 @@
 #define S_UNKNOWN  6 // In some tag we didn't recognize
 #define S_END      7 // Received </FileListing>
 
-struct ctx {
+typedef struct ctx_t {
   BZFILE *fh_bz;
   FILE   *fh_f;
   gboolean eof;
@@ -54,14 +54,14 @@ struct ctx {
   gboolean filehastth;
   guint64 filesize;
   gboolean dirincomplete;
-  struct fl_list *root;
-  struct fl_list *cur;
+  fl_list_t *root;
+  fl_list_t *cur;
   int unknown_level;
-};
+} ctx_t;
 
 
 static int readcb(void *context, char *buf, int len, GError **err) {
-  struct ctx *x = context;
+  ctx_t *x = context;
 
   if(x->fh_bz) {
     if(x->eof)
@@ -88,7 +88,7 @@ static int readcb(void *context, char *buf, int len, GError **err) {
 
 
 static int entitycb(void *context, int type, const char *arg1, const char *arg2, GError **err) {
-  struct ctx *x = context;
+  ctx_t *x = context;
   //printf("%d,%d: %s, %s\n", x->state, type, arg1, arg2);
   switch(x->state) {
 
@@ -122,7 +122,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
         return -1;
       }
       // Create the directory entry
-      struct fl_list *new = fl_list_create(x->name, FALSE);
+      fl_list_t *new = fl_list_create(x->name, FALSE);
       new->isfile = FALSE;
       new->sub = g_ptr_array_new_with_free_func(fl_list_free);
       fl_list_add(x->cur, new, -1);
@@ -200,7 +200,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
         return -1;
       }
       // Create the file entry
-      struct fl_list *new = fl_list_create(x->name, x->local);
+      fl_list_t *new = fl_list_create(x->name, x->local);
       new->isfile = TRUE;
       new->size = x->filesize;
       new->hastth = TRUE;
@@ -255,8 +255,8 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
 }
 
 
-static int ctx_open(struct ctx *x, const char *file, GError **err) {
-  memset(x, 0, sizeof(struct ctx));
+static int ctx_open(ctx_t *x, const char *file, GError **err) {
+  memset(x, 0, sizeof(ctx_t));
 
   // open file
   x->fh_f = fopen(file, "r");
@@ -279,7 +279,7 @@ static int ctx_open(struct ctx *x, const char *file, GError **err) {
 }
 
 
-static void ctx_close(struct ctx *x) {
+static void ctx_close(ctx_t *x) {
   if(x->fh_bz) {
     int bzerr;
     BZ2_bzReadClose(&bzerr, x->fh_bz);
@@ -293,10 +293,10 @@ static void ctx_close(struct ctx *x) {
 }
 
 
-struct fl_list *fl_load(const char *file, GError **err, gboolean local) {
+fl_list_t *fl_load(const char *file, GError **err, gboolean local) {
   g_return_val_if_fail(err == NULL || *err == NULL, NULL);
 
-  struct ctx x;
+  ctx_t x;
   GError *ierr = NULL;
   if(ctx_open(&x, file, &ierr))
     goto end;
@@ -330,26 +330,26 @@ end:
 // Async version of fl_load(). Performs the load in a background thread. Only
 // used for non-local filelists.
 
-struct async_dat {
+typedef struct async_t {
   char *file;
-  void (*cb)(struct fl_list *, GError *, void *);
+  void (*cb)(fl_list_t *, GError *, void *);
   void *dat;
   GError *err;
-  struct fl_list *fl;
-};
+  fl_list_t *fl;
+} async_t;
 
 
 static gboolean async_d(gpointer dat) {
-  struct async_dat *arg = dat;
+  async_t *arg = dat;
   arg->cb(arg->fl, arg->err, arg->dat);
   g_free(arg->file);
-  g_slice_free(struct async_dat, arg);
+  g_slice_free(async_t, arg);
   return FALSE;
 }
 
 
 static void async_f(gpointer dat, gpointer udat) {
-  struct async_dat *arg = dat;
+  async_t *arg = dat;
   arg->fl = fl_load(arg->file, &arg->err, FALSE);
   g_idle_add(async_d, arg);
 }
@@ -357,11 +357,11 @@ static void async_f(gpointer dat, gpointer udat) {
 
 // Ownership of both the file list and the error is passed to the callback
 // function.
-void fl_load_async(const char *file, void (*cb)(struct fl_list *, GError *, void *), void *dat) {
+void fl_load_async(const char *file, void (*cb)(fl_list_t *, GError *, void *), void *dat) {
   static GThreadPool *pool = NULL;
   if(!pool)
     pool = g_thread_pool_new(async_f, NULL, 2, FALSE, NULL);
-  struct async_dat *arg = g_slice_new0(struct async_dat);
+  async_t *arg = g_slice_new0(async_t);
   arg->file = g_strdup(file);
   arg->dat = dat;
   arg->cb = cb;

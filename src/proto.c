@@ -31,14 +31,14 @@
 
 // NMDC support
 
-char *charset_convert(struct hub *hub, gboolean to_utf8, const char *str) {
+char *charset_convert(hub_t *hub, gboolean to_utf8, const char *str) {
   char *fmt = var_get(hub->id, VAR_encoding);
   char *res = str_convert(to_utf8?"UTF-8":fmt, !to_utf8?"UTF-8":fmt, str);
   return res;
 }
 
 
-char *nmdc_encode_and_escape(struct hub *hub, const char *str) {
+char *nmdc_encode_and_escape(hub_t *hub, const char *str) {
   char *enc = charset_convert(hub, FALSE, str);
   GString *dest = g_string_sized_new(strlen(enc));
   char *tmp = enc;
@@ -58,7 +58,7 @@ char *nmdc_encode_and_escape(struct hub *hub, const char *str) {
 }
 
 
-char *nmdc_unescape_and_decode(struct hub *hub, const char *str) {
+char *nmdc_unescape_and_decode(hub_t *hub, const char *str) {
   GString *dest = g_string_sized_new(strlen(str));
   while(*str) {
     if(strncmp(str, "&#36;", 5) == 0) {
@@ -195,7 +195,7 @@ enum adc_cmd_type {
 };
 
 
-struct adc_cmd {
+struct adc_cmd_t {
   char type;        // B|C|D|E|F|H|I|U
   adc_cmd_type cmd; // ADCC_*, but can also be something else. Unhandled commands should be ignored anyway.
   int source;       // Only when type = B|D|E|F
@@ -223,7 +223,7 @@ static gboolean int_in_array(const int *arr, int needle) {
 }
 
 
-gboolean adc_parse(const char *str, struct adc_cmd *c, int *feats, GError **err) {
+gboolean adc_parse(const char *str, adc_cmd_t *c, int *feats, GError **err) {
   if(!g_utf8_validate(str, -1, NULL)) {
     g_set_error_literal(err, 1, 0, "Invalid encoding.");
     return FALSE;

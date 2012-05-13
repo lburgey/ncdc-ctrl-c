@@ -68,13 +68,13 @@ enum ui_coltype {
 };
 
 
-struct ui_color {
+struct ui_color_t {
   int var;
   short fg, bg, d_fg, d_bg;
   int x, d_x, a;
 };
 
-struct ui_attr {
+struct ui_attr_t {
   char name[11];
   gboolean color : 1;
   int attr;
@@ -85,7 +85,7 @@ struct ui_attr {
 #endif // INTERFACE
 
 
-struct ui_color ui_colors[] = {
+ui_color_t ui_colors[] = {
 #define C(n, d) { VAR_color_##n },
   UI_COLORS
 #undef C
@@ -93,7 +93,7 @@ struct ui_color ui_colors[] = {
 };
 
 
-struct ui_attr ui_attr_names[] = {
+ui_attr_t ui_attr_names[] = {
   { "black",     TRUE,  COLOR_BLACK   },
   { "blink",     FALSE, A_BLINK       },
   { "blue",      TRUE,  COLOR_BLUE    },
@@ -111,8 +111,8 @@ struct ui_attr ui_attr_names[] = {
 };
 
 
-static struct ui_attr *ui_attr_by_name(const char *n) {
-  struct ui_attr *a = ui_attr_names;
+static ui_attr_t *ui_attr_by_name(const char *n) {
+  ui_attr_t *a = ui_attr_names;
   for(; *a->name; a++)
     if(strcmp(a->name, n) == 0)
       return a;
@@ -121,7 +121,7 @@ static struct ui_attr *ui_attr_by_name(const char *n) {
 
 
 static char *ui_name_by_attr(int n) {
-  struct ui_attr *a = ui_attr_names;
+  ui_attr_t *a = ui_attr_names;
   for(; *a->name; a++)
     if(a->attr == n)
       return a->name;
@@ -139,7 +139,7 @@ gboolean ui_color_str_parse(const char *str, short *fg, short *bg, int *x, GErro
     g_strstrip(*arg);
     if(!**arg)
       continue;
-    struct ui_attr *attr = ui_attr_by_name(*arg);
+    ui_attr_t *attr = ui_attr_by_name(*arg);
     if(!attr) {
       g_set_error(err, 1, 0, "Unknown color or attribute: %s", *arg);
       g_strfreev(args);
@@ -174,7 +174,7 @@ char *ui_color_str_gen(int fd, int bg, int x) {
     strcat(buf, ",");
     strcat(buf, ui_name_by_attr(bg));
   }
-  struct ui_attr *attr = ui_attr_names;
+  ui_attr_t *attr = ui_attr_names;
   for(; attr->name[0]; attr++)
     if(!attr->color && x & attr->attr) {
       strcat(buf, ",");
@@ -187,7 +187,7 @@ char *ui_color_str_gen(int fd, int bg, int x) {
 // TODO: re-use color pairs when we have too many (>64) color groups
 void ui_colors_update() {
   int pair = 0;
-  struct ui_color *c = ui_colors;
+  ui_color_t *c = ui_colors;
   for(; c->var>=0; c++) {
     g_warn_if_fail(ui_color_str_parse(var_get(0, c->var), &c->fg, &c->bg, &c->x, NULL));
     init_pair(++pair, c->fg, c->bg);
@@ -225,10 +225,10 @@ void ui_colors_init() {
 
 #define LOGWIN_BUF 1023 // must be 2^x-1
 
-struct ui_logwindow {
+struct ui_logwindow_t {
   int lastlog;
   int lastvis;
-  struct logfile *logfile;
+  logfile_t *logfile;
   char *buf[LOGWIN_BUF+1];
   gboolean updated;
   int (*checkchat)(void *, char *, char *);
@@ -238,7 +238,7 @@ struct ui_logwindow {
 #endif
 
 
-void ui_logwindow_addline(struct ui_logwindow *lw, const char *msg, gboolean raw, gboolean nolog) {
+void ui_logwindow_addline(ui_logwindow_t *lw, const char *msg, gboolean raw, gboolean nolog) {
   if(lw->lastlog == lw->lastvis)
     lw->lastvis = lw->lastlog + 1;
   lw->lastlog++;
@@ -260,7 +260,7 @@ void ui_logwindow_addline(struct ui_logwindow *lw, const char *msg, gboolean raw
 }
 
 
-static void ui_logwindow_load(struct ui_logwindow *lw, const char *fn, int num) {
+static void ui_logwindow_load(ui_logwindow_t *lw, const char *fn, int num) {
   char **l = file_tail(fn, num);
   if(!l) {
     g_warning("Unable to tail log file '%s': %s", fn, g_strerror(errno));
@@ -304,8 +304,8 @@ static void ui_logwindow_load(struct ui_logwindow *lw, const char *fn, int num) 
 }
 
 
-struct ui_logwindow *ui_logwindow_create(const char *file, int load) {
-  struct ui_logwindow *lw = g_new0(struct ui_logwindow, 1);
+ui_logwindow_t *ui_logwindow_create(const char *file, int load) {
+  ui_logwindow_t *lw = g_new0(ui_logwindow_t, 1);
   if(file) {
     lw->logfile = logfile_create(file);
 
@@ -316,14 +316,14 @@ struct ui_logwindow *ui_logwindow_create(const char *file, int load) {
 }
 
 
-void ui_logwindow_free(struct ui_logwindow *lw) {
+void ui_logwindow_free(ui_logwindow_t *lw) {
   logfile_free(lw->logfile);
   ui_logwindow_clear(lw);
   g_free(lw);
 }
 
 
-void ui_logwindow_add(struct ui_logwindow *lw, const char *msg) {
+void ui_logwindow_add(ui_logwindow_t *lw, const char *msg) {
   if(!msg[0]) {
     ui_logwindow_addline(lw, "", FALSE, FALSE);
     return;
@@ -358,7 +358,7 @@ void ui_logwindow_add(struct ui_logwindow *lw, const char *msg) {
 }
 
 
-void ui_logwindow_clear(struct ui_logwindow *lw) {
+void ui_logwindow_clear(ui_logwindow_t *lw) {
   int i;
   for(i=0; i<=LOGWIN_BUF; i++) {
     g_free(lw->buf[i]);
@@ -368,7 +368,7 @@ void ui_logwindow_clear(struct ui_logwindow *lw) {
 }
 
 
-void ui_logwindow_scroll(struct ui_logwindow *lw, int i) {
+void ui_logwindow_scroll(ui_logwindow_t *lw, int i) {
   lw->lastvis += i;
   // lastvis may never be larger than the last entry present
   lw->lastvis = MIN(lw->lastvis, lw->lastlog);
@@ -438,7 +438,7 @@ static int ui_logwindow_calc_wrap(char *str, int cols, int indent, int *rows, in
 
 // Determines the colors each part of a log line should have. Returns the
 // highest index to the attr array.
-static int ui_logwindow_calc_color(struct ui_logwindow *lw, char *str, int *sep, int *attr) {
+static int ui_logwindow_calc_color(ui_logwindow_t *lw, char *str, int *sep, int *attr) {
   sep[0] = 0;
   int mask = 0;
 
@@ -497,7 +497,7 @@ static int ui_logwindow_calc_color(struct ui_logwindow *lw, char *str, int *sep,
 
 // Draws a line between x and x+cols on row y (continuing on y-1 .. y-(rows+1) for
 // multiple rows). Returns the actual number of rows written to.
-static int ui_logwindow_drawline(struct ui_logwindow *lw, int y, int x, int nrows, int cols, char *str) {
+static int ui_logwindow_drawline(ui_logwindow_t *lw, int y, int x, int nrows, int cols, char *str) {
   g_return_val_if_fail(nrows > 0, 1);
 
   // Determine the indentation for multi-line rows. This is:
@@ -570,7 +570,7 @@ static int ui_logwindow_drawline(struct ui_logwindow *lw, int y, int x, int nrow
 }
 
 
-void ui_logwindow_draw(struct ui_logwindow *lw, int y, int x, int rows, int cols) {
+void ui_logwindow_draw(ui_logwindow_t *lw, int y, int x, int rows, int cols) {
   int top = rows + y - 1;
   int cur = lw->lastvis;
   lw->updated = FALSE;
@@ -585,7 +585,7 @@ void ui_logwindow_draw(struct ui_logwindow *lw, int y, int x, int rows, int cols
 }
 
 
-gboolean ui_logwindow_key(struct ui_logwindow *lw, guint64 key, int rows) {
+gboolean ui_logwindow_key(ui_logwindow_t *lw, guint64 key, int rows) {
   switch(key) {
   case INPT_KEY(KEY_NPAGE):
     ui_logwindow_scroll(lw, rows/2);
@@ -613,15 +613,15 @@ gboolean ui_logwindow_key(struct ui_logwindow *lw, guint64 key, int rows) {
 #define CMDHIST_MAXCMD 2000
 
 
-struct ui_cmdhist {
+typedef struct ui_cmdhist_t {
   char *buf[CMDHIST_BUF+1]; // circular buffer
   char *fn;
   int last;
   gboolean ismod;
-};
+} ui_cmdhist_t;
 
 // we only have one command history, so this can be a global
-static struct ui_cmdhist *cmdhist;
+static ui_cmdhist_t *cmdhist;
 
 
 static void ui_cmdhist_add(const char *str) {
@@ -649,7 +649,7 @@ static void ui_cmdhist_add(const char *str) {
 
 void ui_cmdhist_init(const char *file) {
   static char buf[CMDHIST_MAXCMD+2]; // + \n and \0
-  cmdhist = g_new0(struct ui_cmdhist, 1);
+  cmdhist = g_new0(ui_cmdhist_t, 1);
 
   cmdhist->fn = g_build_filename(db_dir, file, NULL);
   FILE *f = fopen(cmdhist->fn, "r");
@@ -719,7 +719,7 @@ void ui_cmdhist_close() {
 
 #if INTERFACE
 
-struct ui_textinput {
+struct ui_textinput_t {
   int pos; // position of the cursor, in number of characters
   GString *str;
   gboolean usehist;
@@ -735,8 +735,8 @@ struct ui_textinput {
 
 
 
-struct ui_textinput *ui_textinput_create(gboolean usehist, void (*complete)(char *, char **)) {
-  struct ui_textinput *ti = g_new0(struct ui_textinput, 1);
+ui_textinput_t *ui_textinput_create(gboolean usehist, void (*complete)(char *, char **)) {
+  ui_textinput_t *ti = g_new0(ui_textinput_t, 1);
   ti->str = g_string_new("");
   ti->usehist = usehist;
   ti->s_pos = -1;
@@ -745,7 +745,7 @@ struct ui_textinput *ui_textinput_create(gboolean usehist, void (*complete)(char
 }
 
 
-static void ui_textinput_complete_reset(struct ui_textinput *ti) {
+static void ui_textinput_complete_reset(ui_textinput_t *ti) {
   if(ti->complete) {
     g_free(ti->c_q);
     g_free(ti->c_last);
@@ -756,7 +756,7 @@ static void ui_textinput_complete_reset(struct ui_textinput *ti) {
 }
 
 
-static void ui_textinput_complete(struct ui_textinput *ti) {
+static void ui_textinput_complete(ui_textinput_t *ti) {
   if(!ti->complete)
     return;
   if(!ti->c_q) {
@@ -785,7 +785,7 @@ static void ui_textinput_complete(struct ui_textinput *ti) {
 }
 
 
-void ui_textinput_free(struct ui_textinput *ti) {
+void ui_textinput_free(ui_textinput_t *ti) {
   ui_textinput_complete_reset(ti);
   g_string_free(ti->str, TRUE);
   if(ti->s_q)
@@ -794,19 +794,19 @@ void ui_textinput_free(struct ui_textinput *ti) {
 }
 
 
-void ui_textinput_set(struct ui_textinput *ti, const char *str) {
+void ui_textinput_set(ui_textinput_t *ti, const char *str) {
   g_string_assign(ti->str, str);
   ti->pos = g_utf8_strlen(ti->str->str, -1);
 }
 
 
-char *ui_textinput_get(struct ui_textinput *ti) {
+char *ui_textinput_get(ui_textinput_t *ti) {
   return g_strdup(ti->str->str);
 }
 
 
 
-char *ui_textinput_reset(struct ui_textinput *ti) {
+char *ui_textinput_reset(ui_textinput_t *ti) {
   char *str = ui_textinput_get(ti);
   ui_textinput_set(ti, "");
   if(ti->usehist) {
@@ -825,7 +825,7 @@ char *ui_textinput_reset(struct ui_textinput *ti) {
 
 // must be drawn last, to keep the cursor position correct
 // also not the most efficient function ever, but probably fast enough.
-void ui_textinput_draw(struct ui_textinput *ti, int y, int x, int col) {
+void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col) {
   //       |              |
   // "Some random string etc etc"
   //       f         #    l
@@ -873,7 +873,7 @@ void ui_textinput_draw(struct ui_textinput *ti, int y, int x, int col) {
 }
 
 
-static void ui_textinput_search(struct ui_textinput *ti, gboolean backwards) {
+static void ui_textinput_search(ui_textinput_t *ti, gboolean backwards) {
   int start;
   if(ti->s_pos < 0) {
     if(!backwards) {
@@ -900,7 +900,7 @@ static void ui_textinput_search(struct ui_textinput *ti, gboolean backwards) {
 }
 
 
-gboolean ui_textinput_key(struct ui_textinput *ti, guint64 key, char **str) {
+gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
   int chars = g_utf8_strlen(ti->str->str, -1);
   gboolean completereset = TRUE;
   switch(key) {
@@ -1020,7 +1020,7 @@ gboolean ui_textinput_key(struct ui_textinput *ti, guint64 key, char **str) {
 
 #if INTERFACE
 
-struct ui_listing {
+struct ui_listing_t {
   GSequence *list;
   GSequenceIter *sel;
   GSequenceIter *top;
@@ -1071,14 +1071,14 @@ struct ui_listing {
 
 
 // does not free the GSequence (we don't control the list, after all)
-#define ui_listing_free(ul) g_slice_free(struct ui_listing, ul)
+#define ui_listing_free(ul) g_slice_free(ui_listing_t, ul)
 
 
 #endif
 
 
-struct ui_listing *ui_listing_create(GSequence *list) {
-  struct ui_listing *ul = g_slice_new0(struct ui_listing);
+ui_listing_t *ui_listing_create(GSequence *list) {
+  ui_listing_t *ul = g_slice_new0(ui_listing_t);
   ul->list = list;
   ul->sel = ul->top = g_sequence_get_begin_iter(list);
   ul->topisbegin = ul->selisbegin = TRUE;
@@ -1086,7 +1086,7 @@ struct ui_listing *ui_listing_create(GSequence *list) {
 }
 
 
-gboolean ui_listing_key(struct ui_listing *ul, guint64 key, int page) {
+gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
   switch(key) {
   case INPT_KEY(KEY_NPAGE): // page down
     ul->sel = g_sequence_iter_move(ul->sel, page);
@@ -1125,7 +1125,7 @@ gboolean ui_listing_key(struct ui_listing *ul, guint64 key, int page) {
 
 // Every item is assumed to occupy exactly one line.
 // Returns the relative position of the current page (in percent)
-int ui_listing_draw(struct ui_listing *ul, int top, int bottom, void (*cb)(struct ui_listing *, GSequenceIter *, int, void *), void *dat) {
+int ui_listing_draw(ui_listing_t *ul, int top, int bottom, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *), void *dat) {
   // get or update the top row to make sure sel is visible
   int height = 1 + bottom - top;
   int row_last = g_sequence_iter_get_position(g_sequence_get_end_iter(ul->list));

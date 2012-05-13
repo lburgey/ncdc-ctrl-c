@@ -37,9 +37,9 @@
 
 // Callback function, to be called when a search result has been received on an
 // active search_q.
-typedef void (*search_cb)(struct search_r *r, void *dat);
+typedef void (*search_cb)(search_r_t *r, void *dat);
 
-struct search_q {
+struct search_q_t {
   char type;    // NMDC search type (if 9, ignore all fields except tth)
   gboolean ge;  // TRUE -> match >= size; FALSE -> match <= size
   guint64 size; // 0 = disabled.
@@ -55,7 +55,7 @@ struct search_q {
 };
 
 // Represents a search result, coming from either NMDC $SR or ADC RES.
-struct search_r {
+struct search_r_t {
   guint64 uid;
   char *file;     // full path + filename. Slashes as path saparator, no trailing slash
   guint64 size;   // file size, G_MAXUINT64 = directory
@@ -63,7 +63,7 @@ struct search_r {
   char tth[24];   // TTH root (for regular files)
 }
 
-struct search_type {
+struct search_type_t {
   char *name;
   char *exts[25];
 };
@@ -77,7 +77,7 @@ static GHashTable *search_list = NULL;
 
 
 // NMDC search types and the relevant ADC SEGA extensions.
-struct search_type search_types[] = { {},
+search_type_t search_types[] = { {},
   { "any"      }, // 1
   { "audio",   { "ape", "flac", "m4a",  "mid",  "mp3", "mpc",  "ogg",  "ra", "wav",  "wma"                                                                           } },
   { "archive", {  "7z",  "ace", "arj",  "bz2",   "gz", "lha",  "lzh", "rar", "tar",   "tz",   "z",  "zip"                                                            } },
@@ -90,18 +90,18 @@ struct search_type search_types[] = { {},
 };
 
 
-void search_q_free(struct search_q *q) {
+void search_q_free(search_q_t *q) {
   if(!q)
     return;
   if(q->query)
     g_strfreev(q->query);
-  g_slice_free(struct search_q, q);
+  g_slice_free(search_q_t, q);
 }
 
 
 // Convenience function to create a search_q for a TTH search.
-struct search_q * search_q_new_tth(const char *tth) {
-  struct search_q *q = g_slice_new0(struct search_q);
+search_q_t * search_q_new_tth(const char *tth) {
+  search_q_t *q = g_slice_new0(search_q_t);
   memcpy(q->tth, tth, 24);
   q->type = 9;
   return q;
@@ -110,23 +110,23 @@ struct search_q * search_q_new_tth(const char *tth) {
 
 // Can be used as a GDestroyNotify callback
 void search_r_free(gpointer data) {
-  struct search_r *r = data;
+  search_r_t *r = data;
   if(!r)
     return;
   g_free(r->file);
-  g_slice_free(struct search_r, r);
+  g_slice_free(search_r_t, r);
 }
 
 
-struct search_r *search_r_copy(struct search_r *r) {
-  struct search_r *res = g_slice_dup(struct search_r, r);
+search_r_t *search_r_copy(search_r_t *r) {
+  search_r_t *res = g_slice_dup(search_r_t, r);
   res->file = g_strdup(r->file);
   return res;
 }
 
 
 // Generate the required /search command for a query.
-char *search_command(struct search_q *q, gboolean onhub) {
+char *search_command(search_q_t *q, gboolean onhub) {
   GString *str = g_string_new("/search");
   g_string_append(str, onhub ? " -hub" : " -all");
   if(q->type == 9) {
@@ -169,7 +169,7 @@ char *search_command(struct search_q *q, gboolean onhub) {
 // search list and must be freed/removed with search_remove() when there's no
 // interest in results anymore.
 // q->cb() will be called for each result that arrives, until search_remove().
-gboolean search_add(struct hub *hub, struct search_q *q, GError **err) {
+gboolean search_add(hub_t *hub, search_q_t *q, GError **err) {
   if((!q->query || !*q->query) && q->type != 9) {
     g_set_error(err, 1, 0, "No search query given.");
     search_q_free(q);
@@ -197,7 +197,7 @@ gboolean search_add(struct hub *hub, struct search_q *q, GError **err) {
     GList *n;
     gboolean one = FALSE;
     for(n=ui_tabs; n; n=n->next) {
-      struct ui_tab *t = n->data;
+      ui_tab_t *t = n->data;
       if(t->type == UIT_HUB && t->hub->nick_valid && !var_get_bool(t->hub->id, VAR_chat_only)) {
         hub_search(t->hub, q);
         one = TRUE;
@@ -219,14 +219,14 @@ gboolean search_add(struct hub *hub, struct search_q *q, GError **err) {
 
 
 // Remove a query from the active searches.
-void search_remove(struct search_q *q) {
+void search_remove(search_q_t *q) {
   if(search_list && g_hash_table_remove(search_list, q))
     search_q_free(q);
 }
 
 
 // Match a search result with a query.
-static gboolean match(struct search_q *q, struct search_r *r) {
+static gboolean match(search_q_t *q, search_r_t *r) {
   // TTH match is fast and easy
   if(q->type == 9)
     return r->size == G_MAXUINT64 ? FALSE : memcmp(q->tth, r->tth, 24) == 0 ? TRUE : FALSE;
@@ -263,12 +263,12 @@ static gboolean match(struct search_q *q, struct search_r *r) {
 
 // Match the search result against any active searches and runs the q->cb
 // callbacks.
-static void dispatch(struct search_r *r) {
+static void dispatch(search_r_t *r) {
   if(!search_list)
     return;
   GHashTableIter i;
   g_hash_table_iter_init(&i, search_list);
-  struct search_q *q;
+  search_q_t *q;
   while(g_hash_table_iter_next(&i, (gpointer *)&q, NULL))
     if(q->cb && match(q, r))
       q->cb(r, q->cb_dat);
@@ -276,8 +276,8 @@ static void dispatch(struct search_r *r) {
 
 
 // Modifies msg in-place for temporary stuff.
-static struct search_r *parse_nmdc(struct hub *hub, char *msg) {
-  struct search_r r = {};
+static search_r_t *parse_nmdc(hub_t *hub, char *msg) {
+  search_r_t r = {};
   char *tmp, *tmp2;
   gboolean hastth = FALSE;
 
@@ -357,7 +357,7 @@ static struct search_r *parse_nmdc(struct hub *hub, char *msg) {
     int colon = strchr(tmp, ':') - tmp;
     GList *n;
     for(n=ui_tabs; n; n=n->next) {
-      struct ui_tab *t = n->data;
+      ui_tab_t *t = n->data;
       if(t->type != UIT_HUB || !t->hub->nick_valid || t->hub->adc)
         continue;
       // Excact hub:ip match, stop searching
@@ -377,20 +377,20 @@ static struct search_r *parse_nmdc(struct hub *hub, char *msg) {
   }
 
   // Figure out r.uid
-  struct hub_user *u = g_hash_table_lookup(hub->users, user);
+  hub_user_t *u = g_hash_table_lookup(hub->users, user);
   if(!u)
     return NULL;
   r.uid = u->uid;
 
   // If we're here, then we can safely copy and return the result.
-  struct search_r *res = g_slice_dup(struct search_r, &r);
+  search_r_t *res = g_slice_dup(search_r_t, &r);
   res->file = nmdc_unescape_and_decode(hub, r.file);
   return res;
 }
 
 
-static struct search_r *parse_adc(struct hub *hub, struct adc_cmd *cmd) {
-  struct search_r r = {};
+static search_r_t *parse_adc(hub_t *hub, adc_cmd_t *cmd) {
+  search_r_t r = {};
   char *tmp, *tmp2;
 
   // If this came from UDP, fetch the users' CID
@@ -436,7 +436,7 @@ static struct search_r *parse_adc(struct hub *hub, struct adc_cmd *cmd) {
 
   // uid - passive
   if(hub) {
-    struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd->source));
+    hub_user_t *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd->source));
     if(!u)
       return NULL;
     r.uid = u->uid;
@@ -450,7 +450,7 @@ static struct search_r *parse_adc(struct hub *hub, struct adc_cmd *cmd) {
     guint64 hubid = g_ascii_strtoull(tmp, &tmp2, 10);
     if(tmp == tmp2 || !tmp2 || *tmp2)
       return NULL;
-    struct tiger_ctx t;
+    tiger_ctx_t t;
     tiger_init(&t);
     tiger_update(&t, (char *)&hubid, 8);
     tiger_update(&t, cid, 24);
@@ -464,8 +464,8 @@ static struct search_r *parse_adc(struct hub *hub, struct adc_cmd *cmd) {
 }
 
 
-gboolean search_handle_adc(struct hub *hub, struct adc_cmd *cmd) {
-  struct search_r *r = parse_adc(hub, cmd);
+gboolean search_handle_adc(hub_t *hub, adc_cmd_t *cmd) {
+  search_r_t *r = parse_adc(hub, cmd);
   if(!r)
     return FALSE;
 
@@ -476,8 +476,8 @@ gboolean search_handle_adc(struct hub *hub, struct adc_cmd *cmd) {
 
 
 // May modify *msg in-place.
-gboolean search_handle_nmdc(struct hub *hub, char *msg) {
-  struct search_r *r = parse_nmdc(hub, msg);
+gboolean search_handle_nmdc(hub_t *hub, char *msg) {
+  search_r_t *r = parse_nmdc(hub, msg);
   if(!r)
     return FALSE;
 
@@ -541,7 +541,7 @@ gboolean search_handle_udp(const char *addr, char *pack, int len) {
     char *buf = g_malloc(len);
     GHashTableIter i;
     g_hash_table_iter_init(&i, search_list);
-    struct search_q *q;
+    search_q_t *q;
     while(g_hash_table_iter_next(&i, (gpointer *)&q, NULL)) {
       char *new = try_decrypt(q->key, pack, len, buf);
       if(new && (strncmp(new, "$SR ", 4) == 0 || strncmp(new, "URES ", 5) == 0)) {
@@ -571,7 +571,7 @@ gboolean search_handle_udp(const char *addr, char *pack, int len) {
     g_debug("%s:%s< %s", sudp ? "SUDP" : "UDP", addr, msg);
 
     if(adc) {
-      struct adc_cmd cmd;
+      adc_cmd_t cmd;
       if(!adc_parse(msg, &cmd, NULL, NULL)) {
         g_free(pack);
         return FALSE;

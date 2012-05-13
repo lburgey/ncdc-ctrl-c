@@ -186,12 +186,12 @@ static gboolean s_active_conf(guint64 hub, const char *key, const char *val, GEr
 }
 
 
-struct flag_option {
+typedef struct flag_option_t {
   int num;
   char *name;
-};
+} flag_option_t;
 
-static int flags_raw(struct flag_option *ops, gboolean multi, const char *val, GError **err) {
+static int flags_raw(flag_option_t *ops, gboolean multi, const char *val, GError **err) {
   char **args = g_strsplit(val, ",", 0);
   int r = 0, n = 0;
   char **arg = args;
@@ -200,7 +200,7 @@ static int flags_raw(struct flag_option *ops, gboolean multi, const char *val, G
     if(!**arg)
       continue;
 
-    struct flag_option *o = ops;
+    flag_option_t *o = ops;
     for(; o->num; o++) {
       if(strcmp(o->name, *arg) == 0) {
         n++;
@@ -222,7 +222,7 @@ static int flags_raw(struct flag_option *ops, gboolean multi, const char *val, G
   return r;
 }
 
-static char *flags_fmt(struct flag_option *o, int val) {
+static char *flags_fmt(flag_option_t *o, int val) {
   GString *s = g_string_new("");
   for(; o->num; o++) {
     if(val & o->num) {
@@ -234,7 +234,7 @@ static char *flags_fmt(struct flag_option *o, int val) {
   return g_string_free(s, FALSE);
 }
 
-static void flags_sug(struct flag_option *o, const char *val, char **sug) {
+static void flags_sug(flag_option_t *o, const char *val, char **sug) {
   char *v = g_strdup(val);
   char *attr = strrchr(v, ',');
   if(attr)
@@ -362,7 +362,7 @@ static char *i_cid_pid() {
 
   guint64 r = rand_64();
 
-  struct tiger_ctx t;
+  tiger_ctx_t t;
   char pid[24];
   tiger_init(&t);
   tiger_update(&t, (char *)&r, 8);
@@ -404,7 +404,7 @@ static void su_color(const char *old, const char *v, char **sug) {
   else
     attr = val;
   g_strstrip(attr);
-  struct ui_attr *a = ui_attr_names;
+  ui_attr_t *a = ui_attr_names;
   int i = 0, len = strlen(attr);
   for(; a->name[0] && i<20; a++)
     if(strncmp(attr, a->name, len) == 0)
@@ -490,7 +490,7 @@ static char *p_encoding(const char *val, GError **err) {
 }
 
 static void su_encoding(const char *old, const char *val, char **sug) {
-  static struct flag_option encoding_flags[] = {
+  static flag_option_t encoding_flags[] = {
     {1,"CP1250"}, {1,"CP1251"}, {1,"CP1252"}, {1,"ISO-2022-JP"}, {1,"ISO-8859-2"}, {1,"ISO-8859-7"},
     {1,"ISO-8859-8"}, {1,"ISO-8859-9"}, {1,"KOI8-R"}, {1,"LATIN1"}, {1,"SJIS"}, {1,"UTF-8"},
     {1,"WINDOWS-1250"}, {1,"WINDOWS-1251"}, {1,"WINDOWS-1252"}, {0}
@@ -525,7 +525,7 @@ int var_ffc = 0;
 #define VAR_FFC_HASH     8
 #endif
 
-static struct flag_option var_ffc_ops[] = {
+static flag_option_t var_ffc_ops[] = {
   { VAR_FFC_NONE,     "none"     },
   { VAR_FFC_DOWNLOAD, "download" },
   { VAR_FFC_UPLOAD,   "upload"   },
@@ -616,7 +616,7 @@ static gboolean s_hubname(guint64 hub, const char *key, const char *val, GError 
   db_vars_set(hub, key, val);
   GList *n;
   for(n=ui_tabs; n; n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->type == UIT_HUB && t->hub->id == hub) {
       g_free(t->name);
       t->name = g_strdup(val);
@@ -675,7 +675,7 @@ static gboolean s_password(guint64 hub, const char *key, const char *val, GError
   // send password to hub
   GList *tab;
   for(tab=ui_tabs; tab; tab=tab->next) {
-    struct ui_tab *t = tab->data;
+    ui_tab_t *t = tab->data;
     if(t->type == UIT_HUB && t->hub->id == hub && net_is_connected(t->hub->net) && !t->hub->nick_valid)
       hub_password(t->hub, NULL);
   }
@@ -714,7 +714,7 @@ static char *p_sendfile(const char *val, GError **err) {
 #define VAR_TLSP_PREFER  4
 #endif
 
-static struct flag_option var_tls_policy_ops[] = {
+static flag_option_t var_tls_policy_ops[] = {
   { VAR_TLSP_DISABLE, "disabled" },
   { VAR_TLSP_ALLOW,   "allow"    },
   { VAR_TLSP_PREFER,  "prefer"   },
@@ -778,7 +778,7 @@ static char *p_tls_priority(const char *val, GError **err) {
 
 #if INTERFACE
 
-struct var {
+struct var_t {
   // Name does not necessarily have to correspond to the name in the 'vars'
   // table. Though in that case special getraw() and setraw() functions have to
   // be used.
@@ -878,7 +878,7 @@ enum var_type {
 #endif
 
 
-struct var vars[] = {
+var_t vars[] = {
 #define V(n, gl, h, f, p, su, g, s, d) { G_STRINGIFY(n), gl, h, f, p, su, g, s, NULL },
 #define C(n, d) { "color_"G_STRINGIFY(n), 1, 0, f_id, p_color, su_color, NULL, s_color, d },
   VARS

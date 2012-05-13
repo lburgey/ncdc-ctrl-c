@@ -45,7 +45,7 @@
 
 
 // global network stats
-struct ratecalc net_in, net_out;
+ratecalc_t net_in, net_out;
 
 #define NET_RECV_SIZE (   8*1024)
 #define NET_MAX_RBUF  (1024*1024)
@@ -74,8 +74,8 @@ struct synfer;
 struct net {
   int state;
 
-  struct ratecalc *rate_in;
-  struct ratecalc *rate_out;
+  ratecalc_t *rate_in;
+  ratecalc_t *rate_out;
 
   struct dnscon *dnscon; // state DNS,CON. Setting ->net to NULL 'cancels' DNS resolving.
   int sock; // state CON,ASY,SYN,DIS
@@ -368,7 +368,7 @@ static int syn_wait(struct synfer *s, int sock, gboolean write) {
 
 #ifdef HAVE_SENDFILE
 
-static void syn_upload_sendfile(struct synfer *s, int sock, struct fadv *adv) {
+static void syn_upload_sendfile(struct synfer *s, int sock, fadv_t *adv) {
   off_t off = lseek(s->fd, 0, SEEK_CUR);
   if(off == (off_t)-1) {
     s->err = g_strdup(g_strerror(errno));
@@ -425,7 +425,7 @@ static void syn_upload_sendfile(struct synfer *s, int sock, struct fadv *adv) {
 #endif
 
 
-static void syn_upload_buf(struct synfer *s, int sock, struct fadv *adv) {
+static void syn_upload_buf(struct synfer *s, int sock, fadv_t *adv) {
   char *buf = g_malloc(NET_TRANS_BUF);
 
   while(s->left > 0 && !s->err && !s->cancel) {
@@ -512,7 +512,7 @@ static void syn_thread(gpointer dat, gpointer udat) {
   g_static_mutex_unlock(&s->lock);
 
   if(sock && !s->cancel && s->upl) {
-    struct fadv adv;
+    fadv_t adv;
     if(s->flush)
       fadv_init(&adv, s->fd, lseek(s->fd, 0, SEEK_CUR), VAR_FFC_UPLOAD);
 
@@ -1226,8 +1226,8 @@ struct net *net_new(void *handle, void(*err)(struct net *, int, const char *)) {
   n->ref = 1;
   n->handle = handle;
   n->cb_err = err;
-  n->rate_in = g_slice_new0(struct ratecalc);
-  n->rate_out = g_slice_new0(struct ratecalc);
+  n->rate_in = g_slice_new0(ratecalc_t);
+  n->rate_out = g_slice_new0(ratecalc_t);
   ratecalc_init(n->rate_in);
   ratecalc_init(n->rate_out);
   time(&n->timeout_last);
@@ -1346,8 +1346,8 @@ void net_unref(struct net *n) {
   if(!g_atomic_int_dec_and_test(&n->ref))
     return;
   g_return_if_fail(n->state == NETST_IDL);
-  g_slice_free(struct ratecalc, n->rate_in);
-  g_slice_free(struct ratecalc, n->rate_out);
+  g_slice_free(ratecalc_t, n->rate_in);
+  g_slice_free(ratecalc_t, n->rate_out);
   g_free(n);
 }
 

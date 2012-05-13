@@ -52,7 +52,7 @@
 
 #define tiger_block_size 64
 
-struct tiger_ctx {
+struct tiger_ctx_t {
   guint64 hash[3]; /* algorithm 192-bit state */
   char message[tiger_block_size]; /* 512-bit buffer for leftovers */
   guint64 length;  /* processed message length */
@@ -76,7 +76,7 @@ static guint64 tiger_sboxes[4][256];
 #define t4 tiger_sboxes[3]
 
 
-void tiger_init(struct tiger_ctx *ctx) {
+void tiger_init(tiger_ctx_t *ctx) {
   ctx->length = 0;
 
   /* initialize algorithm state */
@@ -189,7 +189,7 @@ static void tiger_process_block(guint64 state[3], guint64 *block) {
 }
 
 
-void tiger_update(struct tiger_ctx *ctx, const char *msg, size_t size) {
+void tiger_update(tiger_ctx_t *ctx, const char *msg, size_t size) {
   size_t index = (size_t)ctx->length & 63;
   size_t left;
   ctx->length += size;
@@ -227,7 +227,7 @@ void tiger_update(struct tiger_ctx *ctx, const char *msg, size_t size) {
 }
 
 
-void tiger_final(struct tiger_ctx *ctx, char result[24]) {
+void tiger_final(tiger_ctx_t *ctx, char result[24]) {
   unsigned index = (unsigned)ctx->length & 63;
   guint64 *msg64 = (guint64 *)ctx->message;
 
@@ -270,8 +270,8 @@ void tiger_final(struct tiger_ctx *ctx, char result[24]) {
 
 #if INTERFACE
 
-struct tth_ctx {
-  struct tiger_ctx tiger;
+struct tth_ctx_t {
+  tiger_ctx_t tiger;
   int leafnum; // There can be 2^29 leafs. Fits in an integer.
   int gotfirst;
   // Stack used to calculate the hash.
@@ -301,7 +301,7 @@ struct tth_ctx {
 
 
 #define tth_combine(left, right, res) do {\
-    struct tiger_ctx x;\
+    tiger_ctx_t x;\
     tiger_init(&x);\
     tiger_update(&x, "\1", 1);\
     tiger_update(&x, left, 24);\
@@ -310,13 +310,13 @@ struct tth_ctx {
   } while(0)
 
 
-void tth_init(struct tth_ctx *ctx) {
+void tth_init(tth_ctx_t *ctx) {
   tth_new_leaf(ctx);
   ctx->leafnum = ctx->gotfirst = 0;
 }
 
 
-void tth_update_leaf(struct tth_ctx *ctx, const char *leaf) {
+void tth_update_leaf(tth_ctx_t *ctx, const char *leaf) {
   int pos = 0;
   char tmp[24];
   int it;
@@ -333,7 +333,7 @@ void tth_update_leaf(struct tth_ctx *ctx, const char *leaf) {
 }
 
 
-void tth_update(struct tth_ctx *ctx, const char *msg, size_t len) {
+void tth_update(tth_ctx_t *ctx, const char *msg, size_t len) {
   char leaf[24];
   int left;
   if(len > 0)
@@ -356,7 +356,7 @@ void tth_update(struct tth_ctx *ctx, const char *msg, size_t len) {
 
 
 // combine everything on the stack to produce the last hash (based on RHash code)
-static void tth_stack_final(struct tth_ctx *ctx, char *result) {
+static void tth_stack_final(tth_ctx_t *ctx, char *result) {
   guint64 it = 1;
   int pos = 0;
   char *last;
@@ -375,7 +375,7 @@ static void tth_stack_final(struct tth_ctx *ctx, char *result) {
 }
 
 
-void tth_final(struct tth_ctx *ctx, char *result) {
+void tth_final(tth_ctx_t *ctx, char *result) {
   // finish up last leaf
   if(!ctx->gotfirst || ctx->tiger.length > 1) {
     tiger_final(&ctx->tiger, result);
@@ -391,7 +391,7 @@ void tth_final(struct tth_ctx *ctx, char *result) {
 // Calculate the root from a list of leaf/intermetiate hashes. All hashes must
 // be at the same level.
 void tth_root(char *blocks, int num, char *result) {
-  struct tth_ctx t;
+  tth_ctx_t t;
   tth_init(&t);
   int i;
   for(i=0; i<num; i++)

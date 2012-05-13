@@ -34,7 +34,7 @@
 
 #if INTERFACE
 
-struct hub_user {
+struct hub_user_t {
   gboolean hasinfo : 1;
   gboolean isop : 1;
   gboolean isjoined : 1; // managed by ui_hub_userchange()
@@ -50,7 +50,7 @@ struct hub_user {
   unsigned int as;       // auto-open slot if upload is below n bytes/s
   guint32 ip4;
   int sid;        // for ADC
-  struct hub *hub;
+  hub_t *hub;
   char *name;     // UTF-8
   char *name_hub; // hub-encoded (NMDC)
   char *desc;
@@ -65,11 +65,11 @@ struct hub_user {
 }
 
 
-struct hub {
+struct hub_t {
   gboolean adc : 16;       // TRUE = ADC, FALSE = NMDC protocol.
   gboolean tls : 16;
   int state;               // (ADC) ADC_S_*
-  struct ui_tab *tab;
+  ui_tab_t *tab;
   struct net *net;
 
   // Hub info / config
@@ -132,19 +132,19 @@ GHashTable *hub_uids = NULL;
 
 
 
-// struct hub_user related functions
+// hub_user_t related functions
 
 
 // cid is required for ADC. expected to be base32-encoded.
-static struct hub_user *user_add(struct hub *hub, const char *name, const char *cid) {
-  struct hub_user *u = g_hash_table_lookup(hub->users, name);
+static hub_user_t *user_add(hub_t *hub, const char *name, const char *cid) {
+  hub_user_t *u = g_hash_table_lookup(hub->users, name);
   if(u)
     return u;
-  struct tiger_ctx t;
+  tiger_ctx_t t;
   char tmp[24];
   tiger_init(&t);
   tiger_update(&t, (char *)&(hub->id), 8);
-  u = g_slice_new0(struct hub_user);
+  u = g_slice_new0(hub_user_t);
   u->hub = hub;
   if(hub->adc) {
     u->name = g_strdup(name);
@@ -175,7 +175,7 @@ static struct hub_user *user_add(struct hub *hub, const char *name, const char *
 
 
 static void user_free(gpointer dat) {
-  struct hub_user *u = dat;
+  hub_user_t *u = dat;
   // remove from hub_uids
   g_hash_table_remove(hub_uids, &(u->uid));
   // remove from hub->sessions
@@ -191,26 +191,26 @@ static void user_free(gpointer dat) {
     g_free(u->conn);
   g_free(u->mail);
   g_free(u->client);
-  g_slice_free(struct hub_user, u);
+  g_slice_free(hub_user_t, u);
 }
 
 
 // Get a user by a UTF-8 string. May fail for NMDC if the UTF-8 -> hub encoding
 // is not really one-to-one.
-struct hub_user *hub_user_get(struct hub *hub, const char *name) {
+hub_user_t *hub_user_get(hub_t *hub, const char *name) {
   if(hub->adc)
     return g_hash_table_lookup(hub->users, name);
   char *name_hub = charset_convert(hub, FALSE, name);
-  struct hub_user *u = g_hash_table_lookup(hub->users, name_hub);
+  hub_user_t *u = g_hash_table_lookup(hub->users, name_hub);
   g_free(name_hub);
   return u;
 }
 
 
 // Auto-complete suggestions for hub_user_get()
-void hub_user_suggest(struct hub *hub, char *str, char **sug) {
+void hub_user_suggest(hub_t *hub, char *str, char **sug) {
   GHashTableIter iter;
-  struct hub_user *u;
+  hub_user_t *u;
   int i=0, len = strlen(str);
   g_hash_table_iter_init(&iter, hub->users);
   while(i<20 && g_hash_table_iter_next(&iter, NULL, (gpointer *)&u))
@@ -229,7 +229,7 @@ void hub_user_suggest(struct hub *hub, char *str, char **sug) {
 #endif
 
 
-char *hub_user_tag(struct hub_user *u) {
+char *hub_user_tag(hub_user_t *u) {
   if(!u->client || !u->slots)
     return NULL;
   GString *t = g_string_new("");
@@ -249,7 +249,7 @@ char *hub_user_tag(struct hub_user *u) {
       (str)[strlen(str)-1] = 0;\
   } while(0)
 
-static void user_nmdc_nfo(struct hub *hub, struct hub_user *u, char *str) {
+static void user_nmdc_nfo(hub_t *hub, hub_user_t *u, char *str) {
   // these all point into *str. *str is modified to contain zeroes in the correct positions
   char *next, *tmp;
   char *desc = NULL;
@@ -354,7 +354,7 @@ static void user_nmdc_nfo(struct hub *hub, struct hub_user *u, char *str) {
 
 #define P(a,b) (((a)<<8) + (b))
 
-static void user_adc_nfo(struct hub *hub, struct hub_user *u, struct adc_cmd *cmd) {
+static void user_adc_nfo(hub_t *hub, hub_user_t *u, adc_cmd_t *cmd) {
   u->hasinfo = TRUE;
   // sid
   if(!u->sid) {
@@ -449,10 +449,10 @@ static void user_adc_nfo(struct hub *hub, struct hub_user *u, struct adc_cmd *cm
 // hub stuff
 
 // Linear search at the moment, not too efficient.
-struct hub *hub_global_byid(guint64 id) {
+hub_t *hub_global_byid(guint64 id) {
   GList *l;
   for(l=ui_tabs; l; l=l->next) {
-    struct ui_tab *t = l->data;
+    ui_tab_t *t = l->data;
     if(t->type == UIT_HUB && t->hub->id == id)
       return t->hub;
   }
@@ -464,7 +464,7 @@ struct hub *hub_global_byid(guint64 id) {
 void hub_global_nfochange() {
   GList *n;
   for(n=ui_tabs; n; n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->type == UIT_HUB && t->hub->nick_valid)
       hub_send_nfo(t->hub);
   }
@@ -472,13 +472,13 @@ void hub_global_nfochange() {
 
 
 // Get the current active IP used for this hub. (If we're active)
-guint32 hub_ip4(struct hub *hub) {
+guint32 hub_ip4(hub_t *hub) {
   guint32 conf = ip4_pack(var_get((hub)->id, VAR_active_ip));
   return conf ? conf : hub->ip4;
 }
 
 
-void hub_password(struct hub *hub, char *pass) {
+void hub_password(hub_t *hub, char *pass) {
   g_return_if_fail(hub->adc ? hub->state == ADC_S_VERIFY : !hub->nick_valid);
 
   if(!pass)
@@ -490,7 +490,7 @@ void hub_password(struct hub *hub, char *pass) {
   } else if(hub->adc) {
     char enc[40] = {};
     char res[24];
-    struct tiger_ctx t;
+    tiger_ctx_t t;
     tiger_init(&t);
     tiger_update(&t, pass, strlen(pass));
     tiger_update(&t, hub->gpa_salt, hub->gpa_salt_len);
@@ -505,14 +505,14 @@ void hub_password(struct hub *hub, char *pass) {
 }
 
 
-void hub_kick(struct hub *hub, struct hub_user *u) {
+void hub_kick(hub_t *hub, hub_user_t *u) {
   g_return_if_fail(!hub->adc && hub->nick_valid && u);
   net_writef(hub->net, "$Kick %s|", u->name_hub);
 }
 
 
 // Initiate a C-C connection with a user
-void hub_opencc(struct hub *hub, struct hub_user *u) {
+void hub_opencc(hub_t *hub, hub_user_t *u) {
   char token[20];
   if(hub->adc)
     g_snprintf(token, 19, "%"G_GUINT32_FORMAT, g_random_int());
@@ -550,7 +550,7 @@ void hub_opencc(struct hub *hub, struct hub_user *u) {
 
 
 // Send a search request
-void hub_search(struct hub *hub, struct search_q *q) {
+void hub_search(hub_t *hub, search_q_t *q) {
   // ADC
   if(hub->adc) {
     // TODO: use FSCH to only get results from active users when we are passive?
@@ -617,7 +617,7 @@ void hub_search(struct hub *hub, struct search_q *q) {
 #define eq(a) (a == hub->nfo_##a)
 #define beq(a) (!!a == !!hub->nfo_##a)
 
-void hub_send_nfo(struct hub *hub) {
+void hub_send_nfo(hub_t *hub) {
   if(hub->net->state != NETST_ASY)
     return;
 
@@ -642,7 +642,7 @@ void hub_send_nfo(struct hub *hub) {
   h_norm = h_reg = h_op = 0;
   GList *n;
   for(n=ui_tabs; n; n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->type != UIT_HUB || !t->hub->nick_valid)
       continue;
     if(t->hub->isop)
@@ -757,7 +757,7 @@ void hub_send_nfo(struct hub *hub) {
 #undef streq
 
 
-void hub_say(struct hub *hub, const char *str, gboolean me) {
+void hub_say(hub_t *hub, const char *str, gboolean me) {
   if(!hub->nick_valid)
     return;
   if(hub->adc) {
@@ -776,7 +776,7 @@ void hub_say(struct hub *hub, const char *str, gboolean me) {
 }
 
 
-void hub_msg(struct hub *hub, struct hub_user *user, const char *str, gboolean me, int dest) {
+void hub_msg(hub_t *hub, hub_user_t *user, const char *str, gboolean me, int dest) {
   if(hub->adc) {
     GString *c = adc_generate('E', ADCC_MSG, hub->sid, dest ? dest : user->sid);
     adc_append(c, NULL, str);
@@ -802,7 +802,7 @@ void hub_msg(struct hub *hub, struct hub_user *user, const char *str, gboolean m
 
 
 // Call this when the hub tells us our IP.
-static void setownip(struct hub *hub, guint32 ip) {
+static void setownip(hub_t *hub, guint32 ip) {
   if(ip != hub->ip4) {
     guint32 old = hub_ip4(hub);
     hub->ip4 = ip;
@@ -815,7 +815,7 @@ static void setownip(struct hub *hub, guint32 ip) {
 }
 
 
-static void adc_sch_reply_send(struct hub *hub, const char *dest, GString *r, gboolean udp, const char *key) {
+static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, gboolean udp, const char *key) {
   if(!udp) {
     net_writestr(hub->net, r->str);
     return;
@@ -858,7 +858,7 @@ static void adc_sch_reply_send(struct hub *hub, const char *dest, GString *r, gb
 }
 
 
-static void adc_sch_reply(struct hub *hub, struct adc_cmd *cmd, struct hub_user *u, struct fl_list **res, int len) {
+static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t **res, int len) {
 #if SUDP_SUPPORT
   char *ky = adc_getparam(cmd->argv, "KY", NULL); // SUDP key
 #else
@@ -909,7 +909,7 @@ static void adc_sch_reply(struct hub *hub, struct adc_cmd *cmd, struct hub_user 
 }
 
 
-static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
+static void adc_sch(hub_t *hub, adc_cmd_t *cmd) {
   char *an = adc_getparam(cmd->argv, "AN", NULL); // and
   char *no = adc_getparam(cmd->argv, "NO", NULL); // not
   char *ex = adc_getparam(cmd->argv, "EX", NULL); // ext
@@ -929,7 +929,7 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
     return;
 
   // Actually matching the tree depth is rather resouce-intensive, since we
-  // don't store it in struct fl_list. Instead, just assume fl_hash_keep_level
+  // don't store it in fl_list_t. Instead, just assume fl_hash_keep_level
   // for everything. This may be wrong, but if it is, it's most likely to be a
   // pessimistic estimate, which happens in the case TTH data is converted from
   // a DC++ client to ncdc.
@@ -939,12 +939,12 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
   if(tr && !istth(tr))
     return;
 
-  struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd->source));
+  hub_user_t *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd->source));
   if(!u)
     return;
 
   // create search struct
-  struct fl_search s = {};
+  fl_search_t s = {};
   s.sizem = eq ? 0 : le ? -1 : ge ? 1 : -2;
   s.size = s.sizem == -2 ? 0 : g_ascii_strtoull(eq ? eq : le ? le : ge, NULL, 10);
   s.filedir = !ty ? 3 : ty[0] == '1' ? 1 : 2;
@@ -958,7 +958,7 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
 
   int i = 0;
   int max = u->hasudp4 ? 10 : 5;
-  struct fl_list *res[max];
+  fl_list_t *res[max];
 
   // TTH lookup
   if(tr) {
@@ -967,7 +967,7 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
     GSList *l = fl_local_from_tth(root);
     // it still has to match the other requirements...
     for(; i<max && l; l=l->next) {
-      struct fl_list *c = l->data;
+      fl_list_t *c = l->data;
       if(fl_search_match_full(c, &s))
         res[i++] = c;
     }
@@ -992,10 +992,10 @@ static void adc_sch(struct hub *hub, struct adc_cmd *cmd) {
 #define is_valid_proto(p) (is_adc_proto(p) || is_adcs_proto(p))
 
 static void adc_handle(struct net *net, char *msg, int _len) {
-  struct hub *hub = net->handle;
+  hub_t *hub = net->handle;
   net_readmsg(net, '\n', adc_handle);
 
-  struct adc_cmd cmd;
+  adc_cmd_t cmd;
   GError *err = NULL;
 
   if(!msg[0])
@@ -1047,7 +1047,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       }
     // inf from user
     } else if(cmd.type == 'B') {
-      struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
+      hub_user_t *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
       if(!u) {
         char *nick = adc_getparam(cmd.argv, "NI", NULL);
         char *cid = adc_getparam(cmd.argv, "ID", NULL);
@@ -1086,7 +1086,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else {
       int sid = ADC_DFCC(cmd.argv[0]);
-      struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(sid));
+      hub_user_t *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(sid));
       if(sid == hub->sid) {
         char *rd = adc_getparam(cmd.argv, "RD", NULL);
         char *ms = adc_getparam(cmd.argv, "MS", NULL);
@@ -1137,7 +1137,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       net_writestr(hub->net, r->str);
       g_string_free(r, TRUE);
     } else {
-      struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
+      hub_user_t *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
       int port = strtol(cmd.argv[1], NULL, 0);
       if(!u)
         g_message("CTM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
@@ -1174,7 +1174,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       net_writestr(hub->net, r->str);
       g_string_free(r, TRUE);
     } else {
-      struct hub_user *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
+      hub_user_t *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
       if(!u)
         g_message("RCM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
       else {
@@ -1197,8 +1197,8 @@ static void adc_handle(struct net *net, char *msg, int _len) {
     else {
       char *pm = adc_getparam(cmd.argv+1, "PM", NULL);
       gboolean me = adc_getparam(cmd.argv+1, "ME", NULL) != NULL;
-      struct hub_user *u = cmd.type != 'I' ? g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source)) : NULL;
-      struct hub_user *d = (cmd.type == 'E' || cmd.type == 'D') && cmd.source == hub->sid
+      hub_user_t *u = cmd.type != 'I' ? g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source)) : NULL;
+      hub_user_t *d = (cmd.type == 'E' || cmd.type == 'D') && cmd.source == hub->sid
         ? g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.dest)) : NULL;
       if(cmd.type != 'I' && !u && !d)
         g_message("Message from someone not on this hub. (%s: %s)", net_remoteaddr(hub->net), msg);
@@ -1253,10 +1253,10 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 #undef is_valid_proto
 
 
-static void nmdc_search(struct hub *hub, char *from, int size_m, guint64 size, int type, char *query) {
+static void nmdc_search(hub_t *hub, char *from, int size_m, guint64 size, int type, char *query) {
   int max = from[0] == 'H' ? 5 : 10;
-  struct fl_list *res[max];
-  struct fl_search s = {};
+  fl_list_t *res[max];
+  fl_search_t s = {};
   s.filedir = type == 1 ? 3 : type == 8 ? 2 : 1;
   s.ext = search_types[type].exts;
   s.size = size;
@@ -1274,7 +1274,7 @@ static void nmdc_search(struct hub *hub, char *from, int size_m, guint64 size, i
     GSList *l = fl_local_from_tth(root);
     // it still has to match the other requirements...
     for(; i<max && l; l=l->next) {
-      struct fl_list *c = l->data;
+      fl_list_t *c = l->data;
       if(fl_search_match_full(c, &s))
         res[i++] = c;
     }
@@ -1334,7 +1334,7 @@ static void nmdc_search(struct hub *hub, char *from, int size_m, guint64 size, i
 
 
 static void nmdc_handle(struct net *net, char *cmd, int _len) {
-  struct hub *hub = net->handle;
+  hub_t *hub = net->handle;
   // Immediately queue next read. It will be cancelled when net_disconnect() is
   // called anyway.
   net_readmsg(net, '|', nmdc_handle);
@@ -1408,7 +1408,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
         dl_user_join(0);
       }
     } else {
-      struct hub_user *u = user_add(hub, nick, NULL);
+      hub_user_t *u = user_add(hub, nick, NULL);
       if(!u->hasinfo && !hub->supports_nogetinfo)
         net_writef(hub->net, "$GetINFO %s|", nick);
     }
@@ -1419,7 +1419,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
   // $Quit
   if(g_regex_match(quit, cmd, 0, &nfo)) { // 1 = nick
     char *nick = g_match_info_fetch(nfo, 1);
-    struct hub_user *u = g_hash_table_lookup(hub->users, nick);
+    hub_user_t *u = g_hash_table_lookup(hub->users, nick);
     if(u) {
       ui_hub_userchange(hub->tab, UIHUB_UC_QUIT, u);
       if(u->hasinfo) {
@@ -1440,7 +1440,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     g_free(str);
     char **cur;
     for(cur=list; *cur&&**cur; cur++) {
-      struct hub_user *u = user_add(hub, *cur, NULL);
+      hub_user_t *u = user_add(hub, *cur, NULL);
       if(!u->hasinfo && !hub->supports_nogetinfo)
         net_writef(hub->net, "$GetINFO %s %s|", *cur, hub->nick_hub);
     }
@@ -1461,7 +1461,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     // inefficient and not all that important at this point.
     hub->isop = FALSE;
     for(cur=list; *cur&&**cur; cur++) {
-      struct hub_user *u = user_add(hub, *cur, NULL);
+      hub_user_t *u = user_add(hub, *cur, NULL);
       if(!u->isop) {
         u->isop = TRUE;
         ui_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
@@ -1486,7 +1486,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
       if(!sep)
         continue;
       *sep = 0;
-      struct hub_user *u = user_add(hub, *cur, NULL);
+      hub_user_t *u = user_add(hub, *cur, NULL);
       guint32 new = ip4_pack(sep+1);
       if(new != u->ip4) {
         u->ip4 = new;
@@ -1504,7 +1504,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
   if(g_regex_match(myinfo, cmd, 0, &nfo)) { // 1 = nick, 2 = info string
     char *nick = g_match_info_fetch(nfo, 1);
     char *str = g_match_info_fetch(nfo, 2);
-    struct hub_user *u = user_add(hub, nick, NULL);
+    hub_user_t *u = user_add(hub, nick, NULL);
     if(!u->hasinfo)
       hub->sharecount++;
     else
@@ -1535,7 +1535,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
     char *to = g_match_info_fetch(nfo, 1);
     char *from = g_match_info_fetch(nfo, 2);
     char *msg = g_match_info_fetch(nfo, 3);
-    struct hub_user *u = g_hash_table_lookup(hub->users, from);
+    hub_user_t *u = g_hash_table_lookup(hub->users, from);
     if(!u)
       g_message("[hub: %s] Got a $To from `%s', who is not on this hub!", hub->tab->name, from);
     else {
@@ -1579,7 +1579,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
   if(g_regex_match(revconnecttome, cmd, 0, &nfo)) { // 1 = other, 2 = me
     char *other = g_match_info_fetch(nfo, 1);
     char *me = g_match_info_fetch(nfo, 2);
-    struct hub_user *u = g_hash_table_lookup(hub->users, other);
+    hub_user_t *u = g_hash_table_lookup(hub->users, other);
     if(strcmp(me, hub->nick_hub) != 0)
       g_message("Received a $RevConnectToMe for someone else (to %s from %s)", me, other);
     else if(!u)
@@ -1668,7 +1668,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
 
 
 static gboolean check_nfo(gpointer data) {
-  struct hub *hub = data;
+  hub_t *hub = data;
   if(hub->nick_valid)
     hub_send_nfo(hub);
   return TRUE;
@@ -1677,13 +1677,13 @@ static gboolean check_nfo(gpointer data) {
 
 static gboolean reconnect_timer(gpointer dat) {
   hub_connect(dat);
-  ((struct hub *)dat)->reconnect_timer = 0;
+  ((hub_t *)dat)->reconnect_timer = 0;
   return FALSE;
 }
 
 
 static gboolean joincomplete_timer(gpointer dat) {
-  struct hub *hub = dat;
+  hub_t *hub = dat;
   hub->joincomplete = TRUE;
   hub->joincomplete_timer = 0;
   return FALSE;
@@ -1691,7 +1691,7 @@ static gboolean joincomplete_timer(gpointer dat) {
 
 
 static void handle_error(struct net *n, int action, const char *err) {
-  struct hub *hub = n->handle;
+  hub_t *hub = n->handle;
 
   ui_mf(hub->tab, 0, "%s: %s",
     action == NETERR_CONN ? "Could not connect to hub" :
@@ -1701,8 +1701,8 @@ static void handle_error(struct net *n, int action, const char *err) {
 }
 
 
-struct hub *hub_create(struct ui_tab *tab) {
-  struct hub *hub = g_new0(struct hub, 1);
+hub_t *hub_create(ui_tab_t *tab) {
+  hub_t *hub = g_new0(hub_t, 1);
 
   // Get or create the hub id
   hub->id = db_vars_hubid(tab->name);
@@ -1722,7 +1722,7 @@ struct hub *hub_create(struct ui_tab *tab) {
 
 static void handle_handshake(struct net *n, const char *kpr) {
   g_return_if_fail(kpr != NULL);
-  struct hub *hub = n->handle;
+  hub_t *hub = n->handle;
   g_return_if_fail(!hub->kp);
 
   char kpf[53] = {};
@@ -1759,7 +1759,7 @@ static void handle_handshake(struct net *n, const char *kpr) {
 
 
 static void handle_connect(struct net *n, const char *addr) {
-  struct hub *hub = n->handle;
+  hub_t *hub = n->handle;
   if(addr) {
     ui_mf(hub->tab, 0, "Trying %s...", addr);
     return;
@@ -1785,7 +1785,7 @@ static void handle_connect(struct net *n, const char *addr) {
 }
 
 
-void hub_connect(struct hub *hub) {
+void hub_connect(hub_t *hub) {
   char *oaddr = var_get(hub->id, VAR_hubaddr);
   char *addr = oaddr;
   g_return_if_fail(addr);
@@ -1828,7 +1828,7 @@ void hub_connect(struct hub *hub) {
 }
 
 
-void hub_disconnect(struct hub *hub, gboolean recon) {
+void hub_disconnect(hub_t *hub, gboolean recon) {
   if(hub->reconnect_timer) {
     g_source_remove(hub->reconnect_timer);
     hub->reconnect_timer = 0;
@@ -1866,7 +1866,7 @@ void hub_disconnect(struct hub *hub, gboolean recon) {
 }
 
 
-void hub_free(struct hub *hub) {
+void hub_free(hub_t *hub) {
   // Make sure to disconnect before calling cc_remove_hub(). dl_queue_expect(),
   // called from cc_remove_hub() will look in the global userlist for
   // alternative hubs. Users of this hub must not be present in the list,

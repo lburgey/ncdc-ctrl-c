@@ -857,7 +857,7 @@ gboolean db_dl_checkhash(const char *root, int num, const char *hash) {
 // the main thread. (This is because they do caching)
 
 #if INTERFACE
-struct db_share_item { char *name; char *path; };
+struct db_share_item_t { char *name; char *path; };
 #endif
 
 static GArray *db_share_cache = NULL;
@@ -866,13 +866,13 @@ static GArray *db_share_cache = NULL;
 // Returns a zero-terminated array of the shared directories. The array is
 // ordered by name. The array should not be freed, and may be modified by any
 // later call to a db_share_ function.
-struct db_share_item *db_share_list() {
+db_share_item_t *db_share_list() {
   // Return cache
   if(db_share_cache)
-    return (struct db_share_item *)db_share_cache->data;
+    return (db_share_item_t *)db_share_cache->data;
 
   // Otherwise, create the cache
-  db_share_cache = g_array_new(TRUE, FALSE, sizeof(struct db_share_item));
+  db_share_cache = g_array_new(TRUE, FALSE, sizeof(db_share_item_t));
   GAsyncQueue *a = g_async_queue_new_full(g_free);
   db_queue_push(DBF_NOCACHE, "SELECT name, path FROM share ORDER BY name",
     DBQ_RES, a, DBQ_TEXT, DBQ_TEXT,
@@ -880,7 +880,7 @@ struct db_share_item *db_share_list() {
   );
 
   char *r;
-  struct db_share_item i;
+  db_share_item_t i;
   while((r = g_async_queue_pop(a)) && darray_get_int32(r) == SQLITE_ROW) {
     i.name = g_strdup(darray_get_string(r));
     i.path = g_strdup(darray_get_string(r));
@@ -890,7 +890,7 @@ struct db_share_item *db_share_list() {
   g_free(r);
   g_async_queue_unref(a);
 
-  return (struct db_share_item *)db_share_cache->data;
+  return (db_share_item_t *)db_share_cache->data;
 }
 
 
@@ -901,7 +901,7 @@ const char *db_share_path(const char *name) {
   // The list is always ordered, so a binary search is possible and will be
   // more efficient than this linear search. I don't think anyone has enough
   // shared directories for that to matter, though.
-  struct db_share_item *l = db_share_list();
+  db_share_item_t *l = db_share_list();
   for(; l->name; l++)
     if(strcmp(name, l->name) == 0)
       return l->path;
@@ -914,7 +914,7 @@ void db_share_rm(const char *name) {
   // Remove all
   if(!name) {
     // Purge cache
-    db_share_item *l = db_share_list();
+    db_share_item_t *l = db_share_list();
     for(; l->name; l++) {
       g_free(l->name);
       g_free(l->path);
@@ -927,7 +927,7 @@ void db_share_rm(const char *name) {
   // Remove one
   } else {
     // Remove from the cache
-    struct db_share_item *l = db_share_list();
+    db_share_item_t *l = db_share_list();
     int i;
     for(i=0; l->name; l++,i++) {
       if(strcmp(name, l->name) == 0) {
@@ -947,11 +947,11 @@ void db_share_rm(const char *name) {
 // Add an item to the share.
 void db_share_add(const char *name, const char *path) {
   // Add to the cache
-  struct db_share_item new;
+  db_share_item_t new;
   new.name = g_strdup(name);
   new.path = g_strdup(path);
 
-  struct db_share_item *l = db_share_list();
+  db_share_item_t *l = db_share_list();
   int i;
   for(i=0; l->name; l++,i++)
     if(strcmp(l->name, name) > 0)
@@ -974,27 +974,27 @@ void db_share_add(const char *name, const char *path) {
 // Try to avoid using the db_vars_(get|set) functions directly. Use the
 // higher-level vars.c abstraction instead.
 
-struct db_var_item { char *name; char *val; guint64 hub; };
+typedef struct db_var_item_t { char *name; char *val; guint64 hub; } db_var_item_t;
 static GHashTable *db_vars_cache = NULL;
 
 
 // Hash, equal and free functions for the hash table
 static guint db_vars_cachehash(gconstpointer a) {
-  const struct db_var_item *i = a;
+  const db_var_item_t *i = a;
   return g_str_hash(i->name) + g_int64_hash(&i->hub);
 }
 
 static gboolean db_vars_cacheeq(gconstpointer a, gconstpointer b) {
-  const struct db_var_item *x = a;
-  const struct db_var_item *y = b;
+  const db_var_item_t *x = a;
+  const db_var_item_t *y = b;
   return strcmp(x->name, y->name) == 0 && x->hub == y->hub ? TRUE : FALSE;
 }
 
 static void db_vars_cachefree(gpointer a) {
-  struct db_var_item *i = a;
+  db_var_item_t *i = a;
   g_free(i->name);
   g_free(i->val);
-  g_slice_free(struct db_var_item, i);
+  g_slice_free(db_var_item_t, i);
 }
 
 
@@ -1012,7 +1012,7 @@ static void db_vars_cacheget() {
 
   char *r;
   while((r = g_async_queue_pop(a)) && darray_get_int32(r) == SQLITE_ROW) {
-    struct db_var_item *i = g_slice_new(struct db_var_item);
+    db_var_item_t *i = g_slice_new(db_var_item_t);
     i->name = g_strdup(darray_get_string(r));
     i->hub = darray_get_int64(r);
     i->val = g_strdup(darray_get_string(r));
@@ -1027,7 +1027,7 @@ static void db_vars_cacheget() {
 // Get a value from the vars table. The return value should not be modified or freed.
 char *db_vars_get(guint64 hub, const char *name) {
   db_vars_cacheget();
-  struct db_var_item i, *r;
+  db_var_item_t i, *r;
   i.name = (char *)name;
   i.hub = hub;
   r = g_hash_table_lookup(db_vars_cache, &i);
@@ -1041,7 +1041,7 @@ void db_vars_rm(guint64 hub, const char *name) {
     return;
 
   // Update cache
-  struct db_var_item i;
+  db_var_item_t i;
   i.name = (char *)name;
   i.hub = hub;
   g_hash_table_remove(db_vars_cache, &i);
@@ -1064,7 +1064,7 @@ void db_vars_set(guint64 hub, const char *name, const char *val) {
     return;
 
   // Update cache
-  struct db_var_item *i = g_slice_new(struct db_var_item);;
+  db_var_item_t *i = g_slice_new(db_var_item_t);;
   i->hub = hub;
   i->name = g_strdup(name);
   i->val = g_strdup(val);
@@ -1081,7 +1081,7 @@ guint64 db_vars_hubid(const char *name) {
   db_vars_cacheget();
 
   GHashTableIter i;
-  struct db_var_item *n;
+  db_var_item_t *n;
   g_hash_table_iter_init(&i, db_vars_cache);
   while(g_hash_table_iter_next(&i, NULL, (gpointer *)&n))
     if(strcmp(n->name, "hubname") == 0 && strcmp(n->val, name) == 0)
@@ -1096,7 +1096,7 @@ char **db_vars_hubs() {
 
   GPtrArray *p = g_ptr_array_new();
   GHashTableIter i;
-  struct db_var_item *n;
+  db_var_item_t *n;
   g_hash_table_iter_init(&i, db_vars_cache);
   while(g_hash_table_iter_next(&i, NULL, (gpointer *)&n))
     if(strcmp(n->name, "hubname") == 0)

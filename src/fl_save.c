@@ -36,7 +36,7 @@
 #define BUFSIZE (32*1024)
 
 
-struct ctx {
+typedef struct ctx_t {
   GString *buf;     // we're always writing to a (temporary) buffer
   BZFILE *fh_bz;    // if BZ2 compression is enabled (implies fh_h!=NULL)
   FILE *fh_f;       // if we're writing to a file
@@ -44,11 +44,11 @@ struct ctx {
   char *tmpfile;    // Temp filename
   gboolean freebuf; // Whether we should free the buffer on close (otherwise it's passed back to the application)
   GError *err;
-};
+} ctx_t;
 
 
 // Flushes the write buffer to the underlying bzip2/file object (if any).
-static int doflush(struct ctx *x) {
+static int doflush(ctx_t *x) {
   if(x->fh_bz) {
     int bzerr;
     BZ2_bzWrite(&bzerr, x->fh_bz, x->buf->str, x->buf->len);
@@ -93,7 +93,7 @@ static int doflush(struct ctx *x) {
 
 
 // XML-escape and write a string literal
-static int al(struct ctx *x, const char *str) {
+static int al(ctx_t *x, const char *str) {
   while(*str) {
     switch(*str) {
     case '&': as("&amp;"); break;
@@ -109,10 +109,10 @@ static int al(struct ctx *x, const char *str) {
 
 
 // Recursively write the child nodes of an fl_list item.
-static int af(struct ctx *x, struct fl_list *fl, int level) {
+static int af(ctx_t *x, fl_list_t *fl, int level) {
   int i;
   for(i=0; i<fl->sub->len; i++) {
-    struct fl_list *cur = g_ptr_array_index(fl->sub, i);
+    fl_list_t *cur = g_ptr_array_index(fl->sub, i);
 
     if(cur->isfile && cur->hastth) {
       char tth[40] = {};
@@ -149,7 +149,7 @@ static int af(struct ctx *x, struct fl_list *fl, int level) {
 
 
 // Write the top-level XML
-static int at(struct ctx *x, struct fl_list *fl, int level) {
+static int at(ctx_t *x, fl_list_t *fl, int level) {
   as("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
   as("<FileListing Version=\"1\" Generator=\"");
   if(al(x, PACKAGE_STRING))
@@ -181,8 +181,8 @@ static int at(struct ctx *x, struct fl_list *fl, int level) {
 }
 
 
-static int ctx_open(struct ctx *x, const char *file, GString *buf) {
-  memset(x, 0, sizeof(struct ctx));
+static int ctx_open(ctx_t *x, const char *file, GString *buf) {
+  memset(x, 0, sizeof(ctx_t));
   x->buf = buf;
   x->file = file;
 
@@ -223,7 +223,7 @@ static int ctx_open(struct ctx *x, const char *file, GString *buf) {
 
 // Flushes the buffer, closes/renames the file and frees some memory. Does not
 // free x->file (not our property) and x->err (still used).
-static int ctx_close(struct ctx *x) {
+static int ctx_close(ctx_t *x) {
   if(!x->err)
     doflush(x);
 
@@ -250,10 +250,10 @@ static int ctx_close(struct ctx *x) {
 }
 
 
-gboolean fl_save(struct fl_list *fl, const char *file, GString *buf, int level, GError **err) {
+gboolean fl_save(fl_list_t *fl, const char *file, GString *buf, int level, GError **err) {
   g_return_val_if_fail(err == NULL || *err == NULL, FALSE);
 
-  struct ctx x;
+  ctx_t x;
   if(!ctx_open(&x, file, buf))
     at(&x, fl, level);
   ctx_close(&x);

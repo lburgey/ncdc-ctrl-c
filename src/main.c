@@ -61,7 +61,7 @@ GMainLoop *main_loop;
 #define ctrl_to_ascii(x) ((x) == 127 ? '?' : g_ascii_tolower((x)+64))
 
 static void handle_input() {
-  /* Mapping from get_wch() to struct input_key:
+  /* Mapping from get_wch() to input_key_t:
    *  KEY_CODE_YES -> KEY(code)
    *  KEY_CODE_NO:
    *    char == 127           -> KEY(KEY_BACKSPACE)

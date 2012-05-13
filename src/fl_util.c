@@ -33,8 +33,8 @@
 
 // file list
 
-struct fl_list {
-  struct fl_list *parent; // root = NULL
+struct fl_list_t {
+  fl_list_t *parent; // root = NULL
   GPtrArray *sub;
   guint64 size;   // including sub-items
   char tth[24];
@@ -49,7 +49,7 @@ struct fl_list {
 // region as the fl_list struct itself, but is placed somewhere after the name
 // field. Use the respecive macros to get access to this data.
 
-struct fl_list_local {
+struct fl_list_local_t {
   time_t lastmod;
   gint64 id;
 };
@@ -66,27 +66,27 @@ struct fl_list_local {
 #if INTERFACE
 
 // Calculates the minimum required size for a non-local fl_list allocation.
-#define fl_list_minsize(n) (G_STRUCT_OFFSET(struct fl_list, name) + strlen(n) + 1)
+#define fl_list_minsize(n) (G_STRUCT_OFFSET(fl_list_t, name) + strlen(n) + 1)
 
 // Calculates the offset to the fl_list_local struct, given a name. Padding
 // bytes are added to ensure that the struct is aligned at 8-byte boundary.
 #define fl_list_local_offset(n) ((fl_list_minsize(n) + 7) & ~7)
 
 // Calculates the size required for a local fl_list allocation.
-#define fl_list_localsize(n) (fl_list_local_offset(n) + sizeof(struct fl_list_local))
+#define fl_list_localsize(n) (fl_list_local_offset(n) + sizeof(fl_list_local_t))
 
 // Calculates the actual size of a fl_list.
 #define fl_list_size(n, l) (l ? fl_list_localsize(n) : fl_list_minsize(n))
 
 // Get the fl_list_local part of a fl_list struct.
-#define fl_list_getlocal(f) G_STRUCT_MEMBER(struct fl_list_local, f, fl_list_local_offset((f)->name))
+#define fl_list_getlocal(f) G_STRUCT_MEMBER(fl_list_local_t, f, fl_list_local_offset((f)->name))
 
 #endif
 
 
 // only frees the given item and its childs. leaves the parent(s) untouched
 void fl_list_free(gpointer dat) {
-  struct fl_list *fl = dat;
+  fl_list_t *fl = dat;
   if(!fl)
     return;
   if(fl->sub)
@@ -97,8 +97,8 @@ void fl_list_free(gpointer dat) {
 
 // Create a new fl_list structure with the given name. Can't be renamed later
 // on due to the way the data is stored in memory.
-struct fl_list *fl_list_create(const char *name, gboolean local) {
-  struct fl_list *fl = g_slice_alloc0(fl_list_size(name, local));
+fl_list_t *fl_list_create(const char *name, gboolean local) {
+  fl_list_t *fl = g_slice_alloc0(fl_list_size(name, local));
   strcpy(fl->name, name);
   fl->islocal = local;
   return fl;
@@ -109,15 +109,15 @@ struct fl_list *fl_list_create(const char *name, gboolean local) {
 // equivalent (that is, have the same name). File names are case-insensitive,
 // as required by the ADC protocol.
 gint fl_list_cmp_strict(gconstpointer a, gconstpointer b) {
-  return str_casecmp(((struct fl_list *)a)->name, ((struct fl_list *)b)->name);
+  return str_casecmp(((fl_list_t *)a)->name, ((fl_list_t *)b)->name);
 }
 
 // A more lenient comparison function, equivalent to fl_list_cmp_strict() in
 // all cases except when that one would return 0. This function will return
 // zero only if the file list names are byte-equivalent.
 gint fl_list_cmp(gconstpointer a, gconstpointer b) {
-  const struct fl_list *la = a;
-  const struct fl_list *lb = b;
+  const fl_list_t *la = a;
+  const fl_list_t *lb = b;
   gint r = str_casecmp(la->name, lb->name);
   if(!r)
     r = strcmp(la->name, lb->name);
@@ -126,13 +126,13 @@ gint fl_list_cmp(gconstpointer a, gconstpointer b) {
 
 // A sort function suitable for g_ptr_array_sort()
 static gint fl_list_cmp_sort(gconstpointer a, gconstpointer b) {
-  return fl_list_cmp(*((struct fl_list **)a), *((struct fl_list **)b));
+  return fl_list_cmp(*((fl_list_t **)a), *((fl_list_t **)b));
 }
 
 
 // Adds `cur' to the directory `parent'. Make sure to call fl_list_sort()
 // afterwards.
-void fl_list_add(struct fl_list *parent, struct fl_list *cur, int before) {
+void fl_list_add(fl_list_t *parent, fl_list_t *cur, int before) {
   cur->parent = parent;
   if(before >= 0)
     ptr_array_insert_before(parent->sub, before, cur);
@@ -148,7 +148,7 @@ void fl_list_add(struct fl_list *parent, struct fl_list *cur, int before) {
 
 // Sort the contents of a directory. Should be called after doing a (batch of)
 // fl_list_add().
-void fl_list_sort(struct fl_list *fl) {
+void fl_list_sort(fl_list_t *fl) {
   g_return_if_fail(!fl->isfile && fl->sub);
   g_ptr_array_sort(fl->sub, fl_list_cmp_sort);
 }
@@ -156,9 +156,9 @@ void fl_list_sort(struct fl_list *fl) {
 
 // Removes an item from the file list, making sure to update the parents.
 // This function assumes that the list has been properly sorted.
-void fl_list_remove(struct fl_list *fl) {
+void fl_list_remove(fl_list_t *fl) {
   // update parents size
-  struct fl_list *par = fl->parent;
+  fl_list_t *par = fl->parent;
   while(par) {
     par->size -= fl->size;
     par = par->parent;
@@ -176,9 +176,9 @@ void fl_list_remove(struct fl_list *fl) {
 }
 
 
-struct fl_list *fl_list_copy(const struct fl_list *fl) {
+fl_list_t *fl_list_copy(const fl_list_t *fl) {
   int size = fl_list_size(fl->name, fl->islocal);
-  struct fl_list *cur = g_slice_alloc(size);
+  fl_list_t *cur = g_slice_alloc(size);
   memcpy(cur, fl, size);
   cur->parent = NULL;
   if(fl->sub) {
@@ -186,7 +186,7 @@ struct fl_list *fl_list_copy(const struct fl_list *fl) {
     g_ptr_array_set_free_func(cur->sub, fl_list_free);
     int i;
     for(i=0; i<fl->sub->len; i++) {
-      struct fl_list *tmp = fl_list_copy(g_ptr_array_index(fl->sub, i));
+      fl_list_t *tmp = fl_list_copy(g_ptr_array_index(fl->sub, i));
       tmp->parent = cur;
       g_ptr_array_add(cur->sub, tmp);
     }
@@ -197,12 +197,12 @@ struct fl_list *fl_list_copy(const struct fl_list *fl) {
 
 // Determines whether a directory is "empty", i.e. it has no subdirectories or
 // hashed files.
-gboolean fl_list_isempty(struct fl_list *fl) {
+gboolean fl_list_isempty(fl_list_t *fl) {
   g_return_val_if_fail(!fl->isfile, FALSE);
 
   int i;
   for(i=0; i<fl->sub->len; i++) {
-    struct fl_list *f = g_ptr_array_index(fl->sub, i);
+    fl_list_t *f = g_ptr_array_index(fl->sub, i);
     if(!f->isfile || f->hastth)
       return FALSE;
   }
@@ -211,8 +211,8 @@ gboolean fl_list_isempty(struct fl_list *fl) {
 
 
 // Get a file by name in a directory. This search is case-insensitive.
-struct fl_list *fl_list_file(const struct fl_list *dir, const char *name) {
-  struct fl_list *cmp = fl_list_create(name, FALSE);
+fl_list_t *fl_list_file(const fl_list_t *dir, const char *name) {
+  fl_list_t *cmp = fl_list_create(name, FALSE);
   int i = ptr_array_search(dir->sub, cmp, fl_list_cmp);
   fl_list_free(cmp);
   return i < 0 ? NULL : g_ptr_array_index(dir->sub, i);
@@ -220,13 +220,13 @@ struct fl_list *fl_list_file(const struct fl_list *dir, const char *name) {
 
 
 // Get a file name in a directory with the same name as *fl. This search is case-sensitive.
-struct fl_list *fl_list_file_strict(const struct fl_list *dir, const struct fl_list *fl) {
+fl_list_t *fl_list_file_strict(const fl_list_t *dir, const fl_list_t *fl) {
   int i = ptr_array_search(dir->sub, fl, fl_list_cmp_strict);
   return i < 0 ? NULL : g_ptr_array_index(dir->sub, i);
 }
 
 
-gboolean fl_list_is_child(const struct fl_list *parent, const struct fl_list *child) {
+gboolean fl_list_is_child(const fl_list_t *parent, const fl_list_t *child) {
   for(child=child->parent; child; child=child->parent)
     if(child == parent)
       return TRUE;
@@ -235,11 +235,11 @@ gboolean fl_list_is_child(const struct fl_list *parent, const struct fl_list *ch
 
 
 // Get the virtual path to a file
-char *fl_list_path(struct fl_list *fl) {
+char *fl_list_path(fl_list_t *fl) {
   if(!fl->parent)
     return g_strdup("/");
   char *tmp, *path = g_strdup(fl->name);
-  struct fl_list *cur = fl->parent;
+  fl_list_t *cur = fl->parent;
   while(cur->parent) {
     tmp = path;
     path = g_build_filename(cur->name, path, NULL);
@@ -257,7 +257,7 @@ char *fl_list_path(struct fl_list *fl) {
 // support stuff like ./ and ../, and '/' is assumed to refer to the given
 // root. (So '/dir' and 'dir' are simply equivalent)
 // Case-insensitive, and '/' is the only recognised path separator
-struct fl_list *fl_list_from_path(struct fl_list *root, const char *path) {
+fl_list_t *fl_list_from_path(fl_list_t *root, const char *path) {
   while(path[0] == '/')
     path++;
   if(!path[0])
@@ -265,7 +265,7 @@ struct fl_list *fl_list_from_path(struct fl_list *root, const char *path) {
   g_return_val_if_fail(root->sub, NULL);
   int slash = strcspn(path, "/");
   char *name = g_strndup(path, slash);
-  struct fl_list *n = fl_list_file(root, name);
+  fl_list_t *n = fl_list_file(root, name);
   g_free(name);
   if(!n)
     return NULL;
@@ -278,8 +278,8 @@ struct fl_list *fl_list_from_path(struct fl_list *root, const char *path) {
 
 
 // Auto-complete for fl_list_from_path()
-void fl_list_suggest(struct fl_list *root, char *opath, char **sug) {
-  struct fl_list *parent = root;
+void fl_list_suggest(fl_list_t *root, char *opath, char **sug) {
+  fl_list_t *parent = root;
   char *path = g_strdup(opath);
   char *name = path;
   char *sep = strrchr(path, '/');
@@ -296,7 +296,7 @@ void fl_list_suggest(struct fl_list *root, char *opath, char **sug) {
     // Note: performance can be improved by using a binary search instead
     int i;
     for(i=0; i<parent->sub->len && n<20; i++) {
-      struct fl_list *f = g_ptr_array_index(parent->sub, i);
+      fl_list_t *f = g_ptr_array_index(parent->sub, i);
       if(strncmp(f->name, name, len) == 0)
         sug[n++] = f->isfile ? g_strconcat(path, "/", f->name, NULL) : g_strconcat(path, "/", f->name, "/", NULL);
     }
@@ -314,7 +314,7 @@ void fl_list_suggest(struct fl_list *root, char *opath, char **sug) {
 
 #if INTERFACE
 
-struct fl_search {
+struct fl_search_t {
   char sizem;   // -2 any, -1 <=, 0 ==, 1 >=
   char filedir; // 1 = file, 2 = dir, 3 = any
   guint64 size;
@@ -391,7 +391,7 @@ static int fl_search_and_len(GRegex **l) {
 
 // Only matches against fl->name itself, not the path to it (AND keywords
 // matched in the path are assumed to be removed already)
-gboolean fl_search_match_name(struct fl_list *fl, struct fl_search *s) {
+gboolean fl_search_match_name(fl_list_t *fl, fl_search_t *s) {
   GRegex **tmpr;
   for(tmpr=s->and; tmpr&&*tmpr; tmpr++)
     if(G_LIKELY(!g_regex_match(*tmpr, fl->name, 0, NULL)))
@@ -418,7 +418,7 @@ gboolean fl_search_match_name(struct fl_list *fl, struct fl_search *s) {
 
 // Recursive depth-first search through the list, used for replying to non-TTH
 // $Search and SCH requests. Not exactly fast, but what did you expect? :-(
-int fl_search_rec(struct fl_list *parent, struct fl_search *s, struct fl_list **res, int max) {
+int fl_search_rec(fl_list_t *parent, fl_search_t *s, fl_list_t **res, int max) {
   if(!parent || !parent->sub)
     return 0;
   // weed out stuff from 'and' if it's already matched in parent (I'm assuming
@@ -435,7 +435,7 @@ int fl_search_rec(struct fl_list *parent, struct fl_search *s, struct fl_list **
   // loop through the directory
   int n = 0;
   for(i=0; n<max && i<parent->sub->len; i++) {
-    struct fl_list *f = g_ptr_array_index(parent->sub, i);
+    fl_list_t *f = g_ptr_array_index(parent->sub, i);
     if(fl_search_match(f, s))
       res[n++] = f;
     if(!f->isfile && n < max)
@@ -447,12 +447,12 @@ int fl_search_rec(struct fl_list *parent, struct fl_search *s, struct fl_list **
 
 
 // Similar to fl_search_match(), but also matches the name of the parents.
-gboolean fl_search_match_full(struct fl_list *fl, struct fl_search *s) {
+gboolean fl_search_match_full(fl_list_t *fl, fl_search_t *s) {
   // weed out stuff from 'and' if it's already matched in any of its parents.
   GRegex **oand = s->and;
   int len = fl_search_and_len(s->and);
   GRegex *nand[len];
-  struct fl_list *p = fl->parent;
+  fl_list_t *p = fl->parent;
   int i;
   memcpy(nand, s->and, len*sizeof(GRegex *));
   for(; p && p->parent; p=p->parent)

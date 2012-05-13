@@ -39,7 +39,7 @@
 // the list is otherwise managed in commands.c.
 GHashTable *cc_granted = NULL;
 
-void cc_grant(struct hub_user *u) {
+void cc_grant(hub_user_t *u) {
   if(!g_hash_table_lookup(cc_granted, &u->uid))
     g_hash_table_insert(cc_granted, g_memdup(&u->uid, 8), (void *)1);
 }
@@ -49,8 +49,8 @@ void cc_grant(struct hub_user *u) {
 static int cc_grant_cmp(const void *pa, const void *pb) {
   guint64 a = *((guint64 *)pa);
   guint64 b = *((guint64 *)pb);
-  struct hub_user *ua = g_hash_table_lookup(hub_uids, &a);
-  struct hub_user *ub = g_hash_table_lookup(hub_uids, &b);
+  hub_user_t *ua = g_hash_table_lookup(hub_uids, &a);
+  hub_user_t *ub = g_hash_table_lookup(hub_uids, &b);
   return !ua && !ub ? (a > b ? 1 : a < b ? -1 : 0) :
      ua && !ub ? 1 : !ua && ub ? -1 : g_utf8_collate(ua->name, ub->name);
 }
@@ -76,8 +76,8 @@ guint64 *cc_grant_list() {
 // List of expected incoming or outgoing connections.  This is list managed by
 // the functions below, in addition to cc_init_global() and cc_remove_hub(),
 
-struct cc_expect {
-  struct hub *hub;
+typedef struct cc_expect_t {
+  hub_t *hub;
   char *nick;   // NMDC, hub encoding. Also set on ADC, but only for debugging purposes
   guint64 uid;
   guint16 port;
@@ -88,14 +88,14 @@ struct cc_expect {
   int timeout_src;
   gboolean adc : 1;
   gboolean dl : 1;  // if we were the one starting the connection (i.e. we want to download)
-};
+} cc_expect_t;
 
 
 static GQueue *cc_expected;
 
 
-static void cc_expect_rm(GList *n, struct cc *success) {
-  struct cc_expect *e = n->data;
+static void cc_expect_rm(GList *n, cc_t *success) {
+  cc_expect_t *e = n->data;
   if(e->dl && !success)
     dl_user_cc(e->uid, FALSE);
   else if(e->dl)
@@ -105,22 +105,22 @@ static void cc_expect_rm(GList *n, struct cc *success) {
     g_slice_free1(32, e->kp);
   g_free(e->token);
   g_free(e->nick);
-  g_slice_free(struct cc_expect, e);
+  g_slice_free(cc_expect_t, e);
   g_queue_delete_link(cc_expected, n);
 }
 
 
 static gboolean cc_expect_timeout(gpointer data) {
   GList *n = data;
-  struct cc_expect *e = n->data;
+  cc_expect_t *e = n->data;
   g_message("Expected connection from %s on %s, but received none.", e->nick, e->hub->tab->name);
   cc_expect_rm(n, NULL);
   return FALSE;
 }
 
 
-void cc_expect_add(struct hub *hub, struct hub_user *u, guint16 port, char *t, gboolean dl) {
-  struct cc_expect *e = g_slice_new0(struct cc_expect);
+void cc_expect_add(hub_t *hub, hub_user_t *u, guint16 port, char *t, gboolean dl) {
+  cc_expect_t *e = g_slice_new0(cc_expect_t);
   e->adc = hub->adc;
   e->hub = hub;
   e->dl = dl;
@@ -146,10 +146,10 @@ void cc_expect_add(struct hub *hub, struct hub_user *u, guint16 port, char *t, g
 // Checks the expects list for the current connection, sets cc->dl, cc->uid,
 // cc->hub and cc->kp_user and removes it from the expects list. cc->cid and
 // cc->token must be known.
-static gboolean cc_expect_adc_rm(struct cc *cc) {
+static gboolean cc_expect_adc_rm(cc_t *cc) {
   GList *n;
   for(n=cc_expected->head; n; n=n->next) {
-    struct cc_expect *e = n->data;
+    cc_expect_t *e = n->data;
     if(e->adc && e->port == cc->port && memcmp(cc->cid, e->cid, 8) == 0 && strcmp(cc->token, e->token) == 0) {
       cc->uid = e->uid;
       cc->hub = e->hub;
@@ -165,10 +165,10 @@ static gboolean cc_expect_adc_rm(struct cc *cc) {
 
 // Same as above, but for NMDC. Sets cc->dl, cc->uid and cc->hub. cc->nick_raw
 // must be known, and for passive connections cc->hub must also be known.
-static gboolean cc_expect_nmdc_rm(struct cc *cc) {
+static gboolean cc_expect_nmdc_rm(cc_t *cc) {
   GList *n;
   for(n=cc_expected->head; n; n=n->next) {
-    struct cc_expect *e = n->data;
+    cc_expect_t *e = n->data;
     if(cc->hub && cc->hub != e->hub)
       continue;
     if(!e->adc && e->port == cc->port && strcmp(e->nick, cc->nick_raw) == 0) {
@@ -190,45 +190,45 @@ static gboolean cc_expect_nmdc_rm(struct cc *cc) {
 #define THROTTLE_INTV 3600
 #define THROTTLE_BURST 10
 
-struct throttle_get {
+typedef struct throttle_get_t {
   char tth[24];
   guint64 uid;
   guint64 offset;
   time_t throttle;
-};
+} throttle_get_t;
 
 static GHashTable *throttle_list; // initialized in cc_init_global()
 
 
 static guint throttle_hash(gconstpointer key) {
-  const struct throttle_get *t = key;
+  const throttle_get_t *t = key;
   guint *tth = (guint *)t->tth;
   return *tth + (gint)t->offset + (gint)t->uid;
 }
 
 
 static gboolean throttle_equal(gconstpointer a, gconstpointer b) {
-  const struct throttle_get *x = a;
-  const struct throttle_get *y = b;
+  const throttle_get_t *x = a;
+  const throttle_get_t *y = b;
   return x->uid == y->uid && memcmp(x->tth, y->tth, 24) == 0 && x->offset == y->offset;
 }
 
 
 static void throttle_free(gpointer dat) {
-  g_slice_free(struct throttle_get, dat);
+  g_slice_free(throttle_get_t, dat);
 }
 
 
-static gboolean throttle_check(struct cc *cc, char *tth, guint64 offset) {
+static gboolean throttle_check(cc_t *cc, char *tth, guint64 offset) {
   // construct a key
-  struct throttle_get key;
+  throttle_get_t key;
   memcpy(key.tth, tth, 24);
   key.uid = cc->uid;
   key.offset = offset;
   time(&key.throttle);
 
   // lookup
-  struct throttle_get *val = g_hash_table_lookup(throttle_list, &key);
+  throttle_get_t *val = g_hash_table_lookup(throttle_list, &key);
   // value present and above threshold, throttle!
   if(val && val->throttle-key.throttle > THROTTLE_BURST*THROTTLE_INTV)
     return TRUE;
@@ -238,14 +238,14 @@ static gboolean throttle_check(struct cc *cc, char *tth, guint64 offset) {
     return FALSE;
   }
   // value not present, add it
-  val = g_slice_dup(struct throttle_get, &key);
+  val = g_slice_dup(throttle_get_t, &key);
   g_hash_table_insert(throttle_list, val, val);
   return FALSE;
 }
 
 
 static gboolean throttle_purge_func(gpointer key, gpointer val, gpointer dat) {
-  struct throttle_get *v = val;
+  throttle_get_t *v = val;
   time_t *t = dat;
   return v->throttle < *t ? TRUE : FALSE;
 }
@@ -275,9 +275,9 @@ static gboolean throttle_purge(gpointer dat) {
 #define CCS_TRANSFER   3 // check cc->dl whether it's up or down
 #define CCS_DISCONN    4 // waiting to get removed on a timeout
 
-struct cc {
+struct cc_t {
   struct net *net;
-  struct hub *hub;
+  hub_t *hub;
   char *nick_raw; // (NMDC)
   char *nick;
   char *hub_name; // Copy of hub->tab->name when hub is reset to NULL
@@ -396,7 +396,7 @@ void cc_global_init() {
 void cc_global_close() {
   GSequenceIter *i = g_sequence_get_begin_iter(cc_list);
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
-    struct cc *c = g_sequence_get(i);
+    cc_t *c = g_sequence_get(i);
     if(c->state != CCS_DISCONN)
       cc_disconnect(c, TRUE);
   }
@@ -411,7 +411,7 @@ void cc_global_close() {
 void cc_global_onlinecheck() {
   GSequenceIter *i = g_sequence_get_begin_iter(cc_list);
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
-    struct cc *c = g_sequence_get(i);
+    cc_t *c = g_sequence_get(i);
     if((c->state == CCS_IDLE || c->state == CCS_TRANSFER) // idle or transfer mode
         && !g_hash_table_lookup(hub_uids, &c->uid) // user offline
         && var_get_bool(c->hub?c->hub->id:0, VAR_disconnect_offline)) // 'disconnect_offline' enabled
@@ -428,11 +428,11 @@ void cc_global_onlinecheck() {
 // $MyNick's being exchanged.)
 // Note that the connection will remain hubless even when the same hub is later
 // opened again. I don't think this is a huge problem, however.
-void cc_remove_hub(struct hub *hub) {
+void cc_remove_hub(hub_t *hub) {
   // Remove from cc objects
   GSequenceIter *i = g_sequence_get_begin_iter(cc_list);
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
-    struct cc *c = g_sequence_get(i);
+    cc_t *c = g_sequence_get(i);
     if(c->hub == hub) {
       c->hub_name = g_strdup(hub->tab->name);
       c->hub = NULL;
@@ -443,7 +443,7 @@ void cc_remove_hub(struct hub *hub) {
   GList *p, *n;
   for(n=cc_expected->head; n;) {
     p = n->next;
-    struct cc_expect *e = n->data;
+    cc_expect_t *e = n->data;
     if(e->hub == hub)
       cc_expect_rm(n, NULL);
     n = p;
@@ -461,7 +461,7 @@ int cc_slots_in_use(int *mini) {
   int m = 0;
   GSequenceIter *i = g_sequence_get_begin_iter(cc_list);
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
-    struct cc *c = g_sequence_get(i);
+    cc_t *c = g_sequence_get(i);
     if(!c->dl && c->state == CCS_TRANSFER)
       num++;
     if(!c->dl && c->state == CCS_TRANSFER && c->slot_mini)
@@ -476,7 +476,7 @@ int cc_slots_in_use(int *mini) {
 
 // To be called when an upload or download has finished. Will get info from the
 // cc struct and write it to the transfer log.
-static void xfer_log_add(struct cc *cc) {
+static void xfer_log_add(cc_t *cc) {
   g_return_if_fail(cc->state == CCS_TRANSFER && cc->last_file);
   // we don't log tthl transfers or transfers that hadn't been started yet
   if(cc->last_tthl || !cc->last_length)
@@ -485,7 +485,7 @@ static void xfer_log_add(struct cc *cc) {
   if(!var_get_bool(0, cc->dl ? VAR_log_downloads : VAR_log_uploads))
     return;
 
-  static struct logfile *log = NULL;
+  static logfile_t *log = NULL;
   if(!log)
     log = logfile_create("transfers");
 
@@ -525,10 +525,10 @@ static void xfer_log_add(struct cc *cc) {
 
 
 // Returns the cc object of a connection with the same user, if there is one.
-static struct cc *cc_check_dupe(struct cc *cc) {
+static cc_t *cc_check_dupe(cc_t *cc) {
   GSequenceIter *i = g_sequence_get_begin_iter(cc_list);
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
-    struct cc *c = g_sequence_get(i);
+    cc_t *c = g_sequence_get(i);
     if(cc != c && c->state != CCS_DISCONN && !!c->adc == !!cc->adc && c->uid == cc->uid)
       return c;
   }
@@ -536,7 +536,7 @@ static struct cc *cc_check_dupe(struct cc *cc) {
 }
 
 
-static gboolean request_slot(struct cc *cc, gboolean need_full) {
+static gboolean request_slot(cc_t *cc, gboolean need_full) {
   int minislots;
   int slots = cc_slots_in_use(&minislots);
 
@@ -566,7 +566,7 @@ static gboolean request_slot(struct cc *cc, gboolean need_full) {
 
 
 // Called from dl.c
-void cc_download(struct cc *cc, struct dl *dl) {
+void cc_download(cc_t *cc, dl_t *dl) {
   g_return_if_fail(cc->dl && cc->state == CCS_IDLE);
 
   memcpy(cc->last_hash, dl->hash, 24);
@@ -608,7 +608,7 @@ static void handle_recvdone(struct net *n, void *dat) {
   // If the connection is still active, log the transfer and check for more
   // stuff to download
   if(n && net_is_connected(n)) {
-    struct cc *cc = n->handle;
+    cc_t *cc = n->handle;
     net_readmsg(cc->net, cc->adc ? '\n' : '|', cc->adc ? adc_handle : nmdc_handle);
     xfer_log_add(cc);
     cc->state = CCS_IDLE;
@@ -618,7 +618,7 @@ static void handle_recvdone(struct net *n, void *dat) {
 
 
 static void handle_recvtth(struct net *n, char *buf, int read) {
-  struct cc *cc = n->handle;
+  cc_t *cc = n->handle;
   g_return_if_fail(read == cc->last_length);
 
   dl_settthl(cc->uid, cc->last_hash, buf, cc->last_length);
@@ -631,8 +631,8 @@ static void handle_recvtth(struct net *n, char *buf, int read) {
 }
 
 
-static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 bytes) {
-  struct dl *dl = g_hash_table_lookup(dl_queue, cc->last_hash);
+static void handle_adcsnd(cc_t *cc, gboolean tthl, guint64 start, gint64 bytes) {
+  dl_t *dl = g_hash_table_lookup(dl_queue, cc->last_hash);
   if(!dl) {
     g_set_error_literal(&cc->err, 1, 0, "Download interrupted.");
     cc_disconnect(cc, FALSE);
@@ -673,13 +673,13 @@ static void handle_adcsnd(struct cc *cc, gboolean tthl, guint64 start, gint64 by
 
 
 static void handle_sendcomplete(struct net *net) {
-  struct cc *cc = net->handle;
+  cc_t *cc = net->handle;
   xfer_log_add(cc);
   cc->state = CCS_IDLE;
 }
 
 
-static void send_file(struct cc *cc, const char *path, guint64 start, int len, gboolean flush, GError **err) {
+static void send_file(cc_t *cc, const char *path, guint64 start, int len, gboolean flush, GError **err) {
   int fd = 0;
   if((fd = open(path, O_RDONLY)) < 0 || lseek(fd, start, SEEK_SET) == (off_t)-1) {
     // Don't give a detailed error message, the remote shouldn't know too much about us.
@@ -697,7 +697,7 @@ static void send_file(struct cc *cc, const char *path, guint64 start, int len, g
 //  51: File not available
 //  53: No slots
 // Handles both ADC GET and the NMDC $ADCGET.
-static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gint64 bytes, GError **err) {
+static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 bytes, GError **err) {
   // tthl
   if(strcmp(type, "tthl") == 0) {
     if(strncmp(id, "TTH/", 4) != 0 || !istth(id+4) || start != 0 || bytes != -1) {
@@ -725,7 +725,7 @@ static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gi
       g_set_error_literal(err, 1, 40, "Invalid arguments");
       return;
     }
-    struct fl_list *f = fl_local_list ? fl_list_from_path(fl_local_list, id) : NULL;
+    fl_list_t *f = fl_local_list ? fl_list_from_path(fl_local_list, id) : NULL;
     if(!f || f->isfile) {
       g_set_error_literal(err, 1, 51, "File Not Available");
       return;
@@ -757,7 +757,7 @@ static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gi
   // TODO: files.xml? (Required by ADC, but I doubt it's used)
   char *path = NULL;
   char *vpath = NULL;
-  struct fl_list *f = NULL;
+  fl_list_t *f = NULL;
   gboolean needslot = TRUE;
 
   // files.xml.bz2
@@ -837,7 +837,7 @@ static void handle_adcget(struct cc *cc, char *type, char *id, guint64 start, gi
 
 
 // To be called when we know with which user and on which hub this connection is.
-static void handle_id(struct cc *cc, struct hub_user *u) {
+static void handle_id(cc_t *cc, hub_user_t *u) {
   cc->nick = g_strdup(u->name);
   cc->isop = u->isop;
   cc->uid = u->uid;
@@ -868,7 +868,7 @@ static void handle_id(struct cc *cc, struct hub_user *u) {
   // (up/down).  For NMDC, the purpose of this connection is determined when we
   // receive a $Direction, so it's only checked here for ADC.
   if(cc->adc) {
-    struct cc *dup = cc_check_dupe(cc);
+    cc_t *dup = cc_check_dupe(cc);
     if(dup && !!cc->dl == !!dup->dl) {
       g_set_error_literal(&(cc->err), 1, 0, "too many open connections with this user");
       cc_disconnect(cc, FALSE);
@@ -881,14 +881,14 @@ static void handle_id(struct cc *cc, struct hub_user *u) {
 
 
 static void adc_handle(struct net *net, char *msg, int _len) {
-  struct cc *cc = net->handle;
+  cc_t *cc = net->handle;
   if(!*msg)
     return;
   g_clear_error(&cc->err);
   g_return_if_fail(cc->state != CCS_CONN && cc->state != CCS_DISCONN);
   net_readmsg(net, '\n', adc_handle);
 
-  struct adc_cmd cmd;
+  adc_cmd_t cmd;
   GError *err = NULL;
 
   adc_parse(msg, &cmd, NULL, &err);
@@ -950,7 +950,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
         cc->token = g_strdup(token);
         memcpy(cc->cid, cid, 24);
         cc_expect_adc_rm(cc);
-        struct hub_user *u = cc->uid ? g_hash_table_lookup(hub_uids, &cc->uid) : NULL;
+        hub_user_t *u = cc->uid ? g_hash_table_lookup(hub_uids, &cc->uid) : NULL;
         if(!u) {
           g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
           g_message("CC:%s: Unexpected ADC connection: %s", net_remoteaddr(cc->net), msg);
@@ -1019,7 +1019,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
       cc_disconnect(cc, TRUE);
     } else {
       // Get file
-      struct fl_list *f = NULL;
+      fl_list_t *f = NULL;
       if(cmd.argv[1][0] == '/' && fl_local_list) {
         f = fl_list_from_path(fl_local_list, cmd.argv[1]);
       } else if(strncmp(cmd.argv[1], "TTH/", 4) == 0 && istth(cmd.argv[1]+4)) {
@@ -1103,7 +1103,7 @@ static void adc_handle(struct net *net, char *msg, int _len) {
 }
 
 
-static void nmdc_mynick(struct cc *cc, const char *nick) {
+static void nmdc_mynick(cc_t *cc, const char *nick) {
   if(cc->nick_raw) {
     g_message("CC:%s: Received $MyNick twice.", net_remoteaddr(cc->net));
     cc_disconnect(cc, TRUE);
@@ -1121,7 +1121,7 @@ static void nmdc_mynick(struct cc *cc, const char *nick) {
     return;
   }
 
-  struct hub_user *u = g_hash_table_lookup(cc->hub->users, nick);
+  hub_user_t *u = g_hash_table_lookup(cc->hub->users, nick);
   if(!u) {
     g_set_error_literal(&(cc->err), 1, 0, "User not online.");
     cc_disconnect(cc, FALSE);
@@ -1137,7 +1137,7 @@ static void nmdc_mynick(struct cc *cc, const char *nick) {
 }
 
 
-static void nmdc_direction(struct cc *cc, gboolean down, int num) {
+static void nmdc_direction(cc_t *cc, gboolean down, int num) {
   gboolean old_dl = cc->dl;
 
   // if they want to download and we don't, then it's simple.
@@ -1163,7 +1163,7 @@ static void nmdc_direction(struct cc *cc, gboolean down, int num) {
     cc->dl = cc->dir > num;
 
   // Now that this connection has a purpose, make sure it's the only connection with that purpose.
-  struct cc *dup = cc_check_dupe(cc);
+  cc_t *dup = cc_check_dupe(cc);
   if(dup && !!cc->dl == !!dup->dl) {
     g_set_error_literal(&cc->err, 1, 0, "Too many open connections with this user");
     cc_disconnect(cc, FALSE);
@@ -1182,7 +1182,7 @@ static void nmdc_direction(struct cc *cc, gboolean down, int num) {
 
 
 static void nmdc_handle(struct net *net, char *cmd, int _len) {
-  struct cc *cc = net->handle;
+  cc_t *cc = net->handle;
   if(!*cmd)
     return;
   g_clear_error(&cc->err);
@@ -1358,7 +1358,7 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
 
 
 static void handle_error(struct net *n, int action, const char *err) {
-  struct cc *cc = n->handle;
+  cc_t *cc = n->handle;
   if(!cc->err) // ignore network errors if there already was a protocol error
     g_set_error_literal(&cc->err, 1, 0, err);
 
@@ -1373,8 +1373,8 @@ static void handle_error(struct net *n, int action, const char *err) {
 
 
 // Hub may be unknown when this is an incoming connection
-struct cc *cc_create(struct hub *hub) {
-  struct cc *cc = g_new0(struct cc, 1);
+cc_t *cc_create(hub_t *hub) {
+  cc_t *cc = g_new0(cc_t, 1);
   cc->net = net_new(cc, handle_error);
   cc->hub = hub;
   cc->iter = g_sequence_append(cc_list, cc);
@@ -1388,7 +1388,7 @@ struct cc *cc_create(struct hub *hub) {
 // Simply stores the keyprint of the certificate in cc->kp_real, it will be
 // checked when receiving CINF.
 static void handle_handshake(struct net *n, const char *kpr) {
-  struct cc *c = n->handle;
+  cc_t *c = n->handle;
   if(kpr) {
     if(!c->kp_real)
       c->kp_real = g_slice_alloc(32);
@@ -1403,7 +1403,7 @@ static void handle_handshake(struct net *n, const char *kpr) {
 static void handle_connect(struct net *n, const char *addr) {
   if(addr)
     return;
-  struct cc *cc = n->handle;
+  cc_t *cc = n->handle;
   strncpy(cc->remoteaddr, net_remoteaddr(cc->net), sizeof(cc->remoteaddr));
   if(!cc->hub) {
     cc_disconnect(cc, FALSE);
@@ -1433,7 +1433,7 @@ static void handle_connect(struct net *n, const char *addr) {
 }
 
 
-void cc_nmdc_connect(struct cc *cc, const char *addr, const char *laddr, gboolean tls) {
+void cc_nmdc_connect(cc_t *cc, const char *addr, const char *laddr, gboolean tls) {
   g_return_if_fail(cc->state == CCS_CONN);
   strncpy(cc->remoteaddr, addr, sizeof(cc->remoteaddr));
   cc->tls = tls;
@@ -1442,7 +1442,7 @@ void cc_nmdc_connect(struct cc *cc, const char *addr, const char *laddr, gboolea
 }
 
 
-void cc_adc_connect(struct cc *cc, struct hub_user *u, const char *laddr, unsigned short port, gboolean tls, char *token) {
+void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short port, gboolean tls, char *token) {
   g_return_if_fail(cc->state == CCS_CONN);
   g_return_if_fail(cc->hub);
   g_return_if_fail(u && u->active && u->ip4);
@@ -1477,7 +1477,7 @@ void cc_adc_connect(struct cc *cc, struct hub_user *u, const char *laddr, unsign
 
 static void handle_detectprotocol(struct net *net, char *dat, int len) {
   g_return_if_fail(len > 0);
-  struct cc *cc = net->handle;
+  cc_t *cc = net->handle;
 
   // Enable TLS
   if(!cc->tls && (cc->active_type == LBT_TLS || ((cc->active_type & LBT_TLS) && *dat >= 0x14 && *dat <= 0x17))) {
@@ -1494,7 +1494,7 @@ static void handle_detectprotocol(struct net *net, char *dat, int len) {
 }
 
 
-void cc_incoming(struct cc *cc, guint16 port, int sock, const char *addr, int type) {
+void cc_incoming(cc_t *cc, guint16 port, int sock, const char *addr, int type) {
   net_connected(cc->net, sock, addr);
   if(!net_is_connected(cc->net))
     return;
@@ -1513,7 +1513,7 @@ static gboolean handle_timeout(gpointer dat) {
 }
 
 
-void cc_disconnect(struct cc *cc, gboolean force) {
+void cc_disconnect(cc_t *cc, gboolean force) {
   g_return_if_fail(cc->state != CCS_DISCONN);
   if(cc->state == CCS_TRANSFER)
     xfer_log_add(cc);
@@ -1530,7 +1530,7 @@ void cc_disconnect(struct cc *cc, gboolean force) {
 }
 
 
-void cc_free(struct cc *cc) {
+void cc_free(cc_t *cc) {
   if(!cc->timeout_src)
     cc_disconnect(cc, TRUE);
   if(cc->timeout_src)

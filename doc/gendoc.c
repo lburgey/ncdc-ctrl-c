@@ -36,7 +36,7 @@
 
 
 static void gen_cmd() {
-  const struct doc_cmd *c = doc_cmds;
+  const doc_cmd_t *c = doc_cmds;
   printf("=over\n\n");
   for(; *c->name; c++) {
     printf("=item B</%s>", c->name);
@@ -51,7 +51,7 @@ static void gen_cmd() {
 
 
 static void gen_set() {
-  const struct doc_set *s = doc_sets;
+  const doc_set_t *s = doc_sets;
   printf("=over\n\n");
   for(; s->name; s++) {
     printf("=item B<%s> %s\n\n", s->name, s->type);
@@ -63,7 +63,7 @@ static void gen_set() {
 
 
 static void gen_key() {
-  const struct doc_key *k = doc_keys;
+  const doc_key_t *k = doc_keys;
   printf("=over\n\n");
   for(; k->sect; k++) {
     printf("=item B<%s>\n\n  ", k->title);

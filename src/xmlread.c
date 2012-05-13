@@ -90,7 +90,7 @@ typedef int (*xml_read_t)(void *, char *, int, GError **);
 #define MAX_DEPTH     50
 #define READ_BUF_SIZE (32*1024)
 
-struct ctx {
+typedef struct ctx_t {
   xml_cb_t cb;
   xml_read_t read;
   void *dat;
@@ -107,14 +107,14 @@ struct ctx {
   int byte;
   GError *err;
   jmp_buf jmp;
-};
+} ctx_t;
 
 
 
 // Helper functions
 
 
-static void err(struct ctx *x, const char *fmt, ...) {
+static void err(ctx_t *x, const char *fmt, ...) {
   va_list arg;
   va_start(arg, fmt);
   if(!x->err) {
@@ -127,7 +127,7 @@ static void err(struct ctx *x, const char *fmt, ...) {
 }
 
 
-static void callcb(struct ctx *x, int type, const char *arg1, const char *arg2) {
+static void callcb(ctx_t *x, int type, const char *arg1, const char *arg2) {
   if(x->cb(x->dat, type, arg1, arg2, &x->err)) {
     g_prefix_error(&x->err, "Line %d:%d: ", x->line, x->byte);
     err(x, "Processing aborted by the application");
@@ -138,7 +138,7 @@ static void callcb(struct ctx *x, int type, const char *arg1, const char *arg2) 
 // Make sure we have more than n bytes in the buffer. Returns the buffer
 // length, which may be smaller on EOF. Also validates that the XML data does
 // not contain the 0 byte (this simplifies error checking a bit).
-static int fill(struct ctx *x, int n) {
+static int fill(ctx_t *x, int n) {
   if(G_LIKELY(x->len >= n))
     return x->len;
   if(x->readeof)
@@ -166,14 +166,14 @@ static int fill(struct ctx *x, int n) {
 
 
 // Require n bytes to be present, set error otherwise.
-static void rfill(struct ctx *x, int n) {
+static void rfill(ctx_t *x, int n) {
   if(G_UNLIKELY(n >= x->len) && fill(x, n) < n)
     err(x, "Unexpected EOF");
 }
 
 
 // consume some characters (also updates ->bytes and ->lines)
-static void con(struct ctx *x, int n) {
+static void con(ctx_t *x, int n) {
   int i = 0;
   while(i < n) {
     if(x->buf[i++] == '\n') {
@@ -188,7 +188,7 @@ static void con(struct ctx *x, int n) {
 
 
 // Validate and consume a string literal
-static void lit(struct ctx *x, const char *str) {
+static void lit(ctx_t *x, const char *str) {
   int len = strlen(str);
   rfill(x, len);
   if(strncmp(x->buf, str, len) != 0)
@@ -212,7 +212,7 @@ static void lit(struct ctx *x, const char *str) {
 
 // Consumes whitespace until an other character or EOF was found.  If req, then
 // there must be at least one whitespace character, otherwise it's optional.
-static void S(struct ctx *x, int req) {
+static void S(ctx_t *x, int req) {
   if(req) {
     rfill(x, 1);
     if(!isWhiteSpace(*x->buf))
@@ -223,7 +223,7 @@ static void S(struct ctx *x, int req) {
 }
 
 
-static void Eq(struct ctx *x) {
+static void Eq(ctx_t *x) {
   S(x, 0);
   lit(x, "=");
   S(x, 0);
@@ -235,7 +235,7 @@ static void Eq(struct ctx *x) {
 // Note: CharRef's are parsed but ignored. This is what DC++ does, and
 // simplifies things a bit. Custom EntityRefs are not supported, only those
 // predefined in the XML standard can be used.
-static int Reference(struct ctx *x, int n) {
+static int Reference(ctx_t *x, int n) {
   con(x, 1); // Assuming the caller has already verified that this is indeed a Reference.
 
   // We're currently parsing [^;]* here, while the standard requires a (more
@@ -289,7 +289,7 @@ static int Reference(struct ctx *x, int n) {
 
 
 // Parses an attribute value and writes its (decoded) contents to x->val.
-static void AttValue(struct ctx *x) {
+static void AttValue(ctx_t *x) {
   rfill(x, 2);
   char esc = *x->buf;
   if(esc != '"' && esc != '\'')
@@ -318,7 +318,7 @@ static void AttValue(struct ctx *x) {
 }
 
 
-static void comment(struct ctx *x) {
+static void comment(ctx_t *x) {
   lit(x, "<!--");
   while(1) {
     rfill(x, 3);
@@ -334,7 +334,7 @@ static void comment(struct ctx *x) {
 
 
 // Consumes any number of whitespace and comments. (So it's actually Misc*)
-static void Misc(struct ctx *x) {
+static void Misc(ctx_t *x) {
   while(fill(x, 4) >= 4) {
     if(strncmp(x->buf, "<!--", 4) == 0) {
       comment(x);
@@ -349,7 +349,7 @@ static void Misc(struct ctx *x) {
 
 
 // Consumes a name and stores it in x->name.
-static void Name(struct ctx *x) {
+static void Name(ctx_t *x) {
   rfill(x, 1);
   int n = 0;
   if(!isNameStartChar(*x->buf))
@@ -367,7 +367,7 @@ static void Name(struct ctx *x) {
 
 
 // Returns the number of bytes consumed.
-static int CharData(struct ctx *x) {
+static int CharData(ctx_t *x) {
   int r = 0;
   while(fill(x, 3) >= 3) {
     if(!isCharData(*x->buf))
@@ -388,9 +388,9 @@ static int CharData(struct ctx *x) {
 }
 
 
-static void element(struct ctx *x);
+static void element(ctx_t *x);
 
-static void content(struct ctx *x) {
+static void content(ctx_t *x) {
   CharData(x);
   while(1) {
     // Getting an EOF 2 bytes after content is always an error regardless of
@@ -411,7 +411,7 @@ static void content(struct ctx *x) {
 }
 
 
-static void element(struct ctx *x) {
+static void element(ctx_t *x) {
   if(x->level <= 0)
     err(x, "Maximum element depth exceeded");
 
@@ -456,7 +456,7 @@ static void element(struct ctx *x) {
 }
 
 
-static void XMLDecl(struct ctx *x) {
+static void XMLDecl(ctx_t *x) {
   if(fill(x, 5) < 5 || strncmp(x->buf, "<?xml", 5) != 0)
     return;
 
@@ -507,7 +507,7 @@ end:
 // Parses the complete XML document, returns 0 on success or -1 on error.
 int xml_parse(xml_cb_t cb, xml_read_t read, void *dat, GError **e) {
   // Don't allocate this the stack, it's fairly large.
-  struct ctx *x = g_new(struct ctx, 1);
+  ctx_t *x = g_new(ctx_t, 1);
   x->dat = dat;
   x->cb = cb;
   x->read = read;

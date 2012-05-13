@@ -36,20 +36,20 @@
 #define DOC_SET
 #include "doc.h"
 
-struct cmd {
+typedef struct cmd_t {
   char name[16];
   void (*f)(char *);
   void (*suggest)(char *, char **);
-  struct doc_cmd *doc;
-};
+  doc_cmd_t *doc;
+} cmd_t;
 // tentative definition of the cmd list
-static struct cmd cmds[];
+static cmd_t cmds[];
 
 
 // get a command by name. performs a linear search. can be rewritten to use a
 // binary search, but I doubt the performance difference really matters.
-static struct cmd *getcmd(const char *name) {
-  struct cmd *c;
+static cmd_t *getcmd(const char *name) {
+  cmd_t *c;
   for(c=cmds; *c->name; c++)
     if(strcmp(c->name, name) == 0)
       break;
@@ -59,11 +59,11 @@ static struct cmd *getcmd(const char *name) {
 
 // Get documentation for a command. May be slow at first, but caches the doc
 // structure later on.
-static struct doc_cmd *getdoc(struct cmd *cmd) {
-  struct doc_cmd empty = { "", NULL, "No documentation available." };
+static doc_cmd_t *getdoc(cmd_t *cmd) {
+  doc_cmd_t empty = { "", NULL, "No documentation available." };
   if(cmd->doc)
     return cmd->doc;
-  struct doc_cmd *i = (struct doc_cmd *)doc_cmds;
+  doc_cmd_t *i = (doc_cmd_t *)doc_cmds;
   for(; *i->name; i++)
     if(strcmp(i->name, cmd->name) == 0)
       break;
@@ -80,7 +80,7 @@ static void c_quit(char *args) {
 
 // handle /say and /me
 static void sayme(char *args, gboolean me) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(tab->type != UIT_HUB && tab->type != UIT_MSG)
     ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
   else if(!tab->hub->nick_valid)
@@ -90,7 +90,7 @@ static void sayme(char *args, gboolean me) {
   else if(tab->type == UIT_HUB)
     hub_say(tab->hub, args, me);
   else {
-    struct hub_user *u = g_hash_table_lookup(hub_uids, &tab->uid);
+    hub_user_t *u = g_hash_table_lookup(hub_uids, &tab->uid);
     if(!u)
       ui_m(NULL, 0, "User is not online.");
     else
@@ -115,7 +115,7 @@ static void c_msg(char *args) {
     *sep = 0;
     while(*(++sep) == ' ');
   }
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(tab->type != UIT_HUB && tab->type != UIT_MSG)
     ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
   else if(!tab->hub->nick_valid)
@@ -123,12 +123,12 @@ static void c_msg(char *args) {
   else if(!args[0])
     ui_m(NULL, 0, "No user specified. See `/help msg' for more information.");
   else {
-    struct hub_user *u = hub_user_get(tab->hub, args);
+    hub_user_t *u = hub_user_get(tab->hub, args);
     if(!u)
       ui_m(NULL, 0, "No user found with that name. Note that usernames are case-sensitive.");
     else {
       // get or open tab and make sure it's selected
-      struct ui_tab *t = g_hash_table_lookup(ui_msg_tabs, &u->uid);
+      ui_tab_t *t = g_hash_table_lookup(ui_msg_tabs, &u->uid);
       if(!t)
         ui_tab_open(ui_msg_create(tab->hub, u), TRUE, tab);
       else
@@ -149,7 +149,7 @@ static void c_help(char *args) {
   // list available commands
   if(!args[0]) {
     ui_m(NULL, 0, "\nAvailable commands:");
-    struct cmd *c = cmds;
+    cmd_t *c = cmds;
     for(; c->f; c++)
       ui_mf(NULL, 0, " /%s - %s", c->name, getdoc(c)->sum);
     ui_m(NULL, 0, "\nFor help on key bindings, use `/help keys'.\n");
@@ -157,7 +157,7 @@ static void c_help(char *args) {
   // list information on a setting
   } else if((strcmp(args, "set") == 0 || strcmp(args, "hset") == 0) && sec) {
     sec = strncmp(sec, "color_", 6) == 0 ? "color_*" : sec;
-    struct doc_set *s = (struct doc_set *)doc_sets;
+    doc_set_t *s = (doc_set_t *)doc_sets;
     for(; s->name; s++)
       if(strcmp(s->name, sec) == 0)
         break;
@@ -169,14 +169,14 @@ static void c_help(char *args) {
   // list available key sections
   } else if(strcmp(args, "keys") == 0 && !sec) {
     ui_m(NULL, 0, "\nAvailable sections:");
-    const struct doc_key *k = doc_keys;
+    const doc_key_t *k = doc_keys;
     for(; k->sect; k++)
       ui_mf(NULL, 0, " %s - %s", k->sect, k->title);
     ui_m(NULL, 0, "\nUse `/help keys <name>' to get help on the key bindings for the selected section.\n");
 
   // get information on a particular key section
   } else if(strcmp(args, "keys") == 0 && sec) {
-    const struct doc_key *k = doc_keys;
+    const doc_key_t *k = doc_keys;
     for(; k->sect; k++)
       if(strcmp(k->sect, sec) == 0)
         break;
@@ -189,11 +189,11 @@ static void c_help(char *args) {
   } else if(!sec) {
     if(*args == '/')
       args++;
-    struct cmd *c = getcmd(args);
+    cmd_t *c = getcmd(args);
     if(!c)
       ui_mf(NULL, 0, "\nUnknown command '%s'.", args);
     else {
-      struct doc_cmd *d = getdoc(c);
+      doc_cmd_t *d = getdoc(c);
       ui_mf(NULL, 0, "\nUsage: /%s %s\n  %s\n", c->name, d->args ? d->args : "", d->sum);
       if(d->desc)
         ui_mf(NULL, 0, "%s\n", d->desc);
@@ -218,7 +218,7 @@ static void c_help_sug(char *args, char **sug) {
   // help keys ..
   if(strncmp(args, "keys ", 5) == 0) {
     int i = 0, len = strlen(args)-5;
-    const struct doc_key *k;
+    const doc_key_t *k;
     for(k=doc_keys; i<20 && k->sect; k++)
       if(strncmp(k->sect, args+5, len) == 0 && strlen(k->sect) != len)
         sug[i++] = g_strdup(k->sect);
@@ -228,7 +228,7 @@ static void c_help_sug(char *args, char **sug) {
   // help command
   int i = 0, len = strlen(args);
   gboolean ckeys = FALSE;
-  struct cmd *c;
+  cmd_t *c;
   for(c=cmds; i<20 && c->f; c++) {
     // Somehow merge "keys" into the list
     if(!ckeys && strcmp(c->name, "keys") > 0) {
@@ -271,7 +271,7 @@ static gboolean c_connect_set_hubaddr(char *addr) {
   char *port = g_match_info_fetch(nfo, 3);
   g_match_info_free(nfo);
 
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   char *old = g_strdup(var_get(tab->hub->id, VAR_hubaddr));
 
   // Reconstruct (without the kp) and save
@@ -296,7 +296,7 @@ static gboolean c_connect_set_hubaddr(char *addr) {
 
 
 static void c_connect(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(tab->type != UIT_HUB)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else if(!net_is_idle(tab->hub->net))
@@ -314,7 +314,7 @@ static void c_connect(char *args) {
 
 // only autocompletes "dchub://" or the hubaddr, when set
 static void c_connect_sug(char *args, char **sug) {
-  struct ui_tab *t = ui_tab_cur->data;
+  ui_tab_t *t = ui_tab_cur->data;
   if(t->type != UIT_HUB)
     return;
   int i = 0, len = strlen(args);
@@ -334,7 +334,7 @@ static void c_connect_sug(char *args, char **sug) {
 
 
 static void c_disconnect(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type == UIT_HUB) {
@@ -356,7 +356,7 @@ static void c_disconnect(char *args) {
 
 
 static void c_reconnect(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type == UIT_HUB) {
@@ -382,7 +382,7 @@ static void c_reconnect(char *args) {
 
 
 static void c_accept(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type != UIT_HUB)
@@ -401,7 +401,7 @@ static void c_accept(char *args) {
 
 
 static void c_open(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   gboolean conn = TRUE;
   if(strncmp(args, "-n ", 3) == 0) {
     conn = FALSE;
@@ -423,7 +423,7 @@ static void c_open(char *args) {
     // Look for existing tab
     GList *n;
     for(n=ui_tabs; n; n=n->next) {
-      char *tmp = ((struct ui_tab *)n->data)->name;
+      char *tmp = ((ui_tab_t *)n->data)->name;
       if(tmp[0] == '#' && strcmp(tmp+1, name) == 0)
         break;
     }
@@ -462,7 +462,7 @@ static void c_close(char *args) {
     ui_m(NULL, 0, "This command does not accept any arguments.");
     return;
   }
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   switch(tab->type) {
   case UIT_MAIN:     ui_m(NULL, 0, "Main tab cannot be closed."); break;
   case UIT_HUB:      ui_hub_close(tab); listen_refresh(); break;
@@ -479,7 +479,7 @@ static void c_close(char *args) {
 
 
 static void c_clear(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->log)
@@ -488,7 +488,7 @@ static void c_clear(char *args) {
 
 
 static void c_userlist(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type != UIT_HUB)
@@ -499,13 +499,13 @@ static void c_userlist(char *args) {
 
 
 static void listshares() {
-  struct db_share_item *l = db_share_list();
+  db_share_item_t *l = db_share_list();
   if(!l->name)
     ui_m(NULL, 0, "Nothing shared.");
   else {
     ui_m(NULL, 0, "");
     for(; l->name; l++) {
-      struct fl_list *fl = fl_local_list ? fl_list_file(fl_local_list, l->name) : NULL;
+      fl_list_t *fl = fl_local_list ? fl_list_file(fl_local_list, l->name) : NULL;
       ui_mf(NULL, 0, " /%s -> %s (%s)", l->name, l->path, fl ? str_formatsize(fl->size) : "-");
     }
     ui_m(NULL, 0, "");
@@ -539,7 +539,7 @@ static void c_share(char *args) {
       ui_m(NULL, 0, "Not a directory.");
     else {
       // Check whether it (or a subdirectory) is already shared
-      struct db_share_item *l = db_share_list();
+      db_share_item_t *l = db_share_list();
       for(; l->name; l++)
         if(strncmp(l->path, path, MIN(strlen(l->path), strlen(path))) == 0)
           break;
@@ -609,7 +609,7 @@ static void c_unshare_sug(char *args, char **sug) {
   int len = strlen(args), i = 0;
   if(args[0] == '/')
     args++;
-  struct db_share_item *l = db_share_list();
+  db_share_item_t *l = db_share_list();
   for(; l->name; l++)
     if(strncmp(args, l->name, len) == 0 && strlen(l->name) != len)
       sug[i++] = g_strdup(l->name);
@@ -617,7 +617,7 @@ static void c_unshare_sug(char *args, char **sug) {
 
 
 static void c_refresh(char *args) {
-  struct fl_list *n = fl_local_from_path(args);
+  fl_list_t *n = fl_local_from_path(args);
   if(!n)
     ui_mf(NULL, 0, "Directory `%s' not found.", args);
   else
@@ -626,7 +626,7 @@ static void c_refresh(char *args) {
 
 
 static void nick_sug(char *args, char **sug, gboolean append) {
-  struct ui_tab *t = ui_tab_cur->data;
+  ui_tab_t *t = ui_tab_cur->data;
   if(!t->hub)
     return;
   // get starting point of the nick
@@ -713,7 +713,7 @@ static void c_gc(char *args) {
 
 
 static void c_whois(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   char *u = NULL;
   guint64 uid = 0;
   gboolean utf8 = TRUE;
@@ -742,7 +742,7 @@ static void listgrants() {
     ui_m(NULL, 0, "\nGranted slots to:");
     guint64 *n = list;
     for(; *n; n++) {
-      struct hub_user *u = g_hash_table_lookup(hub_uids, n);
+      hub_user_t *u = g_hash_table_lookup(hub_uids, n);
       if(u)
         ui_mf(NULL, 0, "  %"G_GINT64_MODIFIER"x (%s on %s)", *n, u->name, u->hub->tab->name);
       else
@@ -755,8 +755,8 @@ static void listgrants() {
 
 
 static void c_grant(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
-  struct hub_user *u = NULL;
+  ui_tab_t *tab = ui_tab_cur->data;
+  hub_user_t *u = NULL;
   if((!*args && tab->type != UIT_MSG) || strcmp(args, "-list") == 0)
     listgrants();
   else if(tab->type != UIT_HUB && tab->type != UIT_MSG)
@@ -779,7 +779,7 @@ static void c_grant(char *args) {
 
 
 static void c_ungrant(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   guint64 uid = 0;
   if(!*args && tab->type != UIT_MSG) {
     listgrants();
@@ -792,7 +792,7 @@ static void c_ungrant(char *args) {
     GHashTableIter iter;
     g_hash_table_iter_init(&iter, cc_granted);
     while(g_hash_table_iter_next(&iter, (gpointer *)&key, NULL)) {
-      struct hub_user *u = g_hash_table_lookup(hub_uids, key);
+      hub_user_t *u = g_hash_table_lookup(hub_uids, key);
       g_snprintf(id, 17, "%"G_GINT64_MODIFIER"x", *key);
       if((u && strcasecmp(u->name, args) == 0) || g_ascii_strncasecmp(id, args, strlen(args)) == 0) {
         if(uid) {
@@ -818,7 +818,7 @@ static void c_ungrant_sug(char *args, char **sug) {
   guint64 *i = list;
   int n = 0;
   for(; n<20 && *i; i++) {
-    struct hub_user *u = g_hash_table_lookup(hub_uids, i);
+    hub_user_t *u = g_hash_table_lookup(hub_uids, i);
     g_snprintf(id, 17, "%"G_GINT64_MODIFIER"x", *i);
     if((u && strncasecmp(u->name, args, len) == 0))
       sug[n++] = g_strdup(u->name);
@@ -830,7 +830,7 @@ static void c_ungrant_sug(char *args, char **sug) {
 
 
 static void c_password(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(tab->type != UIT_HUB)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else if(!net_is_connected(tab->hub->net))
@@ -843,7 +843,7 @@ static void c_password(char *args) {
 
 
 static void c_kick(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(tab->type != UIT_HUB)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else if(!tab->hub->nick_valid)
@@ -853,7 +853,7 @@ static void c_kick(char *args) {
   else if(tab->hub->adc)
     ui_m(NULL, 0, "This command only works on NMDC hubs.");
   else {
-    struct hub_user *u = hub_user_get(tab->hub, args);
+    hub_user_t *u = hub_user_get(tab->hub, args);
     if(!u)
       ui_m(NULL, 0, "No user found with that name.");
     else
@@ -863,7 +863,7 @@ static void c_kick(char *args) {
 
 
 static void c_nick(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   guint64 hub = tab->type == UIT_HUB || tab->type == UIT_MSG ? tab->hub->id : 0;
   int v = vars_byname("nick");
   g_return_if_fail(v >= 0);
@@ -879,8 +879,8 @@ static void c_nick(char *args) {
 }
 
 static void c_browse(char *args) {
-  struct ui_tab *tab = ui_tab_cur->data;
-  struct hub_user *u = NULL;
+  ui_tab_t *tab = ui_tab_cur->data;
+  hub_user_t *u = NULL;
   gboolean force = FALSE;
 
   if(!args[0] && !fl_local_list) {
@@ -927,7 +927,7 @@ static void c_search(char *args) {
   gboolean allhubs = FALSE;
   gboolean stoparg = FALSE;
   int qlen = 0;
-  struct search_q *q = g_slice_new0(struct search_q);
+  search_q_t *q = g_slice_new0(search_q_t);
   q->query = g_new0(char *, argc+1);
   q->type = 1;
 
@@ -997,13 +997,13 @@ static void c_search(char *args) {
   }
 
   // validate & send
-  struct ui_tab *tab = ui_tab_cur->data;
+  ui_tab_t *tab = ui_tab_cur->data;
   if(!allhubs && tab->type != UIT_HUB && tab->type != UIT_MSG) {
     ui_m(NULL, 0, "This command can only be used on hub tabs. Use the `-all' option to search on all connected hubs.");
     goto c_search_clean;
   }
 
-  struct ui_tab *rtab = ui_search_create(allhubs ? NULL : tab->hub, q, &err);
+  ui_tab_t *rtab = ui_search_create(allhubs ? NULL : tab->hub, q, &err);
   if(err) {
     ui_mf(NULL, 0, "%s%s", rtab ? "Warning: " : "", err->message);
     g_error_free(err);
@@ -1051,7 +1051,7 @@ c_search_clean:
   guint64 hub = 0;\
   char *hubname = "global";\
   if(h) {\
-    struct ui_tab *tab = ui_tab_cur->data;\
+    ui_tab_t *tab = ui_tab_cur->data;\
     if(tab->type != UIT_HUB && tab->type != UIT_MSG) {\
       ui_m(NULL, 0, "This command can only be used on hub tabs.");\
       return;\
@@ -1163,7 +1163,7 @@ static void c_hunset(char *args) { unsethunset(TRUE,  args); }
 static void setunset_sug(gboolean set, gboolean h, const char *val, char **sug) {
   guint64 hub = 0;
   if(h) {
-    struct ui_tab *tab = ui_tab_cur->data;
+    ui_tab_t *tab = ui_tab_cur->data;
     if(tab->type != UIT_HUB && tab->type != UIT_MSG)
       return;
     hub = tab->hub->id;
@@ -1215,11 +1215,11 @@ static void c_listen(char *args) {
   // TODO: sort the listen_binds and ->hubs lists
   GList *l;
   for(l=listen_binds; l; l=l->next) {
-    struct listen_bind *b = l->data;
+    listen_bind_t *b = l->data;
     GString *h = g_string_new("");
     GSList *n;
     for(n=b->hubs; n; n=n->next) {
-      struct hub *hub = hub_global_byid(((struct listen_hub_bind *)n->data)->hubid);
+      hub_t *hub = hub_global_byid(((listen_hub_bind_t *)n->data)->hubid);
       if(hub) {
         if(h->len > 0)
           g_string_append(h, ", ");
@@ -1236,7 +1236,7 @@ static void c_listen(char *args) {
 
 
 // definition of the command list
-static struct cmd cmds[] = {
+static cmd_t cmds[] = {
   { "accept",      c_accept,      NULL             },
   { "browse",      c_browse,      c_msg_sug        },
   { "clear",       c_clear,       NULL             },
@@ -1305,7 +1305,7 @@ void cmd_handle(char *ostr) {
     g_strstrip(args);
 
   // execute command when found, generate an error otherwise
-  struct cmd *c = getcmd(cmd);
+  cmd_t *c = getcmd(cmd);
   if(c)
     c->f(args);
   else
@@ -1316,7 +1316,7 @@ void cmd_handle(char *ostr) {
 
 
 void cmd_suggest(char *ostr, char **sug) {
-  struct cmd *c;
+  cmd_t *c;
   char *str = g_strdup(ostr);
   // complete command name
   if(str[0] == '/' && !strchr(str, ' ')) {

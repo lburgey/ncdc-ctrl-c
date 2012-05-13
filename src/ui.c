@@ -47,19 +47,19 @@
 #define UIT_DL       6
 #define UIT_SEARCH   7 // ?query
 
-struct ui_tab {
+struct ui_tab_t {
   int type; // UIT_ type
   int prio; // UIP_ type
   char *name;
-  struct ui_tab *parent;       // the tab that opened this tab (may be NULL or dangling)
-  struct ui_logwindow *log;    // MAIN, HUB, MSG
-  struct hub *hub;             // HUB, USERLIST, MSG, SEARCH
-  struct ui_listing *list;     // USERLIST, CONN, FL, DL, SEARCH
-  guint64 uid;                 // FL, MSG
-  int order : 4;               // USERLIST, SEARCH, FL (has different interpretation per tab)
-  gboolean o_reverse : 1;      // USERLIST, SEARCH
-  gboolean details : 1;        // USERLIST, CONN, DL
-  time_t t_open;               // FL, SEARCH
+  ui_tab_t *parent;       // the tab that opened this tab (may be NULL or dangling)
+  ui_logwindow_t *log;    // MAIN, HUB, MSG
+  hub_t *hub;             // HUB, USERLIST, MSG, SEARCH
+  ui_listing_t *list;     // USERLIST, CONN, FL, DL, SEARCH
+  guint64 uid;            // FL, MSG
+  int order : 4;          // USERLIST, SEARCH, FL (has different interpretation per tab)
+  gboolean o_reverse : 1; // USERLIST, SEARCH
+  gboolean details : 1;   // USERLIST, CONN, DL
+  time_t t_open;          // FL, SEARCH
   // USERLIST
   gboolean user_opfirst : 1;
   gboolean user_hide_desc : 1;
@@ -71,9 +71,9 @@ struct ui_tab {
   gboolean hub_joincomplete : 1;
   GRegex *hub_highlight;
   char *hub_nick;
-  struct ui_tab *userlist_tab;
+  ui_tab_t *userlist_tab;
   // FL
-  struct fl_list *fl_list;
+  fl_list_t *fl_list;
   char *fl_uname;
   gboolean fl_loading : 1;
   gboolean fl_dirfirst : 1;
@@ -81,10 +81,10 @@ struct ui_tab {
   GError *fl_err;
   char *fl_sel;
   // DL
-  struct dl *dl_cur;
-  struct ui_listing *dl_users;
+  dl_t *dl_cur;
+  ui_listing_t *dl_users;
   // SEARCH
-  struct search_q *search_q;
+  search_q_t *search_q;
   gboolean search_hide_hub : 1;
   // MSG
   int msg_replyto;
@@ -111,10 +111,10 @@ GHashTable *ui_msg_tabs = NULL;
 
 
 // these is only one main tab, so this can be static
-struct ui_tab *ui_main;
+ui_tab_t *ui_main;
 
-static struct ui_tab *ui_main_create() {
-  ui_main = g_new0(struct ui_tab, 1);
+static ui_tab_t *ui_main_create() {
+  ui_main = g_new0(ui_tab_t, 1);
   ui_main->name = "main";
   ui_main->log = ui_logwindow_create("main", 0);
   ui_main->type = UIT_MAIN;
@@ -166,10 +166,10 @@ static void ui_main_keys(const char *s) {
 
 // User message tab
 
-struct ui_tab *ui_msg_create(struct hub *hub, struct hub_user *user) {
+ui_tab_t *ui_msg_create(hub_t *hub, hub_user_t *user) {
   g_return_val_if_fail(!g_hash_table_lookup(ui_msg_tabs, &user->uid), NULL);
 
-  struct ui_tab *tab = g_new0(struct ui_tab, 1);
+  ui_tab_t *tab = g_new0(ui_tab_t, 1);
   tab->type = UIT_MSG;
   tab->hub = hub;
   tab->uid = user->uid;
@@ -185,7 +185,7 @@ struct ui_tab *ui_msg_create(struct hub *hub, struct hub_user *user) {
 }
 
 
-void ui_msg_close(struct ui_tab *tab) {
+void ui_msg_close(ui_tab_t *tab) {
   g_hash_table_remove(ui_msg_tabs, &tab->uid);
   ui_tab_remove(tab);
   ui_logwindow_free(tab->log);
@@ -196,7 +196,7 @@ void ui_msg_close(struct ui_tab *tab) {
 
 // *u may be NULL if change = QUIT. A QUIT is always done before the user is
 // removed from the hub_uids table.
-static void ui_msg_userchange(struct ui_tab *tab, int change, struct hub_user *u) {
+static void ui_msg_userchange(ui_tab_t *tab, int change, hub_user_t *u) {
   switch(change) {
   case UIHUB_UC_JOIN:
     ui_mf(tab, 0, "--> %s has joined.", u->name);
@@ -220,7 +220,7 @@ static void ui_msg_userchange(struct ui_tab *tab, int change, struct hub_user *u
 }
 
 
-static void ui_msg_draw(struct ui_tab *tab) {
+static void ui_msg_draw(ui_tab_t *tab) {
   ui_logwindow_draw(tab->log, 1, 0, winrows-4, wincols);
 
   mvaddstr(winrows-3, 0, tab->name);
@@ -230,13 +230,13 @@ static void ui_msg_draw(struct ui_tab *tab) {
 }
 
 
-static char *ui_msg_title(struct ui_tab *tab) {
+static char *ui_msg_title(ui_tab_t *tab) {
   return g_strdup_printf("Chatting with %s on %s%s.",
     tab->name+1, tab->hub->tab->name, g_hash_table_lookup(hub_uids, &tab->uid) ? "" : " (offline)");
 }
 
 
-static void ui_msg_key(struct ui_tab *tab, guint64 key) {
+static void ui_msg_key(ui_tab_t *tab, guint64 key) {
   char *str = NULL;
   if(!ui_logwindow_key(tab->log, key, winrows) &&
       ui_textinput_key(ui_global_textinput, key, &str) && str) {
@@ -246,7 +246,7 @@ static void ui_msg_key(struct ui_tab *tab, guint64 key) {
 }
 
 
-static void ui_msg_msg(struct ui_tab *tab, const char *msg, int replyto) {
+static void ui_msg_msg(ui_tab_t *tab, const char *msg, int replyto) {
   ui_m(tab, UIP_HIGH, msg);
   tab->msg_replyto = replyto;
 }
@@ -267,7 +267,7 @@ static void ui_msg_msg(struct ui_tab *tab, const char *msg, int replyto) {
 
 // Also used for ui_msg_*
 int ui_hub_log_checkchat(void *dat, char *nick, char *msg) {
-  struct ui_tab *tab = dat;
+  ui_tab_t *tab = dat;
   tab = tab->hub->tab;
   if(!tab->hub_nick)
     return 0;
@@ -285,7 +285,7 @@ int ui_hub_log_checkchat(void *dat, char *nick, char *msg) {
 // Called by hub.c when hub->nick is set or changed. (Not called when hub->nick is reset to NULL)
 // A local hub_nick field is kept in the hub tab struct to still provide
 // highlighting for it after disconnecting from the hub.
-void ui_hub_setnick(struct ui_tab *tab) {
+void ui_hub_setnick(ui_tab_t *tab) {
   if(!tab->hub->nick)
     return;
   g_free(tab->hub_nick);
@@ -300,8 +300,8 @@ void ui_hub_setnick(struct ui_tab *tab) {
 }
 
 
-struct ui_tab *ui_hub_create(const char *name, gboolean conn) {
-  struct ui_tab *tab = g_new0(struct ui_tab, 1);
+ui_tab_t *ui_hub_create(const char *name, gboolean conn) {
+  ui_tab_t *tab = g_new0(ui_tab_t, 1);
   // NOTE: tab name is also used as configuration group
   tab->name = g_strdup_printf("#%s", name);
   tab->type = UIT_HUB;
@@ -316,14 +316,14 @@ struct ui_tab *ui_hub_create(const char *name, gboolean conn) {
 }
 
 
-void ui_hub_close(struct ui_tab *tab) {
+void ui_hub_close(ui_tab_t *tab) {
   // close the userlist tab
   if(tab->userlist_tab)
     ui_userlist_close(tab->userlist_tab);
   // close msg and search tabs
   GList *n;
   for(n=ui_tabs; n;) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     n = n->next;
     if((t->type == UIT_MSG || t->type == UIT_SEARCH) && t->hub == tab->hub) {
       if(t->type == UIT_MSG)
@@ -345,7 +345,7 @@ void ui_hub_close(struct ui_tab *tab) {
 }
 
 
-static void ui_hub_draw(struct ui_tab *tab) {
+static void ui_hub_draw(ui_tab_t *tab) {
   ui_logwindow_draw(tab->log, 1, 0, winrows-5, wincols);
 
   attron(UIC(separator));
@@ -380,7 +380,7 @@ static void ui_hub_draw(struct ui_tab *tab) {
 }
 
 
-static char *ui_hub_title(struct ui_tab *tab) {
+static char *ui_hub_title(ui_tab_t *tab) {
   return g_strdup_printf("%s: %s", tab->name,
     net_is_connecting(tab->hub->net) ? "Connecting..." :
     !net_is_connected(tab->hub->net) ? "Not connected." :
@@ -389,7 +389,7 @@ static char *ui_hub_title(struct ui_tab *tab) {
 }
 
 
-static void ui_hub_key(struct ui_tab *tab, guint64 key) {
+static void ui_hub_key(ui_tab_t *tab, guint64 key) {
   char *str = NULL;
   if(!ui_logwindow_key(tab->log, key, winrows) &&
       ui_textinput_key(ui_global_textinput, key, &str) && str) {
@@ -400,13 +400,13 @@ static void ui_hub_key(struct ui_tab *tab, guint64 key) {
 }
 
 
-void ui_hub_userchange(struct ui_tab *tab, int change, struct hub_user *user) {
+void ui_hub_userchange(ui_tab_t *tab, int change, hub_user_t *user) {
   // notify the userlist, when it is open
   if(tab->userlist_tab)
     ui_userlist_userchange(tab->userlist_tab, change, user);
 
   // notify the MSG tab, if we have one open for this user
-  struct ui_tab *mt = g_hash_table_lookup(ui_msg_tabs, &user->uid);
+  ui_tab_t *mt = g_hash_table_lookup(ui_msg_tabs, &user->uid);
   if(mt)
     ui_msg_userchange(mt, change, user);
 
@@ -424,22 +424,22 @@ void ui_hub_userchange(struct ui_tab *tab, int change, struct hub_user *user) {
 
 // Called when the hub is disconnected. Notifies any msg tabs and the userlist
 // tab, if there's one open.
-void ui_hub_disconnect(struct ui_tab *tab) {
+void ui_hub_disconnect(ui_tab_t *tab) {
   // userlist
   if(tab->userlist_tab)
     ui_userlist_disconnect(tab->userlist_tab);
   // msg tabs
   GList *n = ui_tabs;
   for(; n; n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->type == UIT_MSG && t->hub == tab->hub)
       ui_msg_userchange(t, UIHUB_UC_QUIT, NULL);
   }
 }
 
 
-void ui_hub_msg(struct ui_tab *tab, struct hub_user *user, const char *msg, int replyto) {
-  struct ui_tab *t = g_hash_table_lookup(ui_msg_tabs, &user->uid);
+void ui_hub_msg(ui_tab_t *tab, hub_user_t *user, const char *msg, int replyto) {
+  ui_tab_t *t = g_hash_table_lookup(ui_msg_tabs, &user->uid);
   if(!t) {
     t = ui_msg_create(tab->hub, user);
     ui_tab_open(t, FALSE, tab);
@@ -448,7 +448,7 @@ void ui_hub_msg(struct ui_tab *tab, struct hub_user *user, const char *msg, int 
 }
 
 
-void ui_hub_userlist_open(struct ui_tab *tab) {
+void ui_hub_userlist_open(ui_tab_t *tab) {
   if(tab->userlist_tab)
     ui_tab_cur = g_list_find(ui_tabs, tab->userlist_tab);
   else {
@@ -458,8 +458,8 @@ void ui_hub_userlist_open(struct ui_tab *tab) {
 }
 
 
-gboolean ui_hub_finduser(struct ui_tab *tab, guint64 uid, const char *user, gboolean utf8) {
-  struct hub_user *u =
+gboolean ui_hub_finduser(ui_tab_t *tab, guint64 uid, const char *user, gboolean utf8) {
+  hub_user_t *u =
     uid ? g_hash_table_lookup(hub_uids, &uid) :
     utf8 ? hub_user_get(tab->hub, user) : g_hash_table_lookup(tab->hub->users, user);
   if(!u || u->hub != tab->hub)
@@ -488,9 +488,9 @@ gboolean ui_hub_finduser(struct ui_tab *tab, guint64 uid, const char *user, gboo
 
 
 static gint ui_userlist_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
-  const struct hub_user *a = da;
-  const struct hub_user *b = db;
-  struct ui_tab *tab = dat;
+  const hub_user_t *a = da;
+  const hub_user_t *b = db;
+  ui_tab_t *tab = dat;
   int p = tab->order;
 
   if(tab->user_opfirst && !a->isop != !b->isop)
@@ -516,8 +516,8 @@ static gint ui_userlist_sort_func(gconstpointer da, gconstpointer db, gpointer d
 }
 
 
-struct ui_tab *ui_userlist_create(struct hub *hub) {
-  struct ui_tab *tab = g_new0(struct ui_tab, 1);
+ui_tab_t *ui_userlist_create(hub_t *hub) {
+  ui_tab_t *tab = g_new0(ui_tab_t, 1);
   tab->name = g_strdup_printf("@%s", hub->tab->name+1);
   tab->type = UIT_USERLIST;
   tab->hub = hub;
@@ -533,7 +533,7 @@ struct ui_tab *ui_userlist_create(struct hub *hub) {
   // linked lists, since it uses a faster sorting algorithm)
   GHashTableIter iter;
   g_hash_table_iter_init(&iter, hub->users);
-  struct hub_user *u;
+  hub_user_t *u;
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&u))
     u->iter = g_sequence_insert_sorted(users, u, ui_userlist_sort_func, tab);
   tab->list = ui_listing_create(users);
@@ -541,7 +541,7 @@ struct ui_tab *ui_userlist_create(struct hub *hub) {
 }
 
 
-void ui_userlist_close(struct ui_tab *tab) {
+void ui_userlist_close(ui_tab_t *tab) {
   tab->hub->tab->userlist_tab = NULL;
   ui_tab_remove(tab);
   // To clean things up, we should also reset all hub_user->iter fields. But
@@ -554,7 +554,7 @@ void ui_userlist_close(struct ui_tab *tab) {
 }
 
 
-static char *ui_userlist_title(struct ui_tab *tab) {
+static char *ui_userlist_title(ui_tab_t *tab) {
   return g_strdup_printf("%s / User list", tab->hub->tab->name);
 }
 
@@ -566,14 +566,14 @@ static char *ui_userlist_title(struct ui_tab *tab) {
   } while(0)
 
 
-struct ui_userlist_draw_opts {
+typedef struct ui_userlist_draw_opts_t {
   int cw_user, cw_share, cw_conn, cw_desc, cw_mail, cw_tag, cw_ip;
-};
+} ui_userlist_draw_opts_t;
 
 
-static void ui_userlist_draw_row(struct ui_listing *list, GSequenceIter *iter, int row, void *dat) {
-  struct hub_user *user = g_sequence_get(iter);
-  struct ui_userlist_draw_opts *o = dat;
+static void ui_userlist_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
+  hub_user_t *user = g_sequence_get(iter);
+  ui_userlist_draw_opts_t *o = dat;
 
   char *tag = hub_user_tag(user);
   char *conn = hub_user_conn(user);
@@ -616,7 +616,7 @@ static void ui_userlist_draw_row(struct ui_listing *list, GSequenceIter *iter, i
  *
  * TODO: abstract this, so that the weights and such don't need repetition.
  */
-static void ui_userlist_calc_widths(struct ui_tab *tab, struct ui_userlist_draw_opts *o) {
+static void ui_userlist_calc_widths(ui_tab_t *tab, ui_userlist_draw_opts_t *o) {
   // available width
   int w = wincols-5;
 
@@ -659,8 +659,8 @@ static void ui_userlist_calc_widths(struct ui_tab *tab, struct ui_userlist_draw_
 }
 
 
-static void ui_userlist_draw(struct ui_tab *tab) {
-  struct ui_userlist_draw_opts o;
+static void ui_userlist_draw(ui_tab_t *tab) {
+  ui_userlist_draw_opts_t o;
   ui_userlist_calc_widths(tab, &o);
 
   // header
@@ -697,7 +697,7 @@ static void ui_userlist_draw(struct ui_tab *tab) {
   if(g_sequence_iter_is_end(tab->list->sel))
     mvaddstr(bottom+1, 2, "No user selected.");
   else {
-    struct hub_user *u = g_sequence_get(tab->list->sel);
+    hub_user_t *u = g_sequence_get(tab->list->sel);
     attron(A_BOLD);
     mvaddstr(bottom+1,  4, "Username:");
     mvaddstr(bottom+1, 41, "Share:");
@@ -727,11 +727,11 @@ static void ui_userlist_draw(struct ui_tab *tab) {
 #undef DRAW_COL
 
 
-static void ui_userlist_key(struct ui_tab *tab, guint64 key) {
+static void ui_userlist_key(ui_tab_t *tab, guint64 key) {
   if(ui_listing_key(tab->list, key, winrows/2))
     return;
 
-  struct hub_user *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
+  hub_user_t *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
   gboolean sort = FALSE;
   switch(key) {
   case INPT_CHAR('?'):
@@ -798,7 +798,7 @@ static void ui_userlist_key(struct ui_tab *tab, guint64 key) {
     if(!sel)
       ui_m(NULL, 0, "No user selected.");
     else {
-      struct ui_tab *t = g_hash_table_lookup(ui_msg_tabs, &sel->uid);
+      ui_tab_t *t = g_hash_table_lookup(ui_msg_tabs, &sel->uid);
       if(!t) {
         t = ui_msg_create(tab->hub, sel);
         ui_tab_open(t, TRUE, tab);
@@ -842,14 +842,14 @@ static void ui_userlist_key(struct ui_tab *tab, guint64 key) {
 
 // Called when the hub is disconnected. All users should be removed in one go,
 // this is faster than a _userchange() for every user.
-void ui_userlist_disconnect(struct ui_tab *tab) {
+void ui_userlist_disconnect(ui_tab_t *tab) {
   g_sequence_free(tab->list->list);
   ui_listing_free(tab->list);
   tab->list = ui_listing_create(g_sequence_new(NULL));
 }
 
 
-void ui_userlist_userchange(struct ui_tab *tab, int change, struct hub_user *user) {
+void ui_userlist_userchange(ui_tab_t *tab, int change, hub_user_t *user) {
   if(change == UIHUB_UC_JOIN) {
     user->iter = g_sequence_insert_sorted(tab->list->list, user, ui_userlist_sort_func, tab);
     ui_listing_inserted(tab->list);
@@ -867,12 +867,12 @@ void ui_userlist_userchange(struct ui_tab *tab, int change, struct hub_user *use
 
 
 // these can only be one connections tab, so this can be static
-struct ui_tab *ui_conn;
+ui_tab_t *ui_conn;
 
 
 static gint ui_conn_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
-  const struct cc *a = da;
-  const struct cc *b = db;
+  const cc_t *a = da;
+  const cc_t *b = db;
   int o = 0;
   if(!o && !a->nick != !b->nick)
     o = a->nick ? 1 : -1;
@@ -884,8 +884,8 @@ static gint ui_conn_sort_func(gconstpointer da, gconstpointer db, gpointer dat) 
 }
 
 
-struct ui_tab *ui_conn_create() {
-  ui_conn = g_new0(struct ui_tab, 1);
+ui_tab_t *ui_conn_create() {
+  ui_conn = g_new0(ui_tab_t, 1);
   ui_conn->name = "connections";
   ui_conn->type = UIT_CONN;
   // sort the connection list
@@ -933,8 +933,8 @@ static char *ui_conn_title() {
 }
 
 
-static void ui_conn_draw_row(struct ui_listing *list, GSequenceIter *iter, int row, void *dat) {
-  struct cc *cc = g_sequence_get(iter);
+static void ui_conn_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
+  cc_t *cc = g_sequence_get(iter);
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
@@ -993,7 +993,7 @@ static void ui_conn_draw_row(struct ui_listing *list, GSequenceIter *iter, int r
 
 
 static void ui_conn_draw_details(int l) {
-  struct cc *cc = g_sequence_iter_is_end(ui_conn->list->sel) ? NULL : g_sequence_get(ui_conn->list->sel);
+  cc_t *cc = g_sequence_iter_is_end(ui_conn->list->sel) ? NULL : g_sequence_get(ui_conn->list->sel);
   if(!cc) {
     mvaddstr(l+1, 0, "Nothing selected.");
     return;
@@ -1087,7 +1087,7 @@ static void ui_conn_key(guint64 key) {
   if(ui_listing_key(ui_conn->list, key, (winrows-10)/2))
     return;
 
-  struct cc *cc = g_sequence_iter_is_end(ui_conn->list->sel) ? NULL : g_sequence_get(ui_conn->list->sel);
+  cc_t *cc = g_sequence_iter_is_end(ui_conn->list->sel) ? NULL : g_sequence_get(ui_conn->list->sel);
 
   switch(key) {
   case INPT_CHAR('?'):
@@ -1111,11 +1111,11 @@ static void ui_conn_key(guint64 key) {
     else if(!cc->hub || !cc->uid)
       ui_m(NULL, 0, "User or hub unknown.");
     else {
-      struct ui_tab *t = g_hash_table_lookup(ui_msg_tabs, &cc->uid);
+      ui_tab_t *t = g_hash_table_lookup(ui_msg_tabs, &cc->uid);
       if(t) {
         ui_tab_cur = g_list_find(ui_tabs, t);
       } else {
-        struct hub_user *u = g_hash_table_lookup(hub_uids, &cc->uid);
+        hub_user_t *u = g_hash_table_lookup(hub_uids, &cc->uid);
         if(!u) {
           ui_m(NULL, 0, "User has left the hub.");
         } else {
@@ -1139,7 +1139,7 @@ static void ui_conn_key(guint64 key) {
     else if(!cc->dl || !cc->last_file)
       ui_m(NULL, 0, "Not downloading a file.");
     else {
-      struct dl *dl = g_hash_table_lookup(dl_queue, cc->last_hash);
+      dl_t *dl = g_hash_table_lookup(dl_queue, cc->last_hash);
       if(!dl)
         ui_m(NULL, 0, "File has been removed from the queue.");
       else {
@@ -1168,9 +1168,9 @@ static void ui_conn_key(guint64 key) {
 
 
 static gint ui_fl_sort(gconstpointer a, gconstpointer b, gpointer dat) {
-  const struct fl_list *la = a;
-  const struct fl_list *lb = b;
-  struct ui_tab *tab = dat;
+  const fl_list_t *la = a;
+  const fl_list_t *lb = b;
+  ui_tab_t *tab = dat;
 
   // dirs before files
   if(tab->fl_dirfirst && !!la->isfile != !!lb->isfile)
@@ -1183,7 +1183,7 @@ static gint ui_fl_sort(gconstpointer a, gconstpointer b, gpointer dat) {
 }
 
 
-static void ui_fl_setdir(struct ui_tab *tab, struct fl_list *fl, struct fl_list *sel) {
+static void ui_fl_setdir(ui_tab_t *tab, fl_list_t *fl, fl_list_t *sel) {
   // Free previously opened dir
   if(tab->list) {
     g_sequence_free(tab->list->list);
@@ -1205,7 +1205,7 @@ static void ui_fl_setdir(struct ui_tab *tab, struct fl_list *fl, struct fl_list 
 }
 
 
-static void ui_fl_matchqueue(struct ui_tab *tab, struct fl_list *root) {
+static void ui_fl_matchqueue(ui_tab_t *tab, fl_list_t *root) {
   if(!tab->fl_list) {
     tab->fl_match = TRUE;
     return;
@@ -1223,11 +1223,11 @@ static void ui_fl_matchqueue(struct ui_tab *tab, struct fl_list *root) {
 }
 
 
-static void ui_fl_dosel(struct ui_tab *tab, struct fl_list *fl, const char *sel) {
-  struct fl_list *root = fl;
+static void ui_fl_dosel(ui_tab_t *tab, fl_list_t *fl, const char *sel) {
+  fl_list_t *root = fl;
   while(root->parent)
     root = root->parent;
-  struct fl_list *n = fl_list_from_path(root, sel);
+  fl_list_t *n = fl_list_from_path(root, sel);
   if(!n)
     ui_mf(tab, 0, "Can't select `%s': item not found.", sel);
   // open the parent directory and select item
@@ -1237,10 +1237,10 @@ static void ui_fl_dosel(struct ui_tab *tab, struct fl_list *fl, const char *sel)
 
 // Callback function for use in ui_fl_queue() - not associated with any tab.
 // Will just match the list against the queue and free it.
-static void ui_fl_loadmatch(struct fl_list *fl, GError *err, void *dat) {
+static void ui_fl_loadmatch(fl_list_t *fl, GError *err, void *dat) {
   guint64 uid = *(guint64 *)dat;
   g_free(dat);
-  struct hub_user *u = g_hash_table_lookup(hub_uids, &uid);
+  hub_user_t *u = g_hash_table_lookup(hub_uids, &uid);
   char *user = u
     ? g_strdup_printf("%s on %s", u->name, u->hub->tab->name)
     : g_strdup_printf("%016"G_GINT64_MODIFIER"x (user offline)", uid);
@@ -1259,11 +1259,11 @@ static void ui_fl_loadmatch(struct fl_list *fl, GError *err, void *dat) {
 
 
 // Open/match or queue a file list. (Not really a ui_* function, but where else would it belong?)
-void ui_fl_queue(guint64 uid, gboolean force, const char *sel, struct ui_tab *parent, gboolean open, gboolean match) {
+void ui_fl_queue(guint64 uid, gboolean force, const char *sel, ui_tab_t *parent, gboolean open, gboolean match) {
   if(!open && !match)
     return;
 
-  struct hub_user *u = g_hash_table_lookup(hub_uids, &uid);
+  hub_user_t *u = g_hash_table_lookup(hub_uids, &uid);
   // check for u == we
   if(u && (u->hub->adc ? u->hub->sid == u->sid : u->hub->nick_valid && strcmp(u->hub->nick_hub, u->name_hub) == 0)) {
     u = NULL;
@@ -1273,7 +1273,7 @@ void ui_fl_queue(guint64 uid, gboolean force, const char *sel, struct ui_tab *pa
 
   // check for existing tab
   GList *n;
-  struct ui_tab *t;
+  ui_tab_t *t;
   for(n=ui_tabs; n; n=n->next) {
     t = n->data;
     if(t->type == UIT_FL && t->uid == uid)
@@ -1331,7 +1331,7 @@ void ui_fl_queue(guint64 uid, gboolean force, const char *sel, struct ui_tab *pa
 }
 
 
-static void ui_fl_loaddone(struct fl_list *fl, GError *err, void *dat) {
+static void ui_fl_loaddone(fl_list_t *fl, GError *err, void *dat) {
   // If the tab has been closed, then we can ignore the result
   if(!g_list_find(ui_tabs, dat)) {
     if(fl)
@@ -1341,7 +1341,7 @@ static void ui_fl_loaddone(struct fl_list *fl, GError *err, void *dat) {
     return;
   }
   // Otherwise, update state
-  struct ui_tab *tab = dat;
+  ui_tab_t *tab = dat;
   tab->fl_err = err;
   tab->fl_loading = FALSE;
   tab->prio = err ? UIP_HIGH : UIP_MED;
@@ -1355,12 +1355,12 @@ static void ui_fl_loaddone(struct fl_list *fl, GError *err, void *dat) {
 }
 
 
-struct ui_tab *ui_fl_create(guint64 uid, const char *sel) {
+ui_tab_t *ui_fl_create(guint64 uid, const char *sel) {
   // get user
-  struct hub_user *u = uid ? g_hash_table_lookup(hub_uids, &uid) : NULL;
+  hub_user_t *u = uid ? g_hash_table_lookup(hub_uids, &uid) : NULL;
 
   // create tab
-  struct ui_tab *tab = g_new0(struct ui_tab, 1);
+  ui_tab_t *tab = g_new0(ui_tab_t, 1);
   tab->type = UIT_FL;
   tab->name = !uid ? g_strdup("/own") : u ? g_strdup_printf("/%s", u->name) : g_strdup_printf("/%016"G_GINT64_MODIFIER"x", uid);
   tab->fl_uname = u ? g_strdup(u->name) : NULL;
@@ -1371,7 +1371,7 @@ struct ui_tab *ui_fl_create(guint64 uid, const char *sel) {
 
   // get file list
   if(!uid) {
-    struct fl_list *fl = fl_local_list ? fl_list_copy(fl_local_list) : NULL;
+    fl_list_t *fl = fl_local_list ? fl_list_copy(fl_local_list) : NULL;
     tab->prio = UIP_MED;
     if(fl && fl->sub && sel)
       ui_fl_dosel(tab, fl, sel);
@@ -1396,13 +1396,13 @@ struct ui_tab *ui_fl_create(guint64 uid, const char *sel) {
 }
 
 
-void ui_fl_close(struct ui_tab *tab) {
+void ui_fl_close(ui_tab_t *tab) {
   if(tab->list) {
     g_sequence_free(tab->list->list);
     ui_listing_free(tab->list);
   }
   ui_tab_remove(tab);
-  struct fl_list *p = tab->fl_list;
+  fl_list_t *p = tab->fl_list;
   while(p && p->parent)
     p = p->parent;
   if(p)
@@ -1416,7 +1416,7 @@ void ui_fl_close(struct ui_tab *tab) {
 }
 
 
-static char *ui_fl_title(struct ui_tab *tab) {
+static char *ui_fl_title(ui_tab_t *tab) {
   char *t = !tab->uid ? g_strdup_printf("Browsing own file list.")
     : tab->fl_uname ? g_strdup_printf("Browsing file list of %s (%016"G_GINT64_MODIFIER"x)", tab->fl_uname, tab->uid)
     : g_strdup_printf("Browsing file list of %016"G_GINT64_MODIFIER"x (user offline)", tab->uid);
@@ -1426,8 +1426,8 @@ static char *ui_fl_title(struct ui_tab *tab) {
 }
 
 
-static void ui_fl_draw_row(struct ui_listing *list, GSequenceIter *iter, int row, void *dat) {
-  struct fl_list *fl = g_sequence_get(iter);
+static void ui_fl_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
+  fl_list_t *fl = g_sequence_get(iter);
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
@@ -1445,7 +1445,7 @@ static void ui_fl_draw_row(struct ui_listing *list, GSequenceIter *iter, int row
 }
 
 
-static void ui_fl_draw(struct ui_tab *tab) {
+static void ui_fl_draw(ui_tab_t *tab) {
   // first line
   mvhline(1, 0, ACS_HLINE, wincols);
   mvaddch(1, 3, ' ');
@@ -1467,7 +1467,7 @@ static void ui_fl_draw(struct ui_tab *tab) {
     mvaddstr(3, 2, "Directory empty.");
 
   // footer
-  struct fl_list *sel = pos >= 0 && !g_sequence_iter_is_end(tab->list->sel) ? g_sequence_get(tab->list->sel) : NULL;
+  fl_list_t *sel = pos >= 0 && !g_sequence_iter_is_end(tab->list->sel) ? g_sequence_get(tab->list->sel) : NULL;
   attron(UIC(separator));
   mvhline(winrows-3, 0, ' ', wincols);
   if(pos >= 0)
@@ -1493,11 +1493,11 @@ static void ui_fl_draw(struct ui_tab *tab) {
 }
 
 
-static void ui_fl_key(struct ui_tab *tab, guint64 key) {
+static void ui_fl_key(ui_tab_t *tab, guint64 key) {
   if(tab->list && ui_listing_key(tab->list, key, winrows/2))
     return;
 
-  struct fl_list *sel = !tab->list || g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
+  fl_list_t *sel = !tab->list || g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
   gboolean sort = FALSE;
 
   switch(key) {
@@ -1593,12 +1593,12 @@ static void ui_fl_key(struct ui_tab *tab, guint64 key) {
 // Download queue tab (UIT_DL)
 
 // these can only be one download queue tab, so this can be static
-struct ui_tab *ui_dl;
+ui_tab_t *ui_dl;
 
 
 static gint ui_dl_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
-  const struct dl *a = da;
-  const struct dl *b = db;
+  const dl_t *a = da;
+  const dl_t *b = db;
   return a->islist && !b->islist ? -1 : !a->islist && b->islist ? 1 : strcmp(a->dest, b->dest);
 }
 
@@ -1609,16 +1609,16 @@ static gint ui_dl_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
 // removed/recreated every time an other dl item is selected. This sorting is
 // just better than having the users in completely random order all the time.
 static gint ui_dl_dud_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
-  const struct dl_user_dl *a = da;
-  const struct dl_user_dl *b = db;
-  struct hub_user *ua = g_hash_table_lookup(hub_uids, &a->u->uid);
-  struct hub_user *ub = g_hash_table_lookup(hub_uids, &b->u->uid);
+  const dl_user_dl_t *a = da;
+  const dl_user_dl_t *b = db;
+  hub_user_t *ua = g_hash_table_lookup(hub_uids, &a->u->uid);
+  hub_user_t *ub = g_hash_table_lookup(hub_uids, &b->u->uid);
   return !ua && !ub ? (a->u->uid > b->u->uid ? 1 : a->u->uid < b->u->uid ? -1 : 0) :
      ua && !ub ? 1 : !ua && ub ? -1 : g_utf8_collate(ua->name, ub->name);
 }
 
 
-static void ui_dl_setusers(struct dl *dl) {
+static void ui_dl_setusers(dl_t *dl) {
   if(ui_dl->dl_cur == dl)
     return;
   // free
@@ -1642,15 +1642,15 @@ static void ui_dl_setusers(struct dl *dl) {
 }
 
 
-struct ui_tab *ui_dl_create() {
-  ui_dl = g_new0(struct ui_tab, 1);
+ui_tab_t *ui_dl_create() {
+  ui_dl = g_new0(ui_tab_t, 1);
   ui_dl->name = "queue";
   ui_dl->type = UIT_DL;
   // create and pupulate the list
   GSequence *l = g_sequence_new(NULL);
   GHashTableIter iter;
   g_hash_table_iter_init(&iter, dl_queue);
-  struct dl *dl;
+  dl_t *dl;
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&dl))
     dl->iter = g_sequence_insert_sorted(l, dl, ui_dl_sort_func, NULL);
   ui_dl->list = ui_listing_create(l);
@@ -1658,7 +1658,7 @@ struct ui_tab *ui_dl_create() {
 }
 
 
-void ui_dl_select(struct dl *dl, guint64 uid) {
+void ui_dl_select(dl_t *dl, guint64 uid) {
   g_return_if_fail(ui_dl);
 
   // dl->iter should always be valid if the dl tab is open
@@ -1670,7 +1670,7 @@ void ui_dl_select(struct dl *dl, guint64 uid) {
     ui_dl_setusers(dl);
     GSequenceIter *i = g_sequence_get_begin_iter(ui_dl->dl_users->list);
     for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i))
-      if(((struct dl_user_dl *)g_sequence_get(i))->u->uid == uid) {
+      if(((dl_user_dl_t *)g_sequence_get(i))->u->uid == uid) {
         ui_dl->dl_users->sel = i;
         break;
       }
@@ -1694,7 +1694,7 @@ void ui_dl_close() {
 #endif
 
 
-void ui_dl_listchange(struct dl *dl, int change) {
+void ui_dl_listchange(dl_t *dl, int change) {
   g_return_if_fail(ui_dl);
   switch(change) {
   case UICONN_ADD:
@@ -1711,7 +1711,7 @@ void ui_dl_listchange(struct dl *dl, int change) {
 }
 
 
-void ui_dl_dud_listchange(struct dl_user_dl *dud, int change) {
+void ui_dl_dud_listchange(dl_user_dl_t *dud, int change) {
   g_return_if_fail(ui_dl);
   if(dud->dl != ui_dl->dl_cur || !ui_dl->dl_users)
     return;
@@ -1742,8 +1742,8 @@ static char *ui_dl_title() {
 }
 
 
-static void ui_dl_draw_row(struct ui_listing *list, GSequenceIter *iter, int row, void *dat) {
-  struct dl *dl = g_sequence_get(iter);
+static void ui_dl_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
+  dl_t *dl = g_sequence_get(iter);
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
@@ -1753,7 +1753,7 @@ static void ui_dl_draw_row(struct ui_listing *list, GSequenceIter *iter, int row
   int online = 0;
   int i;
   for(i=0; i<dl->u->len; i++)
-    if(g_hash_table_lookup(hub_uids, &(((struct dl_user_dl *)g_sequence_get(g_ptr_array_index(dl->u, i)))->u->uid)))
+    if(g_hash_table_lookup(hub_uids, &(((dl_user_dl_t *)g_sequence_get(g_ptr_array_index(dl->u, i)))->u->uid)))
       online++;
   mvprintw(row, 2, "%2d/%2d", online, dl->u->len);
 
@@ -1783,15 +1783,15 @@ static void ui_dl_draw_row(struct ui_listing *list, GSequenceIter *iter, int row
 }
 
 
-static void ui_dl_dud_draw_row(struct ui_listing *list, GSequenceIter *iter, int row, void *dat) {
-  struct dl_user_dl *dud = g_sequence_get(iter);
+static void ui_dl_dud_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
+  dl_user_dl_t *dud = g_sequence_get(iter);
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
   if(iter == list->sel)
     mvaddstr(row, 0, ">");
 
-  struct hub_user *u = g_hash_table_lookup(hub_uids, &dud->u->uid);
+  hub_user_t *u = g_hash_table_lookup(hub_uids, &dud->u->uid);
   if(u) {
     mvaddnstr(row, 2, u->name, str_offset_from_columns(u->name, 19));
     mvaddnstr(row, 22, u->hub->tab->name, str_offset_from_columns(u->hub->tab->name, 13));
@@ -1826,7 +1826,7 @@ static void ui_dl_draw() {
   int bottom = ui_dl->details ? winrows-14 : winrows-4;
   int pos = ui_listing_draw(ui_dl->list, 2, bottom-1, ui_dl_draw_row, NULL);
 
-  struct dl *sel = g_sequence_iter_is_end(ui_dl->list->sel) ? NULL : g_sequence_get(ui_dl->list->sel);
+  dl_t *sel = g_sequence_iter_is_end(ui_dl->list->sel) ? NULL : g_sequence_get(ui_dl->list->sel);
 
   // footer / separator
   attron(UIC(separator));
@@ -1864,8 +1864,8 @@ static void ui_dl_key(guint64 key) {
   if(ui_listing_key(ui_dl->list, key, (winrows-(ui_dl->details?14:4))/2))
     return;
 
-  struct dl *sel = g_sequence_iter_is_end(ui_dl->list->sel) ? NULL : g_sequence_get(ui_dl->list->sel);
-  struct dl_user_dl *usel = NULL;
+  dl_t *sel = g_sequence_iter_is_end(ui_dl->list->sel) ? NULL : g_sequence_get(ui_dl->list->sel);
+  dl_user_dl_t *usel = NULL;
   if(!ui_dl->details)
     usel = NULL;
   else {
@@ -1894,7 +1894,7 @@ static void ui_dl_key(guint64 key) {
     if(!usel)
       ui_m(NULL, 0, "No user selected.");
     else {
-      struct hub_user *u = g_hash_table_lookup(hub_uids, &usel->u->uid);
+      hub_user_t *u = g_hash_table_lookup(hub_uids, &usel->u->uid);
       if(!u)
         ui_m(NULL, 0, "User is not online.");
       else
@@ -1915,10 +1915,10 @@ static void ui_dl_key(guint64 key) {
     else if(!sel->active)
       ui_m(NULL, 0, "Download not in progress.");
     else {
-      struct cc *cc = NULL;
+      cc_t *cc = NULL;
       int i;
       for(i=0; i<sel->u->len; i++) {
-        struct dl_user_dl *dud = g_sequence_get(g_ptr_array_index(sel->u, i));
+        dl_user_dl_t *dud = g_sequence_get(g_ptr_array_index(sel->u, i));
         if(dud->u->active == dud) {
           cc = dud->u->cc;
           break;
@@ -2007,8 +2007,8 @@ static void ui_dl_key(guint64 key) {
 
 // Compares users, uses a hub comparison as fallback
 static int ui_search_cmp_user(guint64 ua, guint64 ub) {
-  struct hub_user *a = g_hash_table_lookup(hub_uids, &ua);
-  struct hub_user *b = g_hash_table_lookup(hub_uids, &ub);
+  hub_user_t *a = g_hash_table_lookup(hub_uids, &ua);
+  hub_user_t *b = g_hash_table_lookup(hub_uids, &ub);
   int o =
     !a && !b ? (ua > ub ? 1 : ua < ub ? -1 : 0) :
      a && !b ? 1 : !a && b ? -1 : g_utf8_collate(a->name, b->name);
@@ -2026,9 +2026,9 @@ static int ui_search_cmp_file(const char *fa, const char *fb) {
 
 
 static gint ui_search_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
-  const struct search_r *a = da;
-  const struct search_r *b = db;
-  struct ui_tab *tab = dat;
+  const search_r_t *a = da;
+  const search_r_t *b = db;
+  ui_tab_t *tab = dat;
   int p = tab->order;
 
   /* Sort columns and their alternatives:
@@ -2056,8 +2056,8 @@ static gint ui_search_sort_func(gconstpointer da, gconstpointer db, gpointer dat
 
 
 // Callback from search.c when we have a new result.
-void ui_search_result(struct search_r *r, void *dat) {
-  struct ui_tab *tab = dat;
+void ui_search_result(search_r_t *r, void *dat) {
+  ui_tab_t *tab = dat;
   g_sequence_insert_sorted(tab->list->list, search_r_copy(r), ui_search_sort_func, tab);
   ui_listing_inserted(tab->list);
   tab->prio = MAX(tab->prio, UIP_LOW);
@@ -2067,8 +2067,8 @@ void ui_search_result(struct search_r *r, void *dat) {
 // Performs a seach and opens a new tab for the results.
 // May return NULL on error, behaves similarly to search_add() w.r.t *err.
 // Ownership of q is passed to the tab, and will be freed on error or close.
-struct ui_tab *ui_search_create(struct hub *hub, struct search_q *q, GError **err) {
-  struct ui_tab *tab = g_new0(struct ui_tab, 1);
+ui_tab_t *ui_search_create(hub_t *hub, search_q_t *q, GError **err) {
+  ui_tab_t *tab = g_new0(ui_tab_t, 1);
   tab->type = UIT_SEARCH;
   tab->search_q = q;
   tab->hub = hub;
@@ -2107,9 +2107,9 @@ struct ui_tab *ui_search_create(struct hub *hub, struct search_q *q, GError **er
 
 // Open a new tab for a TTH search on all hubs, or write a message to ui_m() on
 // error.
-void ui_search_open_tth(const char *tth, struct ui_tab *parent) {
+void ui_search_open_tth(const char *tth, ui_tab_t *parent) {
   GError *err = NULL;
-  struct ui_tab *rtab = ui_search_create(NULL, search_q_new_tth(tth), &err);
+  ui_tab_t *rtab = ui_search_create(NULL, search_q_new_tth(tth), &err);
   if(err) {
     ui_mf(NULL, 0, "%s%s", rtab ? "Warning: " : "", err->message);
     g_error_free(err);
@@ -2119,7 +2119,7 @@ void ui_search_open_tth(const char *tth, struct ui_tab *parent) {
 }
 
 
-void ui_search_close(struct ui_tab *tab) {
+void ui_search_close(ui_tab_t *tab) {
   search_remove(tab->search_q);
   g_sequence_free(tab->list->list);
   ui_listing_free(tab->list);
@@ -2129,7 +2129,7 @@ void ui_search_close(struct ui_tab *tab) {
 }
 
 
-static char *ui_search_title(struct ui_tab *tab) {
+static char *ui_search_title(ui_tab_t *tab) {
   char *sq = search_command(tab->search_q, tab->hub?TRUE:FALSE);
   char *r = tab->hub
     ? g_strdup_printf("Results on %s for: %s", tab->hub->tab->name, sq)
@@ -2140,16 +2140,16 @@ static char *ui_search_title(struct ui_tab *tab) {
 
 
 // TODO: mark already shared and queued files?
-static void ui_search_draw_row(struct ui_listing *list, GSequenceIter *iter, int row, void *dat) {
-  struct search_r *r = g_sequence_get(iter);
-  struct ui_tab *tab = dat;
+static void ui_search_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
+  search_r_t *r = g_sequence_get(iter);
+  ui_tab_t *tab = dat;
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
   if(iter == list->sel)
     mvaddstr(row, 0, ">");
 
-  struct hub_user *u = g_hash_table_lookup(hub_uids, &r->uid);
+  hub_user_t *u = g_hash_table_lookup(hub_uids, &r->uid);
   if(u) {
     mvaddnstr(row, 2, u->name, str_offset_from_columns(u->name, 19));
     if(!tab->search_hide_hub)
@@ -2180,7 +2180,7 @@ static void ui_search_draw_row(struct ui_listing *list, GSequenceIter *iter, int
 }
 
 
-static void ui_search_draw(struct ui_tab *tab) {
+static void ui_search_draw(ui_tab_t *tab) {
   attron(UIC(list_header));
   mvhline(1, 0, ' ', wincols);
   mvaddstr(1,    2, "User");
@@ -2195,7 +2195,7 @@ static void ui_search_draw(struct ui_tab *tab) {
   int bottom = winrows-4;
   int pos = ui_listing_draw(tab->list, 2, bottom-1, ui_search_draw_row, tab);
 
-  struct search_r *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
+  search_r_t *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
 
   // footer
   attron(UIC(separator));
@@ -2217,11 +2217,11 @@ static void ui_search_draw(struct ui_tab *tab) {
 }
 
 
-static void ui_search_key(struct ui_tab *tab, guint64 key) {
+static void ui_search_key(ui_tab_t *tab, guint64 key) {
   if(ui_listing_key(tab->list, key, (winrows-4)/2))
     return;
 
-  struct search_r *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
+  search_r_t *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
   gboolean sort = FALSE;
 
   switch(key) {
@@ -2233,7 +2233,7 @@ static void ui_search_key(struct ui_tab *tab, guint64 key) {
     if(!sel)
       ui_m(NULL, 0, "Nothing selected.");
     else {
-      struct hub_user *u = g_hash_table_lookup(hub_uids, &sel->uid);
+      hub_user_t *u = g_hash_table_lookup(hub_uids, &sel->uid);
       if(!u)
         ui_m(NULL, 0, "User is not online.");
       else
@@ -2245,7 +2245,7 @@ static void ui_search_key(struct ui_tab *tab, guint64 key) {
     if(!sel)
       ui_m(NULL, 0, "Nothing selected.");
     else {
-      struct hub_user *u = g_hash_table_lookup(hub_uids, &sel->uid);
+      hub_user_t *u = g_hash_table_lookup(hub_uids, &sel->uid);
       if(!u)
         ui_m(NULL, 0, "User is not online.");
       else
@@ -2278,7 +2278,7 @@ static void ui_search_key(struct ui_tab *tab, guint64 key) {
     int n = 0, a = 0;
     GSequenceIter *i = g_sequence_get_begin_iter(tab->list->list);
     for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
-      struct search_r *r = g_sequence_get(i);
+      search_r_t *r = g_sequence_get(i);
       int v = dl_queue_matchfile(r->uid, r->tth);
       if(v >= 0)
         n++;
@@ -2300,7 +2300,7 @@ static void ui_search_key(struct ui_tab *tab, guint64 key) {
     // Use a hash table to avoid checking the same filelist more than once
     GHashTable *uids = g_hash_table_new(g_int64_hash, g_int64_equal);
     for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
-      struct search_r *r = g_sequence_get(i);
+      search_r_t *r = g_sequence_get(i);
       // In the case that this wasn't a TTH search, check whether this search
       // result matches the queue before checking the file list.
       if(tab->search_q->type == 9 || dl_queue_matchfile(r->uid, r->tth) >= 0)
@@ -2395,11 +2395,11 @@ static char *ui_m_text = NULL;
 static guint ui_m_timer;
 static gboolean ui_m_updated = FALSE;
 
-struct ui_m_dat {
+typedef struct ui_m_t {
   char *msg;
-  struct ui_tab *tab;
+  ui_tab_t *tab;
   int flags;
-};
+} ui_m_t;
 
 
 static gboolean ui_m_timeout(gpointer data) {
@@ -2414,8 +2414,8 @@ static gboolean ui_m_timeout(gpointer data) {
 
 
 static gboolean ui_m_mainthread(gpointer dat) {
-  struct ui_m_dat *msg = dat;
-  struct ui_tab *tab = msg->tab;
+  ui_m_t *msg = dat;
+  ui_tab_t *tab = msg->tab;
   int prio = msg->flags & 3; // lower two bits
   if(!tab)
     tab = ui_tab_cur->data;
@@ -2456,8 +2456,8 @@ ui_m_cleanup:
 // the hub has no tab, in the "status bar". Calling this function with NULL
 // will reset the status bar message. Unlike everything else, this function can
 // be called from any thread. (It will queue an idle function, after all)
-void ui_m(struct ui_tab *tab, int flags, const char *msg) {
-  struct ui_m_dat *dat = g_new0(struct ui_m_dat, 1);
+void ui_m(ui_tab_t *tab, int flags, const char *msg) {
+  ui_m_t *dat = g_new0(ui_m_t, 1);
   dat->msg = (flags & UIM_PASS) ? (char *)msg : g_strdup(msg);
   dat->tab = tab;
   dat->flags = flags;
@@ -2472,7 +2472,7 @@ void ui_m(struct ui_tab *tab, int flags, const char *msg) {
 
 
 // UIM_PASS shouldn't be used here (makes no sense).
-void ui_mf(struct ui_tab *tab, int flags, const char *fmt, ...) {
+void ui_mf(ui_tab_t *tab, int flags, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
   ui_m(tab, flags | UIM_PASS, g_strdup_vprintf(fmt, va));
@@ -2485,9 +2485,9 @@ void ui_mf(struct ui_tab *tab, int flags, const char *fmt, ...) {
 
 // Global stuff
 
-struct ui_textinput *ui_global_textinput;
+ui_textinput_t *ui_global_textinput;
 
-void ui_tab_open(struct ui_tab *tab, gboolean sel, struct ui_tab *parent) {
+void ui_tab_open(ui_tab_t *tab, gboolean sel, ui_tab_t *parent) {
   ui_tabs = g_list_append(ui_tabs, tab);
   tab->parent = parent;
   if(sel)
@@ -2496,11 +2496,11 @@ void ui_tab_open(struct ui_tab *tab, gboolean sel, struct ui_tab *parent) {
 
 
 // to be called from ui_*_close()
-void ui_tab_remove(struct ui_tab *tab) {
+void ui_tab_remove(ui_tab_t *tab) {
   // Look for any tabs that have this one as parent, and let those inherit this tab's parent
   GList *n = ui_tabs;
   for(; n; n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->parent == tab)
       t->parent = tab->parent;
   }
@@ -2556,7 +2556,7 @@ static void ui_draw_status() {
 }
 
 
-#define tabcol(t, n) (2+ceil(log10((n)+1))+str_columns(((struct ui_tab *)(t)->data)->name))
+#define tabcol(t, n) (2+ceil(log10((n)+1))+str_columns(((ui_tab_t *)(t)->data)->name))
 #define prio2a(p) ((p) == UIP_LOW ? UIC(tabprio_low) : (p) == UIP_MED ? UIC(tabprio_med) : UIC(tabprio_high))
 
 /* All tabs are in one of the following states:
@@ -2602,7 +2602,7 @@ static void ui_draw_tablist(int xoffset) {
   // (This also sets n and i to the start of the visible list)
   char maxprio = 0;
   for(n=ui_tabs,i=0; i<top; i++,n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->prio > maxprio)
       maxprio = t->prio;
   }
@@ -2626,7 +2626,7 @@ static void ui_draw_tablist(int xoffset) {
     w -= tabcol(n, ++i);
     if(w < 0)
       break;
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     addch(' ');
     if(n == ui_tab_cur)
       attron(A_BOLD);
@@ -2647,7 +2647,7 @@ static void ui_draw_tablist(int xoffset) {
   GList *last = n;
   maxprio = 0;
   for(; n&&maxprio<UIP_HIGH; n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->prio > maxprio)
       maxprio = t->prio;
   }
@@ -2672,7 +2672,7 @@ static void ui_draw_tablist(int xoffset) {
 
 
 void ui_draw() {
-  struct ui_tab *curtab = ui_tab_cur->data;
+  ui_tab_t *curtab = ui_tab_cur->data;
   curtab->prio = UIP_EMPTY;
 
   getmaxyx(stdscr, winrows, wincols);
@@ -2745,7 +2745,7 @@ void ui_draw() {
 
 
 gboolean ui_checkupdate() {
-  struct ui_tab *cur = ui_tab_cur->data;
+  ui_tab_t *cur = ui_tab_cur->data;
   return ui_m_updated || ui_beep || (cur->log && cur->log->updated);
 }
 
@@ -2755,7 +2755,7 @@ void ui_daychange(const char *day) {
   char *msg = g_strdup_printf("Day changed to %s", day);
   GList *n = ui_tabs;
   for(; n; n=n->next) {
-    struct ui_tab *t = n->data;
+    ui_tab_t *t = n->data;
     if(t->log)
       ui_logwindow_addline(t->log, msg, TRUE, TRUE);
   }
@@ -2764,7 +2764,7 @@ void ui_daychange(const char *day) {
 
 
 void ui_input(guint64 key) {
-  struct ui_tab *curtab = ui_tab_cur->data;
+  ui_tab_t *curtab = ui_tab_cur->data;
 
   switch(key) {
   case INPT_CTRL('c'): // ctrl+c

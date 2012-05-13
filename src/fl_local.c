@@ -33,7 +33,7 @@
 
 
 char           *fl_local_list_file;
-struct fl_list *fl_local_list  = NULL;
+fl_list_t      *fl_local_list  = NULL;
 GQueue         *fl_refresh_queue = NULL;
 time_t          fl_refresh_last = 0; // time when the last full file list refresh has been queued
 static gboolean fl_needflush = FALSE;
@@ -45,13 +45,13 @@ int             fl_local_list_length; // total number of unique files in the sha
 static GThreadPool *fl_scan_pool;
 static GThreadPool *fl_hash_pool;
 
-GHashTable            *fl_hash_queue = NULL; // set of files-to-hash
-guint64                fl_hash_queue_size = 0;
-static struct fl_list *fl_hash_cur = NULL;   // most recent file initiated for hashing
-struct ratecalc        fl_hash_rate;
-static guint64         fl_hash_reset = 0; // increased when fl_hash_cur is removed from the queue (to stop current hash operation)
-static GMutex         *fl_hash_resetlock;
-static GCond          *fl_hash_resetcond;
+GHashTable       *fl_hash_queue = NULL; // set of files-to-hash
+guint64           fl_hash_queue_size = 0;
+static fl_list_t *fl_hash_cur = NULL;   // most recent file initiated for hashing
+ratecalc_t        fl_hash_rate;
+static guint64    fl_hash_reset = 0; // increased when fl_hash_cur is removed from the queue (to stop current hash operation)
+static GMutex    *fl_hash_resetlock;
+static GCond     *fl_hash_resetcond;
 
 #define TTH_BUFSIZE (512*1024)
 
@@ -60,11 +60,11 @@ static GCond          *fl_hash_resetcond;
 
 // Get full path to an item in our list. Result should be free'd. This function
 // isn't particularly fast.
-char *fl_local_path(struct fl_list *fl) {
+char *fl_local_path(fl_list_t *fl) {
   if(!fl->parent->parent)
     return g_strdup(db_share_path(fl->name));
   char *tmp, *path = g_strdup(fl->name);
-  struct fl_list *cur = fl->parent;
+  fl_list_t *cur = fl->parent;
   while(cur->parent && cur->parent->parent) {
     tmp = path;
     path = g_build_filename(cur->name, path, NULL);
@@ -82,10 +82,10 @@ char *fl_local_path(struct fl_list *fl) {
 // the path must be absolute and "real" (i.e., what realpath() would return),
 // since that is the path that is stored in the config file. This function
 // makes no attempt to convert the given path into a real path.
-struct fl_list *fl_local_from_path(const char *path) {
-  struct fl_list *n = fl_list_from_path(fl_local_list, path);
+fl_list_t *fl_local_from_path(const char *path) {
+  fl_list_t *n = fl_list_from_path(fl_local_list, path);
   if(!n && path[0] == '/') {
-    struct db_share_item *l = db_share_list();
+    db_share_item_t *l = db_share_list();
     for(; l->name; l++)
       if(strncmp(path, l->path, strlen(l->path)) == 0)
         break;
@@ -136,7 +136,7 @@ gboolean fl_flush(gpointer dat) {
 // fl_local_list_size and _length stay correct.
 
 // Add to the hash index
-static void fl_hashindex_insert(struct fl_list *fl) {
+static void fl_hashindex_insert(fl_list_t *fl) {
   GSList *cur = g_hash_table_lookup(fl_hash_index, fl->tth);
   if(cur) {
     g_return_if_fail(cur == g_slist_insert(cur, fl, 1)); // insert item without modifying the pointer
@@ -151,7 +151,7 @@ static void fl_hashindex_insert(struct fl_list *fl) {
 
 // ...and remove a file. This is done when a file is actually removed from the
 // share, or when its TTH information has been invalidated.
-static void fl_hashindex_del(struct fl_list *fl) {
+static void fl_hashindex_del(fl_list_t *fl) {
   if(!fl->hastth)
     return;
   GSList *cur = g_hash_table_lookup(fl_hash_index, fl->tth);
@@ -163,7 +163,7 @@ static void fl_hashindex_del(struct fl_list *fl) {
     fl_local_list_size -= fl->size;
   // there's another file with the same TTH.
   } else
-    g_hash_table_replace(fl_hash_index, ((struct fl_list *)cur->data)->tth, cur);
+    g_hash_table_replace(fl_hash_index, ((fl_list_t *)cur->data)->tth, cur);
   fl_local_list_length = g_hash_table_size(fl_hash_index);
 }
 
@@ -172,28 +172,27 @@ static void fl_hashindex_del(struct fl_list *fl) {
 
 
 // Scanning directories
-// TODO: rewrite this with the new SQLite backend idea
 
 // Note: The `file' structure points to a (sub-)item in fl_local_list, and will
 // be accessed from both the scan thread and the main thread. It is therefore
 // important that no changes are made to the local file list while the scan
 // thread is active.
-struct fl_scan_args {
-  struct fl_list **file, **res;
+typedef struct fl_scan_t {
+  fl_list_t **file, **res;
   char **path;
   GRegex *excl_regex;
   gboolean inc_hidden;
   gboolean (*donefun)(gpointer);
-};
+} fl_scan_t;
 
 
 // Removes duplicate files (that is, files with the same name in a
 // case-insensitive context) from a dirtectory.
-static void fl_scan_rmdupes(struct fl_list *fl, const char *vpath) {
+static void fl_scan_rmdupes(fl_list_t *fl, const char *vpath) {
   int i = 1;
   while(i<fl->sub->len) {
-    struct fl_list *a = g_ptr_array_index(fl->sub, i-1);
-    struct fl_list *b = g_ptr_array_index(fl->sub, i);
+    fl_list_t *a = g_ptr_array_index(fl->sub, i-1);
+    fl_list_t *b = g_ptr_array_index(fl->sub, i);
     if(fl_list_cmp_strict(a, b) == 0) {
       char *tmp = g_build_filename(vpath, b->name, NULL);
       ui_mf(ui_main, UIP_MED, "Not sharing \"%s\": Other file with same name (but different case) already shared.", tmp);
@@ -224,13 +223,13 @@ static void fl_scan_invalidate(gint64 id, gboolean force_flush) {
 
 // Fetches TTH information either from the database or from *oldpar, and
 // invalidates this data if the file has changed.
-static void fl_scan_check(struct fl_list *oldpar, struct fl_list *new, const char *real) {
+static void fl_scan_check(fl_list_t *oldpar, fl_list_t *new, const char *real) {
   time_t oldlastmod;
   guint64 oldsize;
   char oldhash[24];
   gint64 oldid = 0;
 
-  struct fl_list *old = oldpar && oldpar->sub ? fl_list_file_strict(oldpar, new) : NULL;
+  fl_list_t *old = oldpar && oldpar->sub ? fl_list_file_strict(oldpar, new) : NULL;
   // Get from the previous in-memory structure
   if(old && fl_list_getlocal(old).id) {
     oldid = fl_list_getlocal(old).id;
@@ -256,13 +255,13 @@ static void fl_scan_check(struct fl_list *oldpar, struct fl_list *new, const cha
 
 
 // *name is in filesystem encoding. For *path and *vpath see fl_scan_dir().
-static struct fl_list *fl_scan_item(struct fl_list *old, const char *path, const char *vpath, const char *name, GRegex *excl) {
+static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpath, const char *name, GRegex *excl) {
   char *uname = NULL;  // name-to-UTF8
   char *vcpath = NULL; // vpath + uname
   char *ename = NULL;  // uname-to-filesystem
   char *cpath = NULL;  // path + ename
   char *real = NULL;   // realpath(cpath)-to-UTF8
-  struct fl_list *node = NULL;
+  fl_list_t *node = NULL;
 
   // Try to get a UTF-8 filename
   uname = g_filename_to_utf8(name, -1, NULL, NULL, NULL);
@@ -340,7 +339,7 @@ done:
 // recursive
 // Doesn't handle paths longer than PATH_MAX, but I don't think it matters all that much.
 // *path is the filesystem path in filename encoding, vpath is the virtual path in UTF-8.
-static void fl_scan_dir(struct fl_list *parent, struct fl_list *old, const char *path, const char *vpath, gboolean inc_hidden, GRegex *excl) {
+static void fl_scan_dir(fl_list_t *parent, fl_list_t *old, const char *path, const char *vpath, gboolean inc_hidden, GRegex *excl) {
   GError *err = NULL;
   GDir *dir = g_dir_open(path, 0, &err);
   if(!dir) {
@@ -355,7 +354,7 @@ static void fl_scan_dir(struct fl_list *parent, struct fl_list *old, const char 
     if(!inc_hidden && name[0] == '.')
       continue;
     // check with *excl, stat and create
-    struct fl_list *item = fl_scan_item(old, path, vpath, name, excl);
+    fl_list_t *item = fl_scan_item(old, path, vpath, name, excl);
     // and add it
     if(item)
       fl_list_add(parent, item, -1);
@@ -370,7 +369,7 @@ static void fl_scan_dir(struct fl_list *parent, struct fl_list *old, const char 
   // directories opened at the same time. Costs some extra CPU cycles, though...)
   int i;
   for(i=0; i<parent->sub->len; i++) {
-    struct fl_list *cur = g_ptr_array_index(parent->sub, i);
+    fl_list_t *cur = g_ptr_array_index(parent->sub, i);
     if(!cur->isfile) {
       char *enc = g_filename_from_utf8(cur->name, -1, NULL, NULL, NULL);
       char *cpath = g_build_filename(path, enc, NULL);
@@ -387,11 +386,11 @@ static void fl_scan_dir(struct fl_list *parent, struct fl_list *old, const char 
 
 // Must be called in a separate thread.
 static void fl_scan_thread(gpointer data, gpointer udata) {
-  struct fl_scan_args *args = data;
+  fl_scan_t *args = data;
 
   int i, len = g_strv_length(args->path);
   for(i=0; i<len; i++) {
-    struct fl_list *cur = fl_list_create("", FALSE);
+    fl_list_t *cur = fl_list_create("", FALSE);
     char *tmp = g_filename_from_utf8(args->path[i], -1, NULL, NULL, NULL);
     cur->sub = g_ptr_array_new_with_free_func(fl_list_free);
     fl_scan_dir(cur, args->file[i], tmp, args->path[i], args->inc_hidden, args->excl_regex);
@@ -412,8 +411,8 @@ static void fl_scan_thread(gpointer data, gpointer udata) {
 
 
 // This struct is passed from the main thread to the hasher and back with modifications.
-struct fl_hash_args {
-  struct fl_list *file; // only accessed from main thread
+typedef struct fl_hash_t {
+  fl_list_t *file; // only accessed from main thread
   char *path;        // owned by main thread, read from hash thread
   guint64 filesize;  // set by main thread
   char root[24];     // set by hash thread
@@ -422,7 +421,7 @@ struct fl_hash_args {
   gint64 id;         // set by hash thread
   gdouble time;      // set by hash thread
   guint64 lastreset; // last value of fl_hash_reset when starting this thread
-};
+} fl_hash_t;
 
 // Maximum number of levels, including root (level 0).  The ADC docs specify
 // that this should be at least 7, and everyone else uses 10. Since keeping 10
@@ -475,7 +474,7 @@ struct fl_hash_args {
 
 
 // Recursively deletes a fl_list structure from the hash queue
-static void fl_hash_queue_delrec(struct fl_list *f) {
+static void fl_hash_queue_delrec(fl_list_t *f) {
   if(f->isfile)
     fl_hash_queue_del(f);
   else {
@@ -506,9 +505,9 @@ static int fl_hash_burst(guint64 lastreset) {
 static gboolean fl_hash_done(gpointer dat);
 
 static void fl_hash_thread(gpointer data, gpointer udata) {
-  struct fl_hash_args *args = data;
+  fl_hash_t *args = data;
   // static, since only one hash thread is allowed and this saves stack space
-  struct tth_ctx tth;
+  tth_ctx_t tth;
   char *buf = g_malloc(TTH_BUFSIZE);
   char *blocks = NULL;
   int f = -1;
@@ -539,7 +538,7 @@ static void fl_hash_thread(gpointer data, gpointer udata) {
   blocks = g_malloc(24*blocks_num);
   tth_init(&tth);
 
-  struct fadv adv;
+  fadv_t adv;
   fadv_init(&adv, f, 0, VAR_FFC_HASH);
 
   int r, nr;
@@ -624,13 +623,13 @@ static void fl_hash_process() {
 
   // get one item from fl_hash_queue
   GHashTableIter iter;
-  struct fl_list *file;
+  fl_list_t *file;
   g_hash_table_iter_init(&iter, fl_hash_queue);
   g_hash_table_iter_next(&iter, (gpointer *)&file, NULL);
   fl_hash_cur = file;
 
   // pass stuff to the hash thread
-  struct fl_hash_args *args = g_new0(struct fl_hash_args, 1);
+  fl_hash_t *args = g_new0(fl_hash_t, 1);
   args->file = file;
   char *tmp = fl_local_path(file);
   args->path = g_filename_from_utf8(tmp, -1, NULL, NULL, NULL);
@@ -642,8 +641,8 @@ static void fl_hash_process() {
 
 
 static gboolean fl_hash_done(gpointer dat) {
-  struct fl_hash_args *args = dat;
-  struct fl_list *fl = args->file;
+  fl_hash_t *args = dat;
+  fl_list_t *fl = args->file;
 
   // remove file from queue, ignore this hash if the file was already removed
   // by some other process.
@@ -683,13 +682,13 @@ fl_hash_done_f:
 
 
 // get or create a root directory
-static struct fl_list *fl_refresh_getroot(const char *name) {
+static fl_list_t *fl_refresh_getroot(const char *name) {
   // no root? create!
   if(!fl_local_list) {
     fl_local_list = fl_list_create("", FALSE);
     fl_local_list->sub = g_ptr_array_new_with_free_func(fl_list_free);
   }
-  struct fl_list *cur = fl_list_file(fl_local_list, name);
+  fl_list_t *cur = fl_list_file(fl_local_list, name);
   // dir not present yet? create a stub
   if(!cur) {
     cur = fl_list_create(name, FALSE);
@@ -702,7 +701,7 @@ static struct fl_list *fl_refresh_getroot(const char *name) {
 
 
 // Recursively adds the files to either the hash index or the hash queue.
-static void fl_refresh_addhash(struct fl_list *cur) {
+static void fl_refresh_addhash(fl_list_t *cur) {
   if(cur->isfile) {
     if(cur->hastth)
       fl_hashindex_insert(cur);
@@ -719,7 +718,7 @@ static void fl_refresh_addhash(struct fl_list *cur) {
 // Recursively removes the files from the hash index. Unlike _addhash(), this
 // doesn't touch the hash queue. The files should have been removed from the
 // hash queue before doing the refresh.
-static void fl_refresh_delhash(struct fl_list *cur) {
+static void fl_refresh_delhash(fl_list_t *cur) {
   if(cur->isfile && cur->hastth)
     fl_hashindex_del(cur);
   else if(!cur->isfile) {
@@ -730,12 +729,12 @@ static void fl_refresh_delhash(struct fl_list *cur) {
 }
 
 
-static void fl_refresh_compare(struct fl_list *old, struct fl_list *new) {
+static void fl_refresh_compare(fl_list_t *old, fl_list_t *new) {
   int oldi = 0;
   int newi = 0;
   while(oldi < old->sub->len || newi < new->sub->len) {
-    struct fl_list *oldl = oldi >= old->sub->len ? NULL : g_ptr_array_index(old->sub, oldi);
-    struct fl_list *newl = newi >= new->sub->len ? NULL : g_ptr_array_index(new->sub, newi);
+    fl_list_t *oldl = oldi >= old->sub->len ? NULL : g_ptr_array_index(old->sub, oldi);
+    fl_list_t *newl = newi >= new->sub->len ? NULL : g_ptr_array_index(new->sub, newi);
     // Don't use fl_list_cmp() here, since that one doesn't return 0
     int cmp = !oldl ? 1 : !newl ? -1 : fl_list_cmp_strict(oldl, newl);
     gboolean check = FALSE, remove = FALSE, insert = FALSE;
@@ -783,7 +782,7 @@ static void fl_refresh_compare(struct fl_list *old, struct fl_list *new) {
 
     // insert
     if(insert) {
-      struct fl_list *tmp = fl_list_copy(newl);
+      fl_list_t *tmp = fl_list_copy(newl);
       fl_list_add(old, tmp, oldi);
       fl_refresh_addhash(tmp);
       oldi++; // after fl_list_add(), oldi points to the new item. But we don't have to check that one again, so increase.
@@ -817,8 +816,8 @@ static void fl_refresh_process() {
     return;
 
   // construct the list of to-be-scanned directories
-  struct fl_list *dir = fl_refresh_queue->head->data;
-  struct fl_scan_args *args = g_slice_new0(struct fl_scan_args);
+  fl_list_t *dir = fl_refresh_queue->head->data;
+  fl_scan_t *args = g_slice_new0(fl_scan_t);
   args->donefun = fl_refresh_scanned;
   args->inc_hidden = var_get_bool(0, VAR_share_hidden);
 
@@ -833,8 +832,8 @@ static void fl_refresh_process() {
 
   // one dir, the simple case
   if(dir != fl_local_list) {
-    args->file = g_new0(struct fl_list *, 2);
-    args->res = g_new0(struct fl_list *, 2);
+    args->file = g_new0(fl_list_t *, 2);
+    args->res = g_new0(fl_list_t *, 2);
     args->path = g_new0(char *, 2);
     args->file[0] = dir;
     args->path[0] = fl_local_path(dir);
@@ -842,12 +841,12 @@ static void fl_refresh_process() {
   // refresh the entire share, which consists of multiple dirs.
   } else {
     time(&fl_refresh_last);
-    struct db_share_item *l;
+    db_share_item_t *l;
     int i, len = 0;
     for(l=db_share_list(); l->name; l++)
       len++;
-    args->file = g_new0(struct fl_list *, len+1);
-    args->res  = g_new0(struct fl_list *, len+1);
+    args->file = g_new0(fl_list_t *, len+1);
+    args->res  = g_new0(fl_list_t *, len+1);
     args->path = g_new0(char *, len+1);
     for(i=0,l=db_share_list(); l->name; i++,l++) {
       args->file[i] = fl_refresh_getroot(l->name);
@@ -861,7 +860,7 @@ static void fl_refresh_process() {
 
 
 static gboolean fl_refresh_scanned(gpointer dat) {
-  struct fl_scan_args *args = dat;
+  fl_scan_t *args = dat;
 
   int i, len = g_strv_length(args->path);
   for(i=0; i<len; i++) {
@@ -880,7 +879,7 @@ static gboolean fl_refresh_scanned(gpointer dat) {
     g_regex_unref(args->excl_regex);
   g_free(args->file);
   g_free(args->res);
-  g_slice_free(struct fl_scan_args, args);
+  g_slice_free(fl_scan_t, args);
 
   g_queue_pop_head(fl_refresh_queue);
   if(fl_refresh_queue->head)
@@ -891,12 +890,12 @@ static gboolean fl_refresh_scanned(gpointer dat) {
 }
 
 
-void fl_refresh(struct fl_list *dir) {
+void fl_refresh(fl_list_t *dir) {
   if(!dir)
     dir = fl_local_list;
   GList *n;
   for(n=fl_refresh_queue->head; n; n=n->next) {
-    struct fl_list *c = n->data;
+    fl_list_t *c = n->data;
     // if current dir is part of listed dir then it's already queued
     if(dir == c || fl_list_is_child(c, dir))
       return;
@@ -928,7 +927,7 @@ void fl_share(const char *dir) {
 // present in the config file anymore).
 void fl_unshare(const char *dir) {
   if(dir) {
-    struct fl_list *fl = fl_list_file(fl_local_list, dir);
+    fl_list_t *fl = fl_list_file(fl_local_list, dir);
     g_return_if_fail(fl);
     fl_hash_queue_delrec(fl);
     fl_refresh_delhash(fl);
@@ -954,10 +953,10 @@ void fl_unshare(const char *dir) {
 
 
 // Walks through the file list and inserts everything into the fl_hashindex.
-static void fl_init_list(struct fl_list *fl) {
+static void fl_init_list(fl_list_t *fl) {
   int i;
   for(i=0; i<fl->sub->len; i++) {
-    struct fl_list *c = g_ptr_array_index(fl->sub, i);
+    fl_list_t *c = g_ptr_array_index(fl->sub, i);
     if(c->isfile && c->hastth)
       fl_hashindex_insert(c);
     else if(!c->isfile)
@@ -1102,7 +1101,7 @@ gboolean fl_gc() {
   g_hash_table_iter_init(&iter, fl_hash_index);
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&l))
     for(; l; l=l->next)
-      g_array_append_val(fl_gc_active, fl_list_getlocal((struct fl_list *)l->data).id);
+      g_array_append_val(fl_gc_active, fl_list_getlocal((fl_list_t *)l->data).id);
   g_array_sort(fl_gc_active, fl_gc_idcmp);
 
   // walk through hashfiles table and fill fl_gc_remove

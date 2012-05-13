@@ -929,7 +929,7 @@ char *darray_get_dat(char *v, int *l) {
 
 /* How to use this:
  * From main thread:
- *   struct ratecalc thing;
+ *   ratecalc_t thing;
  *   ratecalc_init(&thing);
  *   ratecalc_register(&thing, class);
  * From any thread (usually some worker thread):
@@ -952,7 +952,7 @@ char *darray_get_dat(char *v, int *l) {
 #define RCC_DOWN 4
 #define RCC_MAX  RCC_DOWN
 
-struct ratecalc {
+struct ratecalc_t {
   GStaticMutex lock; // protects total, last, rate and burst
   gint64 total;
   gint64 last;
@@ -991,7 +991,7 @@ struct ratecalc {
 GSList *ratecalc_list = NULL;
 
 
-void ratecalc_add(struct ratecalc *rc, int b) {
+void ratecalc_add(ratecalc_t *rc, int b) {
   g_static_mutex_lock(&rc->lock);
   rc->total += b;
   rc->burst -= b;
@@ -999,7 +999,7 @@ void ratecalc_add(struct ratecalc *rc, int b) {
 }
 
 
-int ratecalc_rate(struct ratecalc *rc) {
+int ratecalc_rate(ratecalc_t *rc) {
   g_static_mutex_lock(&rc->lock);
   int r = rc->rate;
   g_static_mutex_unlock(&rc->lock);
@@ -1007,7 +1007,7 @@ int ratecalc_rate(struct ratecalc *rc) {
 }
 
 
-int ratecalc_burst(struct ratecalc *rc) {
+int ratecalc_burst(ratecalc_t *rc) {
   g_static_mutex_lock(&rc->lock);
   int r = rc->burst;
   g_static_mutex_unlock(&rc->lock);
@@ -1015,7 +1015,7 @@ int ratecalc_burst(struct ratecalc *rc) {
 }
 
 
-gint64 ratecalc_total(struct ratecalc *rc) {
+gint64 ratecalc_total(ratecalc_t *rc) {
   g_static_mutex_lock(&rc->lock);
   gint64 r = rc->total;
   g_static_mutex_unlock(&rc->lock);
@@ -1042,7 +1042,7 @@ void ratecalc_calc() {
 
   // Pass one: calculate rc->rate, substract negative burst values from left[] and calculate nums[].
   for(n=ratecalc_list; n; n=n->next) {
-    struct ratecalc *rc = n->data;
+    ratecalc_t *rc = n->data;
     g_static_mutex_lock(&rc->lock);
     gint64 diff = rc->total - rc->last;
     rc->rate = diff + ((rc->rate - diff) / 2);
@@ -1078,7 +1078,7 @@ void ratecalc_calc() {
       break;
     // Loop through the ratecalc structs and assign it some BW
     for(n=ratecalc_list; n; n=n->next) {
-      struct ratecalc *rc = n->data;
+      ratecalc_t *rc = n->data;
       if(bwp[rc->reg] > 0) {
         g_static_mutex_lock(&rc->lock);
         int alloc = MIN(maxburst[rc->reg]-rc->burst, bwp[rc->reg]);
@@ -1099,7 +1099,7 @@ void ratecalc_calc() {
 
 
 // calculates an ETA and formats it into a "?d ?h ?m ?s" thing
-char *ratecalc_eta(struct ratecalc *rc, guint64 left) {
+char *ratecalc_eta(ratecalc_t *rc, guint64 left) {
   int sec = left / MAX(1, ratecalc_rate(rc));
   return sec > 356*24*3600 ? "-" : str_formatinterval(sec);
 }
@@ -1113,7 +1113,7 @@ char *ratecalc_eta(struct ratecalc *rc, guint64 left) {
 
 #if INTERFACE
 
-struct logfile {
+struct logfile_t {
   int file;
   char *path;
   struct stat st;
@@ -1126,7 +1126,7 @@ static GSList *logfile_instances = NULL;
 
 
 // (Re-)opens the log file and checks for inode and file size changes.
-static void logfile_checkfile(struct logfile *l) {
+static void logfile_checkfile(logfile_t *l) {
   // stat
   gboolean restat = l->file < 0;
   struct stat st;
@@ -1160,8 +1160,8 @@ static void logfile_checkfile(struct logfile *l) {
 }
 
 
-struct logfile *logfile_create(const char *name) {
-  struct logfile *l = g_slice_new0(struct logfile);
+logfile_t *logfile_create(const char *name) {
+  logfile_t *l = g_slice_new0(logfile_t);
 
   l->file = -1;
   char *n = g_strconcat(name, ".log", NULL);
@@ -1174,18 +1174,18 @@ struct logfile *logfile_create(const char *name) {
 }
 
 
-void logfile_free(struct logfile *l) {
+void logfile_free(logfile_t *l) {
   if(!l)
     return;
   logfile_instances = g_slist_remove(logfile_instances, l);
   if(l->file >= 0)
     close(l->file);
   g_free(l->path);
-  g_slice_free(struct logfile, l);
+  g_slice_free(logfile_t, l);
 }
 
 
-void logfile_add(struct logfile *l, const char *msg) {
+void logfile_add(logfile_t *l, const char *msg) {
   logfile_checkfile(l);
   if(l->file < 0)
     return;
@@ -1211,7 +1211,7 @@ void logfile_add(struct logfile *l, const char *msg) {
 void logfile_global_reopen() {
   GSList *n = logfile_instances;
   for(; n; n=n->next) {
-    struct logfile *l = n->data;
+    logfile_t *l = n->data;
     if(l->file >= 0) {
       close(l->file);
       l->file = -1;
@@ -1232,7 +1232,7 @@ void logfile_global_reopen() {
 //
 // Usage:
 //   int fd = open(..);
-//   struct fadv a;
+//   fadv_t a;
 //   fadv_init(&a, fd, offset, flag);
 //   while((int len = read(..)) > 0)
 //     fadv_purge(&a, len);
@@ -1244,7 +1244,7 @@ void logfile_global_reopen() {
 
 #if INTERFACE
 
-struct fadv {
+struct fadv_t {
   int fd;
   int chunk;
   int flag;
@@ -1277,7 +1277,7 @@ struct fadv {
 #ifdef HAVE_POSIX_FADVISE
 
 // call with length = -1 to force a flush
-void fadv_purge(struct fadv *a, int length) {
+void fadv_purge(fadv_t *a, int length) {
   if(length > 0)
     a->chunk += length;
   // flush every 5MB. Some magical value, don't think too much into it.
@@ -1297,10 +1297,10 @@ void fadv_purge(struct fadv *a, int length) {
 
 // A GSource implementation to attach raw fds as a source to the main loop.
 
-struct fdsrc_obj {
+typedef struct fdsrc_t {
   GSource src;
   GPollFD fd;
-};
+} fdsrc_t;
 
 static gboolean fdsrc_prepare(GSource *src, gint *timeout) {
   *timeout = -1;
@@ -1308,7 +1308,7 @@ static gboolean fdsrc_prepare(GSource *src, gint *timeout) {
 }
 
 static gboolean fdsrc_check(GSource *src) {
-  return ((struct fdsrc_obj *)src)->fd.revents > 0 ? TRUE : FALSE;
+  return ((fdsrc_t *)src)->fd.revents > 0 ? TRUE : FALSE;
 }
 
 static gboolean fdsrc_dispatch(GSource *src, GSourceFunc cb, gpointer dat) {
@@ -1321,7 +1321,7 @@ static void fdsrc_finalize(GSource *src) {
 static GSourceFuncs fdsrc_funcs = { fdsrc_prepare, fdsrc_check, fdsrc_dispatch, fdsrc_finalize };
 
 GSource *fdsrc_new(int fd, int ev) {
-  struct fdsrc_obj *src = (struct fdsrc_obj *)g_source_new(&fdsrc_funcs, sizeof(struct fdsrc_obj));
+  fdsrc_t *src = (fdsrc_t *)g_source_new(&fdsrc_funcs, sizeof(fdsrc_t));
   src->fd.fd = fd;
   src->fd.events = ev;
   src->fd.revents = 0;

@@ -26,9 +26,11 @@
 
 #ifdef DOC_CMD
 
-static const struct doc_cmd {
+typedef struct doc_cmd_t {
   char const name[16], *args, *sum, *desc;
-} doc_cmds[] = {
+} doc_cmd_t;
+
+static const doc_cmd_t doc_cmds[] = {
 
 { "accept", NULL, "Accept the TLS certificate of a hub.",
   "Use this command to accept the TLS certificate of a hub. This command is"
@@ -252,11 +254,13 @@ static const struct doc_cmd {
 
 #ifdef DOC_SET
 
-static const struct doc_set {
+typedef struct doc_set_t {
   char const *name;
   int hub;
   char const *type, *desc;
-} doc_sets[] = {
+} doc_set_t;
+
+static const doc_set_t doc_sets[] = {
 
 { "active", 1, "<boolean>",
   "Enables or disables active mode. You may have to configure your router"
@@ -560,9 +564,11 @@ static const struct doc_set {
   "PgUp/PgDown  Select one page of items up/down.\n"\
   "End/Home     Select last/first item in the list.\n"
 
-static const struct doc_key {
+typedef struct doc_key_t {
   char const *sect, *title, *desc;
-} doc_keys[] = {
+} doc_key_t;
+
+static const doc_key_t doc_keys[] = {
 
 { "global", "Global key bindings",
   "Alt+j        Open previous tab.\n"
