@@ -516,9 +516,10 @@ void hub_opencc(struct hub *hub, struct hub_user *u) {
   if(hub->adc)
     g_snprintf(token, 19, "%"G_GUINT32_FORMAT, g_random_int());
 
-  guint16 tlsport = var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER ? listen_hub_tls(hub->id) : 0;
+  guint16 wanttls = var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER;
   guint16 tcpport = listen_hub_tcp(hub->id);
-  gboolean usetls = tlsport && u->hastls;
+  guint16 tlsport = tcpport && wanttls ? listen_hub_tls(hub->id) : 0;
+  gboolean usetls = (tcpport ? tlsport : wanttls) && u->hastls;
   char *adcproto = !usetls ? "ADC/1.0" : u->hasadc0 ? "ADCS/0.10" : "ADCS/1.0";
   int port = usetls ? tlsport : tcpport;
 
