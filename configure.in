@@ -180,9 +180,9 @@ AC_ARG_ENABLE(git-version,
 
 usegitver=no
 if test "x$wantgitver" = "xyes" ; then
-  AC_CHECK_PROGS([GIT], [git])
+  AC_CHECK_PROGS([GIT], [git], [no])
   AC_CHECK_FILE(["$srcdir/.git"], hasgitdir=yes)
-  test $GIT -a "x$hasgitdir" = "xyes" && usegitver=yes
+  test "x$GIT" != "xno" -a "x$hasgitdir" = "xyes" && usegitver=yes
 fi
 AM_CONDITIONAL(USE_GIT_VERSION, test "x$usegitver" = "xyes")
 
