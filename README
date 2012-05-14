@@ -36,7 +36,7 @@ BUILDING FROM A RELEASE TARBALL
   the following to build ncdc:
   - A C compiler
   - Development files for the libraries mentioned above
-  - GNU make
+  - make
   - pkg-config
   - pod2man (optional, comes with a default Perl installation)
   - makeheaders (optional, included in the distribution if you don't have it)
@@ -44,7 +44,7 @@ BUILDING FROM A RELEASE TARBALL
   And the usual commands will get you up and running:
 
     ./configure --prefix=/usr
-    make (or gmake)
+    make
     (sudo) make install
 
   To build the ncdc-db-upgrade utility, append --enable-db-upgrade to the
