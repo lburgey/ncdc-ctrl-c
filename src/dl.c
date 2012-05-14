@@ -597,7 +597,6 @@ void dl_queue_addlist(hub_user_t *u, const char *sel, ui_tab_t *parent, gboolean
 static gboolean dl_queue_addfile(guint64 uid, char *hash, guint64 size, char *fn) {
   if(g_hash_table_lookup(dl_queue, hash))
     return FALSE;
-  g_return_val_if_fail(size >= 0, FALSE);
   dl_t *dl = g_slice_new0(dl_t);
   memcpy(dl->hash, hash, 24);
   dl->size = size;
