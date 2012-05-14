@@ -9,12 +9,17 @@ endif
 noinst_PROGRAMS=gendoc
 gendoc_SOURCES=doc/gendoc.c
 
-doc/ncdc.pod: $(top_srcdir)/doc/ncdc.pod.in gendoc
-	$(AM_V_GEN)./gendoc <$< >$@
+doc/ncdc.pod: $(srcdir)/doc/ncdc.pod.in gendoc
+	$(AM_V_GEN)./gendoc <"$(srcdir)/doc/ncdc.pod.in" >doc/ncdc.pod
 
-${man_MANS}: %.1: %.pod GNUmakefile
+doc/ncdc.1: doc/ncdc.pod Makefile
 if USE_POD2MAN
-	$(AM_V_GEN)pod2man --center "ncdc manual" --release "@PACKAGE@-@VERSION@" $< >$@
+	$(AM_V_GEN)pod2man --center "ncdc manual" --release "@PACKAGE@-@VERSION@" doc/ncdc.pod >doc/ncdc.1
+endif
+
+doc/ncdc-db-upgrade.1: $(srcdir)/doc/ncdc-db-upgrade.pod Makefile
+if USE_POD2MAN
+	$(AM_V_GEN)pod2man --center "ncdc manual" --release "@PACKAGE@-@VERSION@" "$(srcdir)/doc/ncdc-db-upgrade.pod" >doc/ncdc-db-upgrade.1
 endif
 
 
@@ -62,7 +67,7 @@ ncdc_LDADD=-lm $(NCURSES_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(SQLITE_
 MOSTLYCLEANFILES=$(auto_headers) mkhdr.done
 
 mkhdr.done: $(mkhdr_dep) ${ncdc_SOURCES}
-	$(AM_V_GEN)$(mkhdr) $(shell echo $(ncdc_SOURCES) | sed 's#\([^ ]*\)\.c#$(srcdir)/\1.c:$(builddir)/\1.h#g') && touch mkhdr.done
+	$(AM_V_GEN)$(mkhdr) `echo $(ncdc_SOURCES) | sed 's#\([^ ]*\)\.c#$(srcdir)/\1.c:$(builddir)/\1.h#g'` && touch mkhdr.done
 
 ${auto_headers}: mkhdr.done
 ${ncdc_OBJECTS}: ${auto_headers}
@@ -70,8 +75,8 @@ ${ncdc_OBJECTS}: ${auto_headers}
 
 # append -DGIT_VERSION, when enabled
 if USE_GIT_VERSION
-GIT_VERSION := $(shell sh -c 'cd "$(top_srcdir)"; git describe --abbrev=4 --dirty=-d | sed s/^v//')
-ncdc_CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
+GIT_VERSION := `cd '$(srcdir)' && git describe --abbrev=4 --dirty=-d | sed s/^v//`
+ncdc_CFLAGS += -DGIT_VERSION="\"$(GIT_VERSION)\""
 endif
 
 

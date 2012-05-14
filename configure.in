@@ -190,7 +190,7 @@ AM_CONDITIONAL(USE_GIT_VERSION, test "x$usegitver" = "xyes")
 
 
 
-AC_OUTPUT([GNUmakefile])
+AC_OUTPUT([Makefile])
 
 
 # Information about SUDP or GDBM support
