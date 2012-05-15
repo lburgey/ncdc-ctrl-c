@@ -1,3 +1,15 @@
+1.11 - 2012-05-15
+	- Drop libxml2 in favour of custom XML parser & writer
+	- Allow using a single listen port for TCP and TLS
+	- Added support for encrypted UDP messages (ADC SUDP)
+	- Included 'makeheaders' in the distribution
+	- Removed GNU-specific extensions from the Makefile
+	- Fix /disconnect to cancel automatic reconnect
+	- Fix loading of file lists with invalid UTF-8 sequences
+	- Fix ncurses detection on OpenIndiana
+	- Fix use of TLS in passive mode on ADC
+	- Fix configure warning when git could not be found
+
 1.10 - 2012-05-03
 	- Rewrote network backend to use plain sockets instead of GIO
 	- Added GnuTLS as required dependency
