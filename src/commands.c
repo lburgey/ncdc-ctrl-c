@@ -360,7 +360,7 @@ static void c_reconnect(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else if(tab->type == UIT_HUB) {
-    if(tab->hub->net->state != NETST_IDL || tab->hub->reconnect_timer)
+    if(!net_is_idle(tab->hub->net) || tab->hub->reconnect_timer)
       hub_disconnect(tab->hub, FALSE);
     c_connect(""); // also checks for the existence of "hubaddr"
   } else if(tab->type == UIT_MAIN) {
@@ -370,7 +370,7 @@ static void c_reconnect(char *args) {
       tab = n->data;
       if(tab->type != UIT_HUB)
         continue;
-      if(tab->hub->net->state != NETST_IDL || tab->hub->reconnect_timer)
+      if(!net_is_idle(tab->hub->net)|| tab->hub->reconnect_timer)
         hub_disconnect(tab->hub, FALSE);
       ui_tab_cur = n;
       c_connect("");

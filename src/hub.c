@@ -70,7 +70,7 @@ struct hub_t {
   gboolean tls : 16;
   int state;               // (ADC) ADC_S_*
   ui_tab_t *tab;
-  struct net *net;
+  net_t *net;
 
   // Hub info / config
   guint64 id;              // "hubid" number
@@ -618,7 +618,7 @@ void hub_search(hub_t *hub, search_q_t *q) {
 #define beq(a) (!!a == !!hub->nfo_##a)
 
 void hub_send_nfo(hub_t *hub) {
-  if(hub->net->state != NETST_ASY)
+  if(!net_is_connected(hub->net))
     return;
 
   // get info, to be compared with hub->nfo_
@@ -991,8 +991,8 @@ static void adc_sch(hub_t *hub, adc_cmd_t *cmd) {
 #define is_adc_proto(p)   (strcmp(p, "ADC/1.0") == 0  || strcmp(p, "ADC/0.10") == 0)
 #define is_valid_proto(p) (is_adc_proto(p) || is_adcs_proto(p))
 
-static void adc_handle(struct net *net, char *msg, int _len) {
-  hub_t *hub = net->handle;
+static void adc_handle(net_t *net, char *msg, int _len) {
+  hub_t *hub = net_handle(net);
   net_readmsg(net, '\n', adc_handle);
 
   adc_cmd_t cmd;
@@ -1298,7 +1298,7 @@ static void nmdc_search(hub_t *hub, char *from, int size_m, guint64 size, int ty
   if(!i)
     return;
 
-  char *hubaddr = net_remoteaddr(hub->net);
+  const char *hubaddr = net_remoteaddr(hub->net);
   int slots = var_get_int(0, VAR_slots);
   int slots_free = slots - cc_slots_in_use(NULL);
   if(slots_free < 0)
@@ -1333,8 +1333,8 @@ static void nmdc_search(hub_t *hub, char *from, int size_m, guint64 size, int ty
 }
 
 
-static void nmdc_handle(struct net *net, char *cmd, int _len) {
-  hub_t *hub = net->handle;
+static void nmdc_handle(net_t *net, char *cmd, int _len) {
+  hub_t *hub = net_handle(net);
   // Immediately queue next read. It will be cancelled when net_disconnect() is
   // called anyway.
   net_readmsg(net, '|', nmdc_handle);
@@ -1690,8 +1690,8 @@ static gboolean joincomplete_timer(gpointer dat) {
 }
 
 
-static void handle_error(struct net *n, int action, const char *err) {
-  hub_t *hub = n->handle;
+static void handle_error(net_t *n, int action, const char *err) {
+  hub_t *hub = net_handle(n);
 
   ui_mf(hub->tab, 0, "%s: %s",
     action == NETERR_CONN ? "Could not connect to hub" :
@@ -1720,9 +1720,9 @@ hub_t *hub_create(ui_tab_t *tab) {
 }
 
 
-static void handle_handshake(struct net *n, const char *kpr) {
+static void handle_handshake(net_t *n, const char *kpr) {
   g_return_if_fail(kpr != NULL);
-  hub_t *hub = n->handle;
+  hub_t *hub = net_handle(n);
   g_return_if_fail(!hub->kp);
 
   char kpf[53] = {};
@@ -1758,14 +1758,14 @@ static void handle_handshake(struct net *n, const char *kpr) {
 }
 
 
-static void handle_connect(struct net *n, const char *addr) {
-  hub_t *hub = n->handle;
+static void handle_connect(net_t *n, const char *addr) {
+  hub_t *hub = net_handle(n);
   if(addr) {
     ui_mf(hub->tab, 0, "Trying %s...", addr);
     return;
   }
 
-  n->timeout_msg = hub->adc ? "\n" : "|";
+  net_set_keepalive(n, hub->adc ? "\n" : "|");
   ui_mf(hub->tab, 0, "Connected to %s.", net_remoteaddr(n));
 
   if(hub->tls)

@@ -276,7 +276,7 @@ static gboolean throttle_purge(gpointer dat) {
 #define CCS_DISCONN    4 // waiting to get removed on a timeout
 
 struct cc_t {
-  struct net *net;
+  net_t *net;
   hub_t *hub;
   char *nick_raw; // (NMDC)
   char *nick;
@@ -374,8 +374,8 @@ struct cc_t {
 */
 
 
-static void adc_handle(struct net *net, char *msg, int _len);
-static void nmdc_handle(struct net *net, char *msg, int _len);
+static void adc_handle(net_t *net, char *msg, int _len);
+static void nmdc_handle(net_t *net, char *msg, int _len);
 
 // opened connections - ui_conn is responsible for the ordering
 GSequence *cc_list;
@@ -602,13 +602,13 @@ void cc_download(cc_t *cc, dl_t *dl) {
 }
 
 
-static void handle_recvdone(struct net *n, void *dat) {
+static void handle_recvdone(net_t *n, void *dat) {
   // Notify dl
   dl_recv_done(dat);
   // If the connection is still active, log the transfer and check for more
   // stuff to download
   if(n && net_is_connected(n)) {
-    cc_t *cc = n->handle;
+    cc_t *cc = net_handle(n);
     net_readmsg(cc->net, cc->adc ? '\n' : '|', cc->adc ? adc_handle : nmdc_handle);
     xfer_log_add(cc);
     cc->state = CCS_IDLE;
@@ -617,8 +617,8 @@ static void handle_recvdone(struct net *n, void *dat) {
 }
 
 
-static void handle_recvtth(struct net *n, char *buf, int read) {
-  cc_t *cc = n->handle;
+static void handle_recvtth(net_t *n, char *buf, int read) {
+  cc_t *cc = net_handle(n);
   g_return_if_fail(read == cc->last_length);
 
   dl_settthl(cc->uid, cc->last_hash, buf, cc->last_length);
@@ -672,8 +672,8 @@ static void handle_adcsnd(cc_t *cc, gboolean tthl, guint64 start, gint64 bytes) 
 }
 
 
-static void handle_sendcomplete(struct net *net) {
-  cc_t *cc = net->handle;
+static void handle_sendcomplete(net_t *net) {
+  cc_t *cc = net_handle(net);
   xfer_log_add(cc);
   cc->state = CCS_IDLE;
 }
@@ -855,7 +855,7 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
   // information with ADC (if it didn't, we won't be able to connect in the
   // first place).
   if(!u->ip4 && net_is_connected(cc->net)) {
-    char *tmp = net_remoteaddr(cc->net);
+    const char *tmp = net_remoteaddr(cc->net);
     char *sep = strchr(tmp, ':');
     if(sep)
       *sep = 0;
@@ -880,8 +880,8 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
 }
 
 
-static void adc_handle(struct net *net, char *msg, int _len) {
-  cc_t *cc = net->handle;
+static void adc_handle(net_t *net, char *msg, int _len) {
+  cc_t *cc = net_handle(net);
   if(!*msg)
     return;
   g_clear_error(&cc->err);
@@ -1181,8 +1181,8 @@ static void nmdc_direction(cc_t *cc, gboolean down, int num) {
 }
 
 
-static void nmdc_handle(struct net *net, char *cmd, int _len) {
-  cc_t *cc = net->handle;
+static void nmdc_handle(net_t *net, char *cmd, int _len) {
+  cc_t *cc = net_handle(net);
   if(!*cmd)
     return;
   g_clear_error(&cc->err);
@@ -1357,18 +1357,18 @@ static void nmdc_handle(struct net *net, char *cmd, int _len) {
 }
 
 
-static void handle_error(struct net *n, int action, const char *err) {
-  cc_t *cc = n->handle;
+static void handle_error(net_t *n, int action, const char *err) {
+  cc_t *cc = net_handle(n);
   if(!cc->err) // ignore network errors if there already was a protocol error
     g_set_error_literal(&cc->err, 1, 0, err);
 
   // If we already were shutting down, that means this cc entry is already in
   // disconnected state. In that case, just force the net handle in
   // disconnected state as well.
-  if(n->state == NETST_DIS)
+  if(net_is_disconnecting(n))
     net_disconnect(n);
   else
-    cc_disconnect(n->handle, action == NETERR_TIMEOUT);
+    cc_disconnect(net_handle(n), action == NETERR_TIMEOUT);
 }
 
 
@@ -1387,8 +1387,8 @@ cc_t *cc_create(hub_t *hub) {
 
 // Simply stores the keyprint of the certificate in cc->kp_real, it will be
 // checked when receiving CINF.
-static void handle_handshake(struct net *n, const char *kpr) {
-  cc_t *c = n->handle;
+static void handle_handshake(net_t *n, const char *kpr) {
+  cc_t *c = net_handle(n);
   if(kpr) {
     if(!c->kp_real)
       c->kp_real = g_slice_alloc(32);
@@ -1400,10 +1400,10 @@ static void handle_handshake(struct net *n, const char *kpr) {
 }
 
 
-static void handle_connect(struct net *n, const char *addr) {
+static void handle_connect(net_t *n, const char *addr) {
   if(addr)
     return;
-  cc_t *cc = n->handle;
+  cc_t *cc = net_handle(n);
   strncpy(cc->remoteaddr, net_remoteaddr(cc->net), sizeof(cc->remoteaddr));
   if(!cc->hub) {
     cc_disconnect(cc, FALSE);
@@ -1475,9 +1475,9 @@ void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short p
 }
 
 
-static void handle_detectprotocol(struct net *net, char *dat, int len) {
+static void handle_detectprotocol(net_t *net, char *dat, int len) {
   g_return_if_fail(len > 0);
-  cc_t *cc = net->handle;
+  cc_t *cc = net_handle(net);
 
   // Enable TLS
   if(!cc->tls && (cc->active_type == LBT_TLS || ((cc->active_type & LBT_TLS) && *dat >= 0x14 && *dat <= 0x17))) {
@@ -1517,7 +1517,7 @@ void cc_disconnect(cc_t *cc, gboolean force) {
   g_return_if_fail(cc->state != CCS_DISCONN);
   if(cc->state == CCS_TRANSFER)
     xfer_log_add(cc);
-  if(force || cc->net->state != NETST_ASY)
+  if(force || !net_is_asy(cc->net))
     net_disconnect(cc->net);
   else
     net_shutdown(cc->net, NULL);

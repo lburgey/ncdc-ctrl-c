@@ -946,7 +946,7 @@ static void ui_conn_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, v
     cc->state == CCS_DISCONN   ? '-' :
     cc->state == CCS_HANDSHAKE ? 'H' :
     cc->state == CCS_IDLE      ? 'I' : cc->dl ? 'D' : 'U');
-  mvaddch(row, 3, cc->net->tls ? 't' : ' ');
+  mvaddch(row, 3, cc->tls ? 't' : ' ');
 
   if(cc->nick)
     mvaddnstr(row, 5, cc->nick, str_offset_from_columns(cc->nick, 15));
@@ -974,7 +974,7 @@ static void ui_conn_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, v
   if(cc->timeout_src)
     mvaddstr(row, 50, "     -");
   else
-    mvprintw(row, 50, "%6d", ratecalc_rate(cc->dl ? cc->net->rate_in : cc->net->rate_out)/1024);
+    mvprintw(row, 50, "%6d", ratecalc_rate(cc->dl ? net_rate_in(cc->net) : net_rate_out(cc->net))/1024);
 
   if(cc->err) {
     mvaddstr(row, 58, "Disconnected: ");
@@ -1028,8 +1028,8 @@ static void ui_conn_draw_details(int l) {
     cc->state == CCS_HANDSHAKE ? "Handshake" :
     cc->state == CCS_IDLE      ? "Idle" : cc->dl ? "Downloading" : "Uploading");
   // line 3
-  mvprintw(l+3, 13, "%d KiB/s (%s)", ratecalc_rate(cc->net->rate_out)/1024, str_formatsize(ratecalc_total(cc->net->rate_out)));
-  mvprintw(l+3, 47, "%d KiB/s (%s)", ratecalc_rate(cc->net->rate_in)/1024, str_formatsize(ratecalc_total(cc->net->rate_in)));
+  mvprintw(l+3, 13, "%d KiB/s (%s)", ratecalc_rate(net_rate_out(cc->net))/1024, str_formatsize(ratecalc_total(net_rate_out(cc->net))));
+  mvprintw(l+3, 47, "%d KiB/s (%s)", ratecalc_rate(net_rate_in(cc->net))/1024, str_formatsize(ratecalc_total(net_rate_in(cc->net))));
   // size / offset / chunk (line 4/5/6)
   mvaddstr(l+4, 13, cc->last_size ? str_formatsize(cc->last_size) : "-");
   mvaddstr(l+5, 13, cc->last_size ? str_formatsize(cc->last_offset) : "-");
@@ -1041,7 +1041,7 @@ static void ui_conn_draw_details(int l) {
   } else
     mvaddstr(l+4, 47, "-");
   if(cc->last_length && !cc->timeout_src)
-    mvaddstr(l+5, 47, ratecalc_eta(cc->dl ? cc->net->rate_in : cc->net->rate_out, net_left(cc->net)));
+    mvaddstr(l+5, 47, ratecalc_eta(cc->dl ? net_rate_in(cc->net) : net_rate_out(cc->net), net_left(cc->net)));
   else
     mvaddstr(l+5, 47, "-");
   mvprintw(l+6, 47, "%ds", (int)(time(NULL)-net_last_activity(cc->net)));
