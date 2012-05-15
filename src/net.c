@@ -79,8 +79,8 @@ typedef struct synfer_t synfer_t;
 struct net_t {
   int state;
 
-  ratecalc_t *rate_in;
-  ratecalc_t *rate_out;
+  ratecalc_t rate_in;
+  ratecalc_t rate_out;
 
   dnscon_t *dnscon; // state DNS,CON. Setting ->net to NULL 'cancels' DNS resolving.
   int sock; // state CON,ASY,SYN,DIS
@@ -152,7 +152,7 @@ static ssize_t tls_pull(gnutls_transport_ptr_t dat, void *buf, size_t len) {
     gnutls_transport_set_errno(n->tls, errno == EWOULDBLOCK ? EAGAIN : errno);
   else {
     ratecalc_add(&net_in, r);
-    ratecalc_add(n->rate_in, r);
+    ratecalc_add(&n->rate_in, r);
   }
   return r;
 }
@@ -179,7 +179,7 @@ static int low_recv(net_t *n, char *buf, int len, const char **err) {
 
   if(!n->tls) {
     ratecalc_add(&net_in, r);
-    ratecalc_add(n->rate_in, r);
+    ratecalc_add(&n->rate_in, r);
   }
   return r;
 }
@@ -192,7 +192,7 @@ static ssize_t tls_push(gnutls_transport_ptr_t dat, const void *buf, size_t len)
     gnutls_transport_set_errno(n->tls, errno == EWOULDBLOCK ? EAGAIN : errno);
   else {
     ratecalc_add(&net_out, r);
-    ratecalc_add(n->rate_out, r);
+    ratecalc_add(&n->rate_out, r);
   }
   return r;
 }
@@ -219,7 +219,7 @@ static int low_send(net_t *n, const char *buf, int len, const char **err) {
 
   if(!n->tls) {
     ratecalc_add(&net_out, r);
-    ratecalc_add(n->rate_out, r);
+    ratecalc_add(&n->rate_out, r);
   }
   return r;
 }
@@ -338,7 +338,7 @@ static int syn_wait(synfer_t *s, int sock, gboolean write) {
   // Poll for burst
   int b = 0;
   int r = 0;
-  while(r <= 0 && (b = ratecalc_burst(write ? s->net->rate_out : s->net->rate_in)) <= 0) {
+  while(r <= 0 && (b = ratecalc_burst(write ? &s->net->rate_out : &s->net->rate_in)) <= 0) {
     // Wake up 4 times per second. If the resource is CPU or HDD I/O
     // constrained, then this means that at most 1/4th of the possible usage
     // time is "thrown away". I don't expect this to be much of an issue,
@@ -396,7 +396,7 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
       // This bypasses the low_send() function, so manually add it to the
       // ratecalc thing and update timeout_last.
       ratecalc_add(&net_out, r);
-      ratecalc_add(s->net->rate_out, r);
+      ratecalc_add(&s->net->rate_out, r);
       g_static_mutex_lock(&s->lock);
       time(&s->net->timeout_last);
       g_static_mutex_unlock(&s->lock);
@@ -996,10 +996,10 @@ void net_connected(net_t *n, int sock, const char *addr) {
   n->wbuf = g_string_sized_new(1024);
   n->rbuf = g_string_sized_new(1024);
 
-  ratecalc_reset(n->rate_in);
-  ratecalc_reset(n->rate_out);
-  ratecalc_register(n->rate_in, RCC_DOWN);
-  ratecalc_register(n->rate_out, RCC_UP);
+  ratecalc_reset(&n->rate_in);
+  ratecalc_reset(&n->rate_out);
+  ratecalc_register(&n->rate_in, RCC_DOWN);
+  ratecalc_register(&n->rate_out, RCC_UP);
   time(&n->timeout_last);
   if(!n->timeout_src)
     n->timeout_src = g_timeout_add_seconds(5, handle_timer, n);
@@ -1193,8 +1193,8 @@ void net_set_keepalive(net_t *n, const char *msg) {
 
 
 const char *net_remoteaddr(net_t *n) { return n->addr; }
-ratecalc_t *net_rate_in(net_t *n)    { return n->rate_in; }
-ratecalc_t *net_rate_out(net_t *n)   { return n->rate_out; }
+ratecalc_t *net_rate_in(net_t *n)    { return &n->rate_in; }
+ratecalc_t *net_rate_out(net_t *n)   { return &n->rate_out; }
 void       *net_handle(net_t *n)     { return n->handle; }
 
 gboolean net_is_asy(net_t *n)           { return n->state == NETST_ASY; }
@@ -1240,10 +1240,8 @@ net_t *net_new(void *handle, void(*err)(net_t *, int, const char *)) {
   n->ref = 1;
   n->handle = handle;
   n->cb_err = err;
-  n->rate_in = g_slice_new0(ratecalc_t);
-  n->rate_out = g_slice_new0(ratecalc_t);
-  ratecalc_init(n->rate_in);
-  ratecalc_init(n->rate_out);
+  ratecalc_init(&n->rate_in);
+  ratecalc_init(&n->rate_out);
   time(&n->timeout_last);
   return n;
 }
@@ -1345,8 +1343,8 @@ void net_disconnect(net_t *n) {
     n->timeout_src = 0;
   }
 
-  ratecalc_unregister(n->rate_in);
-  ratecalc_unregister(n->rate_out);
+  ratecalc_unregister(&n->rate_in);
+  ratecalc_unregister(&n->rate_out);
 
   if(n->state == NETST_ASY || n->state == NETST_SYN || n->state == NETST_DIS)
     g_debug("%s: Disconnected.", net_remoteaddr(n));
@@ -1365,8 +1363,6 @@ void net_unref(net_t *n) {
   if(!g_atomic_int_dec_and_test(&n->ref))
     return;
   g_return_if_fail(n->state == NETST_IDL);
-  g_slice_free(ratecalc_t, n->rate_in);
-  g_slice_free(ratecalc_t, n->rate_out);
   g_free(n);
 }
 
