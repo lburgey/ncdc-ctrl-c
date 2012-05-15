@@ -9,8 +9,8 @@ endif
 noinst_PROGRAMS=gendoc
 gendoc_SOURCES=doc/gendoc.c
 
-doc/ncdc.pod: $(srcdir)/doc/ncdc.pod.in gendoc
-	$(AM_V_GEN)./gendoc <"$(srcdir)/doc/ncdc.pod.in" >doc/ncdc.pod
+doc/ncdc.pod: $(srcdir)/doc/ncdc.pod.in gendoc$(EXEEXT)
+	$(AM_V_GEN)./gendoc$(EXEEXT) <"$(srcdir)/doc/ncdc.pod.in" >doc/ncdc.pod
 
 doc/ncdc.1: doc/ncdc.pod Makefile
 if USE_POD2MAN
@@ -28,8 +28,8 @@ if HAVE_MH
 mkhdr=makeheaders
 mkhdr_dep=
 else
-mkhdr=./makeheaders
-mkhdr_dep=makeheaders
+mkhdr=./makeheaders$(EXEEXT)
+mkhdr_dep=makeheaders$(EXEEXT)
 noinst_PROGRAMS+=makeheaders
 endif
 makeheaders_SOURCES=deps/makeheaders.c
