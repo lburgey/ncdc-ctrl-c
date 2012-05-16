@@ -121,7 +121,10 @@ struct hub_t {
 };
 
 
-#define hub_init_global() hub_uids = g_hash_table_new(g_int64_hash, g_int64_equal)
+#define hub_init_global() do {\
+    hub_uids = g_hash_table_new(g_int64_hash, g_int64_equal);\
+    hubs = g_hash_table_new(g_int64_hash, g_int64_equal);\
+  } while(0)
 
 #endif
 
@@ -130,6 +133,9 @@ struct hub_t {
 // as value.
 GHashTable *hub_uids = NULL;
 
+// Global hash table of all opened (but not necessarily connected) hubs, with
+// hubid being the index and hub_t as value.
+GHashTable *hubs = NULL;
 
 
 // hub_user_t related functions
@@ -448,25 +454,21 @@ static void user_adc_nfo(hub_t *hub, hub_user_t *u, adc_cmd_t *cmd) {
 
 // hub stuff
 
-// Linear search at the moment, not too efficient.
+
+
 hub_t *hub_global_byid(guint64 id) {
-  GList *l;
-  for(l=ui_tabs; l; l=l->next) {
-    ui_tab_t *t = l->data;
-    if(t->type == UIT_HUB && t->hub->id == id)
-      return t->hub;
-  }
-  return NULL;
+  return g_hash_table_lookup(hubs, &id);
 }
 
 
 // Should be called when something changes that may affect our INF or $MyINFO.
 void hub_global_nfochange() {
-  GList *n;
-  for(n=ui_tabs; n; n=n->next) {
-    ui_tab_t *t = n->data;
-    if(t->type == UIT_HUB && t->hub->nick_valid)
-      hub_send_nfo(t->hub);
+  GHashTableIter i;
+  g_hash_table_iter_init(&i, hubs);
+  hub_t *h;
+  while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h)) {
+    if(h->nick_valid)
+      hub_send_nfo(h);
   }
 }
 
@@ -640,14 +642,15 @@ void hub_send_nfo(hub_t *hub) {
     conn = var_get(hub->id, VAR_connection);
 
   h_norm = h_reg = h_op = 0;
-  GList *n;
-  for(n=ui_tabs; n; n=n->next) {
-    ui_tab_t *t = n->data;
-    if(t->type != UIT_HUB || !t->hub->nick_valid)
+  GHashTableIter iter;
+  hub_t *oh = NULL;
+  g_hash_table_iter_init(&iter, hubs);
+  while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&oh)) {
+    if(!oh->nick_valid)
       continue;
-    if(t->hub->isop)
+    if(oh->isop)
       h_op++;
-    else if(t->hub->isreg)
+    else if(oh->isreg)
       h_reg++;
     else
       h_norm++;
@@ -1716,6 +1719,8 @@ hub_t *hub_create(ui_tab_t *tab) {
   hub->users = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, user_free);
   hub->sessions = g_hash_table_new(g_direct_hash, g_direct_equal);
   hub->nfo_timer = g_timeout_add_seconds(5*60, check_nfo, hub);
+
+  g_hash_table_insert(hubs, &hub->id, hub);
   return hub;
 }
 
@@ -1873,6 +1878,7 @@ void hub_free(hub_t *hub) {
   // otherwise things will go wrong.
   hub_disconnect(hub, FALSE);
   cc_remove_hub(hub);
+  g_hash_table_remove(hubs, &hub->id);
   net_unref(hub->net);
   g_free(hub->nfo_desc);
   g_free(hub->nfo_conn);

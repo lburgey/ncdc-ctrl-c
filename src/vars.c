@@ -673,12 +673,9 @@ static char *f_password(const char *val) {
 static gboolean s_password(guint64 hub, const char *key, const char *val, GError **err) {
   db_vars_set(hub, key, val);
   // send password to hub
-  GList *tab;
-  for(tab=ui_tabs; tab; tab=tab->next) {
-    ui_tab_t *t = tab->data;
-    if(t->type == UIT_HUB && t->hub->id == hub && net_is_connected(t->hub->net) && !t->hub->nick_valid)
-      hub_password(t->hub, NULL);
-  }
+  hub_t *h = hub_global_byid(hub);
+  if(h && net_is_connected(h->net) && !h->nick_valid)
+    hub_password(h, NULL);
   return TRUE;
 }
 

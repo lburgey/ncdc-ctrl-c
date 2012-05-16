@@ -194,12 +194,13 @@ gboolean search_add(hub_t *hub, search_q_t *q, GError **err) {
 
   // Search all hubs (excluding those with chat_only set)
   else {
-    GList *n;
     gboolean one = FALSE;
-    for(n=ui_tabs; n; n=n->next) {
-      ui_tab_t *t = n->data;
-      if(t->type == UIT_HUB && t->hub->nick_valid && !var_get_bool(t->hub->id, VAR_chat_only)) {
-        hub_search(t->hub, q);
+    GHashTableIter i;
+    hub_t *h = NULL;
+    g_hash_table_iter_init(&i, hubs);
+    while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h)) {
+      if(h->nick_valid && !var_get_bool(h->id, VAR_chat_only)) {
+        hub_search(h, q);
         one = TRUE;
       }
     }
@@ -355,20 +356,21 @@ static search_r_t *parse_nmdc(hub_t *hub, char *msg) {
   if(!hub) {
     tmp = strchr(hubaddr, ':') ? g_strdup(hubaddr) : g_strdup_printf("%s:411", hubaddr);
     int colon = strchr(tmp, ':') - tmp;
-    GList *n;
-    for(n=ui_tabs; n; n=n->next) {
-      ui_tab_t *t = n->data;
-      if(t->type != UIT_HUB || !t->hub->nick_valid || t->hub->adc)
+    GHashTableIter i;
+    hub_t *h = NULL;
+    g_hash_table_iter_init(&i, hubs);
+    while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h)) {
+      if(!h->nick_valid || h->adc)
         continue;
       // Excact hub:ip match, stop searching
-      if(strcmp(tmp, net_remoteaddr(t->hub->net)) == 0) {
-        hub = t->hub;
+      if(strcmp(tmp, net_remoteaddr(h->net)) == 0) {
+        hub = h;
         break;
       }
       // Otherwise, try a fuzzy search (ignoring the port)
       tmp[colon] = 0;
-      if(strncmp(tmp, net_remoteaddr(t->hub->net), colon) == 0)
-        hub = t->hub;
+      if(strncmp(tmp, net_remoteaddr(h->net), colon) == 0)
+        hub = h;
       tmp[colon] = ':';
     }
     g_free(tmp);

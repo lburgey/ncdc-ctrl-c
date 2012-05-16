@@ -306,16 +306,17 @@ void listen_refresh() {
   listen_stop();
   g_debug("listen: Refreshing");
 
-  // Walk through ui_tabs to get a list of hubs and their config
-  GList *l;
-  for(l=ui_tabs; l; l=l->next) {
-    ui_tab_t *t = l->data;
+  // Walk through the list of hubs and get their config
+  GHashTableIter i;
+  hub_t *h = NULL;
+  g_hash_table_iter_init(&i, hubs);
+  while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h)) {
     // We only look at hubs on which we are active
-    if(t->type != UIT_HUB || !hub_ip4(t->hub) || !var_get_bool(t->hub->id, VAR_active))
+    if(!hub_ip4(h) || !var_get_bool(h->id, VAR_active))
       continue;
     // Add to listen_hub_binds
     listen_hub_bind_t *b = g_new0(listen_hub_bind_t, 1);
-    b->hubid = t->hub->id;
+    b->hubid = h->id;
     g_hash_table_insert(listen_hub_binds, &b->hubid, b);
     // And add the required binds for this hub (Due to the conflict resolution in binds_add(), this is O(n^2))
     // Note: bind_add() can call listen_stop() on error, detect this on whether listen_hub_binds is empty or not.
@@ -334,6 +335,7 @@ void listen_refresh() {
   }
 
   // Now walk through *listen_binds and actually create the listen sockets
+  GList *l;
   for(l=listen_binds; l; listen_binds ? (l=l->next) : (l=NULL))
     bind_create((listen_bind_t *)l->data);
 }

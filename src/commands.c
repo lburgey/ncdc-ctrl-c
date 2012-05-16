@@ -344,12 +344,12 @@ static void c_disconnect(char *args) {
       hub_disconnect(tab->hub, FALSE);
   } else if(tab->type == UIT_MAIN) {
     ui_m(NULL, 0, "Disconnecting all hubs.");
-    GList *n = ui_tabs;
-    for(; n; n=n->next) {
-      tab = n->data;
-      if(tab->type == UIT_HUB && (!net_is_idle(tab->hub->net) || tab->hub->reconnect_timer))
-        hub_disconnect(tab->hub, FALSE);
-    }
+    GHashTableIter i;
+    hub_t *h = NULL;
+    g_hash_table_iter_init(&i, hubs);
+    while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h))
+      if(!net_is_idle(h->net) || h->reconnect_timer)
+        hub_disconnect(h, FALSE);
   } else
     ui_m(NULL, 0, "This command can only be used on the main tab or on hub tabs.");
 }
@@ -364,6 +364,7 @@ static void c_reconnect(char *args) {
       hub_disconnect(tab->hub, FALSE);
     c_connect(""); // also checks for the existence of "hubaddr"
   } else if(tab->type == UIT_MAIN) {
+    // TODO: This code is ugly, it shouldn't depend on ui_tabs at all.
     ui_m(NULL, 0, "Reconnecting all hubs.");
     GList *n = ui_tabs;
     for(; n; n=n->next) {
