@@ -985,7 +985,7 @@ static void c_search(char *args) {
     goto c_search_clean;
   }
 
-  ui_tab_t *rtab = ui_search_create(allhubs ? NULL : tab->hub, q, &err);
+  ui_tab_t *rtab = uit_search_create(allhubs ? NULL : tab->hub, q, &err);
   if(err) {
     ui_mf(NULL, 0, "%s%s", rtab ? "Warning: " : "", err->message);
     g_error_free(err);

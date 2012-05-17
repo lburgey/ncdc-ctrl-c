@@ -327,7 +327,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     else if(sel->islist)
       ui_m(NULL, 0, "Can't search for alternative sources for file lists.");
     else
-      ui_search_open_tth(sel->hash, tab);
+      uit_search_open_tth(sel->hash, tab);
     break;
   case INPT_CHAR('R'): // R - remove user from all queued files
   case INPT_CHAR('r'): // r - remove user from file

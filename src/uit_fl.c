@@ -473,7 +473,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     else if(!sel->hastth)
       ui_m(NULL, 0, "No TTH hash known.");
     else
-      ui_search_open_tth(sel->tth, tab);
+      uit_search_open_tth(sel->tth, tab);
     break;
   }
 
