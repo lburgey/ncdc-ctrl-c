@@ -64,6 +64,22 @@ BUILDING FROM THE GIT REPOSITORY
 
 
 
+CROSS COMPILING
+
+  You may run into some trouble when the binaries of the target system don't
+  run on the build system. To avoid that, build the 'makeheaders' and 'gendoc'
+  utilities manually before running the regular 'make'. For example:
+
+    ./configure
+    cc deps/makeheaders.c -o makeheaders
+    cc -I. doc/gendoc.c -o gendoc
+    make
+
+  Replace 'cc' with a compiler that builds binaries that can be run on the
+  build system.
+
+
+
 CONTACT
 
   Email: projects@yorhel.nl
