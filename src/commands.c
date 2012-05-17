@@ -671,12 +671,8 @@ static void c_connections(char *args) {
 static void c_queue(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
-  else {
-    if(ui_dl_tab)
-      ui_tab_cur = g_list_find(ui_tabs, ui_dl_tab);
-    else
-      ui_tab_open(ui_dl_create(), TRUE, NULL);
-  }
+  else
+    uit_dl_open(NULL, 0, NULL);
 }
 
 

@@ -297,13 +297,8 @@ static void t_key(ui_tab_t *tab, guint64 key) {
       dl_t *dl = g_hash_table_lookup(dl_queue, cc->last_hash);
       if(!dl)
         ui_m(NULL, 0, "File has been removed from the queue.");
-      else {
-        if(ui_dl_tab)
-          ui_tab_cur = g_list_find(ui_tabs, ui_dl_tab);
-        else
-          ui_tab_open(ui_dl_create(), TRUE, tab);
-        ui_dl_select(dl, cc->uid);
-      }
+      else
+        uit_dl_open(dl, cc->uid, tab);
     }
     break;
   }

@@ -326,8 +326,7 @@ static void dl_user_add(dl_t *dl, guint64 uid, char error, const char *error_msg
 
   // Add to du->queue and dl->u
   g_ptr_array_add(dl->u, g_sequence_insert_sorted(du->queue, dud, dl_user_dl_sort, NULL));
-  if(ui_dl_tab)
-    ui_dl_dud_listchange(dud, UIDL_ADD);
+  uit_dl_dud_listchange(dud, UITDL_ADD);
 }
 
 
@@ -350,8 +349,7 @@ static void dl_user_rm(dl_t *dl, int i) {
     // rely on that, however.
   }
 
-  if(ui_dl_tab)
-    ui_dl_dud_listchange(dud, UIDL_DEL);
+  uit_dl_dud_listchange(dud, UITDL_DEL);
   g_sequence_remove(dudi); // dl_user_dl_free() will be called implicitely
   g_ptr_array_remove_index_fast(dl->u, i);
   dl_user_setstate(du, -1);
@@ -542,8 +540,7 @@ static void dl_queue_insert(dl_t *dl, gboolean init) {
   dl->u = g_ptr_array_new();
   // insert in the global queue
   g_hash_table_insert(dl_queue, dl->hash, dl);
-  if(ui_dl_tab)
-    ui_dl_listchange(dl, UIDL_ADD);
+  uit_dl_listchange(dl, UITDL_ADD);
 
   // insert in the database
   if(!dl->islist && !init)
@@ -706,8 +703,7 @@ void dl_queue_rm(dl_t *dl) {
   // remove from dl list, if it's still in there. (Could have been removed
   // before, while dlthread was active)
   if(g_hash_table_lookup(dl_queue, dl->hash)) {
-    if(ui_dl_tab)
-      ui_dl_listchange(dl, UIDL_DEL);
+    uit_dl_listchange(dl, UITDL_DEL);
     g_hash_table_remove(dl_queue, dl->hash);
   }
 
