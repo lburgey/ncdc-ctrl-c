@@ -81,13 +81,13 @@ static void c_quit(char *args) {
 // handle /say and /me
 static void sayme(char *args, gboolean me) {
   ui_tab_t *tab = ui_tab_cur->data;
-  if(tab->type != UIT_HUB && tab->type != UIT_MSG)
+  if(tab->type != uit_hub && tab->type != uit_msg)
     ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
   else if(!tab->hub->nick_valid)
     ui_m(NULL, 0, "Not connected or logged in yet.");
   else if(!args[0])
     ui_m(NULL, 0, "Message empty.");
-  else if(tab->type == UIT_HUB)
+  else if(tab->type == uit_hub)
     hub_say(tab->hub, args, me);
   else {
     hub_user_t *u = g_hash_table_lookup(hub_uids, &tab->uid);
@@ -116,7 +116,7 @@ static void c_msg(char *args) {
     while(*(++sep) == ' ');
   }
   ui_tab_t *tab = ui_tab_cur->data;
-  if(tab->type != UIT_HUB && tab->type != UIT_MSG)
+  if(tab->type != uit_hub && tab->type != uit_msg)
     ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
   else if(!tab->hub->nick_valid)
     ui_m(NULL, 0, "Not connected or logged in yet.");
@@ -297,7 +297,7 @@ static gboolean c_connect_set_hubaddr(char *addr) {
 
 static void c_connect(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
-  if(tab->type != UIT_HUB)
+  if(tab->type != uit_hub)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else if(!net_is_idle(tab->hub->net))
     ui_m(NULL, 0, "Already connected (or connecting). You may want to /disconnect first.");
@@ -315,7 +315,7 @@ static void c_connect(char *args) {
 // only autocompletes "dchub://" or the hubaddr, when set
 static void c_connect_sug(char *args, char **sug) {
   ui_tab_t *t = ui_tab_cur->data;
-  if(t->type != UIT_HUB)
+  if(t->type != uit_hub)
     return;
   int i = 0, len = strlen(args);
   char *addr = var_get(t->hub->id, VAR_hubaddr);
@@ -337,12 +337,12 @@ static void c_disconnect(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
-  else if(tab->type == UIT_HUB) {
+  else if(tab->type == uit_hub) {
     if(net_is_idle(tab->hub->net) && !tab->hub->reconnect_timer)
       ui_m(NULL, 0, "Not connected.");
     else
       hub_disconnect(tab->hub, FALSE);
-  } else if(tab->type == UIT_MAIN) {
+  } else if(tab->type == uit_main) {
     ui_m(NULL, 0, "Disconnecting all hubs.");
     GHashTableIter i;
     hub_t *h = NULL;
@@ -359,24 +359,24 @@ static void c_reconnect(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
-  else if(tab->type == UIT_HUB) {
+  else if(tab->type == uit_hub) {
     if(!net_is_idle(tab->hub->net) || tab->hub->reconnect_timer)
       hub_disconnect(tab->hub, FALSE);
     c_connect(""); // also checks for the existence of "hubaddr"
-  } else if(tab->type == UIT_MAIN) {
+  } else if(tab->type == uit_main) {
     // TODO: This code is ugly, it shouldn't depend on ui_tabs at all.
     ui_m(NULL, 0, "Reconnecting all hubs.");
     GList *n = ui_tabs;
     for(; n; n=n->next) {
       tab = n->data;
-      if(tab->type != UIT_HUB)
+      if(tab->type != uit_hub)
         continue;
       if(!net_is_idle(tab->hub->net)|| tab->hub->reconnect_timer)
         hub_disconnect(tab->hub, FALSE);
       ui_tab_cur = n;
       c_connect("");
     }
-    ui_tab_cur = g_list_find(ui_tabs, ui_main);
+    ui_tab_cur = g_list_find(ui_tabs, ui_main_tab);
   } else
     ui_m(NULL, 0, "This command can only be used on the main tab or on hub tabs.");
 }
@@ -386,7 +386,7 @@ static void c_accept(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
-  else if(tab->type != UIT_HUB)
+  else if(tab->type != uit_hub)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else if(!tab->hub->kp)
     ui_m(NULL, 0, "Nothing to accept.");
@@ -464,18 +464,7 @@ static void c_close(char *args) {
     return;
   }
   ui_tab_t *tab = ui_tab_cur->data;
-  switch(tab->type) {
-  case UIT_MAIN:     ui_m(NULL, 0, "Main tab cannot be closed."); break;
-  case UIT_HUB:      ui_hub_close(tab); listen_refresh(); break;
-  case UIT_USERLIST: ui_userlist_close(tab); break;
-  case UIT_MSG:      ui_msg_close(tab);      break;
-  case UIT_CONN:     ui_conn_close();        break;
-  case UIT_FL:       ui_fl_close(tab);       break;
-  case UIT_DL:       ui_dl_close();          break;
-  case UIT_SEARCH:   ui_search_close(tab);   break;
-  default:
-    g_return_if_reached();
-  }
+  tab->type->close(tab);
 }
 
 
@@ -492,7 +481,7 @@ static void c_userlist(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
-  else if(tab->type != UIT_HUB)
+  else if(tab->type != uit_hub)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else
     ui_hub_userlist_open(tab);
@@ -675,8 +664,8 @@ static void c_connections(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else {
-    if(ui_conn)
-      ui_tab_cur = g_list_find(ui_tabs, ui_conn);
+    if(ui_conn_tab)
+      ui_tab_cur = g_list_find(ui_tabs, ui_conn_tab);
     else
       ui_tab_open(ui_conn_create(), TRUE, NULL);
   }
@@ -687,8 +676,8 @@ static void c_queue(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
   else {
-    if(ui_dl)
-      ui_tab_cur = g_list_find(ui_tabs, ui_dl);
+    if(ui_dl_tab)
+      ui_tab_cur = g_list_find(ui_tabs, ui_dl_tab);
     else
       ui_tab_open(ui_dl_create(), TRUE, NULL);
   }
@@ -718,11 +707,11 @@ static void c_whois(char *args) {
   char *u = NULL;
   guint64 uid = 0;
   gboolean utf8 = TRUE;
-  if(tab->type != UIT_HUB && tab->type != UIT_MSG)
+  if(tab->type != uit_hub && tab->type != uit_msg)
     ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
-  else if(!args[0] && tab->type != UIT_MSG)
+  else if(!args[0] && tab->type != uit_msg)
     ui_m(NULL, 0, "No user specified. See `/help whois' for more information.");
-  else if(tab->type == UIT_MSG) {
+  else if(tab->type == uit_msg) {
     if(args[0])
       u = args;
     else
@@ -758,9 +747,9 @@ static void listgrants() {
 static void c_grant(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
   hub_user_t *u = NULL;
-  if((!*args && tab->type != UIT_MSG) || strcmp(args, "-list") == 0)
+  if((!*args && tab->type != uit_msg) || strcmp(args, "-list") == 0)
     listgrants();
-  else if(tab->type != UIT_HUB && tab->type != UIT_MSG)
+  else if(tab->type != uit_hub && tab->type != uit_msg)
     ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
   else if(args[0]) {
     u = hub_user_get(tab->hub, args);
@@ -782,10 +771,10 @@ static void c_grant(char *args) {
 static void c_ungrant(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
   guint64 uid = 0;
-  if(!*args && tab->type != UIT_MSG) {
+  if(!*args && tab->type != uit_msg) {
     listgrants();
     return;
-  } else if(!*args && tab->type == UIT_MSG)
+  } else if(!*args && tab->type == uit_msg)
     uid = tab->uid;
   else {
     guint64 *key;
@@ -808,7 +797,7 @@ static void c_ungrant(char *args) {
   if(uid && g_hash_table_remove(cc_granted, &uid))
     ui_mf(NULL, 0, "Slot for `%"G_GINT64_MODIFIER"x' revoked.", uid);
   else
-    ui_mf(NULL, 0, "No slot granted to `%s'.", !*args && tab->type == UIT_MSG ? tab->name+1 : args);
+    ui_mf(NULL, 0, "No slot granted to `%s'.", !*args && tab->type == uit_msg ? tab->name+1 : args);
 }
 
 
@@ -832,7 +821,7 @@ static void c_ungrant_sug(char *args, char **sug) {
 
 static void c_password(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
-  if(tab->type != UIT_HUB)
+  if(tab->type != uit_hub)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else if(!net_is_connected(tab->hub->net))
     ui_m(NULL, 0, "Not connected to a hub. Did you want to use '/hset password' instead?");
@@ -845,7 +834,7 @@ static void c_password(char *args) {
 
 static void c_kick(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
-  if(tab->type != UIT_HUB)
+  if(tab->type != uit_hub)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else if(!tab->hub->nick_valid)
     ui_m(NULL, 0, "Not connected or logged in yet.");
@@ -865,7 +854,7 @@ static void c_kick(char *args) {
 
 static void c_nick(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
-  guint64 hub = tab->type == UIT_HUB || tab->type == UIT_MSG ? tab->hub->id : 0;
+  guint64 hub = tab->type == uit_hub || tab->type == uit_msg ? tab->hub->id : 0;
   int v = vars_byname("nick");
   g_return_if_fail(v >= 0);
   GError *err = NULL;
@@ -888,7 +877,7 @@ static void c_browse(char *args) {
     ui_m(NULL, 0, "Nothing shared.");
     return;
   } else if(args[0]) {
-    if(tab->type != UIT_HUB && tab->type != UIT_MSG) {
+    if(tab->type != uit_hub && tab->type != uit_msg) {
       ui_m(NULL, 0, "This command can only be used on hub and message tabs.");
       return;
     }
@@ -999,7 +988,7 @@ static void c_search(char *args) {
 
   // validate & send
   ui_tab_t *tab = ui_tab_cur->data;
-  if(!allhubs && tab->type != UIT_HUB && tab->type != UIT_MSG) {
+  if(!allhubs && tab->type != uit_hub && tab->type != uit_msg) {
     ui_m(NULL, 0, "This command can only be used on hub tabs. Use the `-all' option to search on all connected hubs.");
     goto c_search_clean;
   }
@@ -1053,7 +1042,7 @@ c_search_clean:
   char *hubname = "global";\
   if(h) {\
     ui_tab_t *tab = ui_tab_cur->data;\
-    if(tab->type != UIT_HUB && tab->type != UIT_MSG) {\
+    if(tab->type != uit_hub && tab->type != uit_msg) {\
       ui_m(NULL, 0, "This command can only be used on hub tabs.");\
       return;\
     }\
@@ -1165,7 +1154,7 @@ static void setunset_sug(gboolean set, gboolean h, const char *val, char **sug) 
   guint64 hub = 0;
   if(h) {
     ui_tab_t *tab = ui_tab_cur->data;
-    if(tab->type != UIT_HUB && tab->type != UIT_MSG)
+    if(tab->type != uit_hub && tab->type != uit_msg)
       return;
     hub = tab->hub->id;
   }

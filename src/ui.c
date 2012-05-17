@@ -38,18 +38,16 @@
 #define UIP_MED   2 // chat messages, or error messages in the main tab
 #define UIP_HIGH  3 // direct messages to you (PM or name mentioned)
 
-#define UIT_MAIN     0
-#define UIT_HUB      1 // #hubname
-#define UIT_USERLIST 2 // @hubname
-#define UIT_MSG      3 // ~username
-#define UIT_CONN     4
-#define UIT_FL       5 // /username
-#define UIT_DL       6
-#define UIT_SEARCH   7 // ?query
+struct ui_tab_type_t {
+  void (*draw)(ui_tab_t *);
+  char *(*title)(ui_tab_t *);
+  void (*key)(ui_tab_t *, guint64);
+  void (*close)(ui_tab_t *);
+};
 
 struct ui_tab_t {
-  int type; // UIT_ type
-  int prio; // UIP_ type
+  ui_tab_type_t *type;
+  int prio;               // UIP_ type
   char *name;
   ui_tab_t *parent;       // the tab that opened this tab (may be NULL or dangling)
   ui_logwindow_t *log;    // MAIN, HUB, MSG
@@ -111,40 +109,46 @@ GHashTable *ui_msg_tabs = NULL;
 
 
 // these is only one main tab, so this can be static
-ui_tab_t *ui_main;
+ui_tab_t *ui_main_tab;
+ui_tab_type_t uit_main[1];
 
 static ui_tab_t *ui_main_create() {
-  ui_main = g_new0(ui_tab_t, 1);
-  ui_main->name = "main";
-  ui_main->log = ui_logwindow_create("main", 0);
-  ui_main->type = UIT_MAIN;
+  ui_main_tab = g_new0(ui_tab_t, 1);
+  ui_main_tab->name = "main";
+  ui_main_tab->log = ui_logwindow_create("main", 0);
+  ui_main_tab->type = uit_main;
 
-  ui_mf(ui_main, 0, "Welcome to ncdc %s!", VERSION);
-  ui_m(ui_main, 0,
+  ui_mf(ui_main_tab, 0, "Welcome to ncdc %s!", VERSION);
+  ui_m(ui_main_tab, 0,
     "Check out the manual page for a general introduction to ncdc.\n"
     "Make sure you always run the latest version available from http://dev.yorhel.nl/ncdc\n");
-  ui_mf(ui_main, 0, "Using working directory: %s", db_dir);
+  ui_mf(ui_main_tab, 0, "Using working directory: %s", db_dir);
 
-  return ui_main;
+  return ui_main_tab;
 }
 
 
-static void ui_main_draw() {
-  ui_logwindow_draw(ui_main->log, 1, 0, winrows-4, wincols);
+static void ui_main_close(ui_tab_t *tab) {
+  ui_m(tab, 0, "Main tab cannot be closed.");
+}
+
+
+static void ui_main_draw(ui_tab_t *t) {
+  ui_logwindow_draw(t->log, 1, 0, winrows-4, wincols);
 
   mvaddstr(winrows-3, 0, "main>");
   ui_textinput_draw(ui_global_textinput, winrows-3, 6, wincols-6);
 }
 
 
-static char *ui_main_title() {
+static char *ui_main_title(ui_tab_t *t) {
   return g_strdup_printf("Welcome to ncdc %s!", VERSION);
 }
 
 
-static void ui_main_key(guint64 key) {
+static void ui_main_key(ui_tab_t *t, guint64 key) {
   char *str = NULL;
-  if(!ui_logwindow_key(ui_main->log, key, winrows) &&
+  if(!ui_logwindow_key(t->log, key, winrows) &&
       ui_textinput_key(ui_global_textinput, key, &str) && str) {
     cmd_handle(str);
     g_free(str);
@@ -154,11 +158,14 @@ static void ui_main_key(guint64 key) {
 
 // Select the main tab and run `/help keys <s>'.
 static void ui_main_keys(const char *s) {
-  ui_tab_cur = g_list_find(ui_tabs, ui_main);
+  ui_tab_cur = g_list_find(ui_tabs, ui_main_tab);
   char *c = g_strdup_printf("/help keys %s", s);
   cmd_handle(c);
   g_free(c);
 }
+
+
+ui_tab_type_t uit_main[1] = { { ui_main_draw, ui_main_title, ui_main_key, ui_main_close } };
 
 
 
@@ -166,11 +173,13 @@ static void ui_main_keys(const char *s) {
 
 // User message tab
 
+ui_tab_type_t uit_msg[1];
+
 ui_tab_t *ui_msg_create(hub_t *hub, hub_user_t *user) {
   g_return_val_if_fail(!g_hash_table_lookup(ui_msg_tabs, &user->uid), NULL);
 
   ui_tab_t *tab = g_new0(ui_tab_t, 1);
-  tab->type = UIT_MSG;
+  tab->type = uit_msg;
   tab->hub = hub;
   tab->uid = user->uid;
   tab->name = g_strdup_printf("~%s", user->name);
@@ -185,7 +194,7 @@ ui_tab_t *ui_msg_create(hub_t *hub, hub_user_t *user) {
 }
 
 
-void ui_msg_close(ui_tab_t *tab) {
+static void ui_msg_close(ui_tab_t *tab) {
   g_hash_table_remove(ui_msg_tabs, &tab->uid);
   ui_tab_remove(tab);
   ui_logwindow_free(tab->log);
@@ -252,10 +261,15 @@ static void ui_msg_msg(ui_tab_t *tab, const char *msg, int replyto) {
 }
 
 
+ui_tab_type_t uit_msg[1] = { { ui_msg_draw, ui_msg_title, ui_msg_key, ui_msg_close } };
+
+
 
 
 
 // Hub tab
+
+ui_tab_type_t uit_hub[1];
 
 #if INTERFACE
 // change types for ui_hub_userchange()
@@ -304,7 +318,7 @@ ui_tab_t *ui_hub_create(const char *name, gboolean conn) {
   ui_tab_t *tab = g_new0(ui_tab_t, 1);
   // NOTE: tab name is also used as configuration group
   tab->name = g_strdup_printf("#%s", name);
-  tab->type = UIT_HUB;
+  tab->type = uit_hub;
   tab->hub = hub_create(tab);
   tab->log = ui_logwindow_create(tab->name, var_get_int(tab->hub->id, VAR_backlog));
   tab->log->handle = tab;
@@ -316,7 +330,7 @@ ui_tab_t *ui_hub_create(const char *name, gboolean conn) {
 }
 
 
-void ui_hub_close(ui_tab_t *tab) {
+static void ui_hub_close(ui_tab_t *tab) {
   // close the userlist tab
   if(tab->userlist_tab)
     ui_userlist_close(tab->userlist_tab);
@@ -325,8 +339,8 @@ void ui_hub_close(ui_tab_t *tab) {
   for(n=ui_tabs; n;) {
     ui_tab_t *t = n->data;
     n = n->next;
-    if((t->type == UIT_MSG || t->type == UIT_SEARCH) && t->hub == tab->hub) {
-      if(t->type == UIT_MSG)
+    if((t->type == uit_msg || t->type == uit_search) && t->hub == tab->hub) {
+      if(t->type == uit_msg)
         ui_msg_close(t);
       else
         ui_search_close(t);
@@ -432,7 +446,7 @@ void ui_hub_disconnect(ui_tab_t *tab) {
   GList *n = ui_tabs;
   for(; n; n=n->next) {
     ui_tab_t *t = n->data;
-    if(t->type == UIT_MSG && t->hub == tab->hub)
+    if(t->type == uit_msg && t->hub == tab->hub)
       ui_msg_userchange(t, UIHUB_UC_QUIT, NULL);
   }
 }
@@ -472,10 +486,15 @@ gboolean ui_hub_finduser(ui_tab_t *tab, guint64 uid, const char *user, gboolean 
 }
 
 
+ui_tab_type_t uit_hub[1] = { { ui_hub_draw, ui_hub_title, ui_hub_key, ui_hub_close } };
+
+
 
 
 
 // Userlist tab
+
+ui_tab_type_t uit_userlist[1];
 
 // Columns to sort on
 #define UIUL_USER   0
@@ -519,7 +538,7 @@ static gint ui_userlist_sort_func(gconstpointer da, gconstpointer db, gpointer d
 ui_tab_t *ui_userlist_create(hub_t *hub) {
   ui_tab_t *tab = g_new0(ui_tab_t, 1);
   tab->name = g_strdup_printf("@%s", hub->tab->name+1);
-  tab->type = UIT_USERLIST;
+  tab->type = uit_userlist;
   tab->hub = hub;
   tab->user_opfirst = TRUE;
   tab->user_hide_conn = TRUE;
@@ -864,10 +883,15 @@ void ui_userlist_userchange(ui_tab_t *tab, int change, hub_user_t *user) {
 }
 
 
+ui_tab_type_t uit_userlist[1] = { { ui_userlist_draw, ui_userlist_title, ui_userlist_key, ui_userlist_close } };
+
+
+
 
 
 // these can only be one connections tab, so this can be static
-ui_tab_t *ui_conn;
+ui_tab_t *ui_conn_tab;
+ui_tab_type_t uit_conn[1];
 
 
 static gint ui_conn_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
@@ -885,21 +909,21 @@ static gint ui_conn_sort_func(gconstpointer da, gconstpointer db, gpointer dat) 
 
 
 ui_tab_t *ui_conn_create() {
-  ui_conn = g_new0(ui_tab_t, 1);
-  ui_conn->name = "connections";
-  ui_conn->type = UIT_CONN;
+  ui_conn_tab = g_new0(ui_tab_t, 1);
+  ui_conn_tab->name = "connections";
+  ui_conn_tab->type = uit_conn;
   // sort the connection list
   g_sequence_sort(cc_list, ui_conn_sort_func, NULL);
-  ui_conn->list = ui_listing_create(cc_list);
-  return ui_conn;
+  ui_conn_tab->list = ui_listing_create(cc_list);
+  return ui_conn_tab;
 }
 
 
-void ui_conn_close() {
-  ui_tab_remove(ui_conn);
-  ui_listing_free(ui_conn->list);
-  g_free(ui_conn);
-  ui_conn = NULL;
+static void ui_conn_close(ui_tab_t *tab) {
+  ui_tab_remove(ui_conn_tab);
+  ui_listing_free(ui_conn_tab->list);
+  g_free(ui_conn_tab);
+  ui_conn_tab = NULL;
 }
 
 
@@ -911,18 +935,18 @@ void ui_conn_close() {
 
 
 void ui_conn_listchange(GSequenceIter *iter, int change) {
-  g_return_if_fail(ui_conn);
+  g_return_if_fail(ui_conn_tab);
   switch(change) {
   case UICONN_ADD:
     g_sequence_sort_changed(iter, ui_conn_sort_func, NULL);
-    ui_listing_inserted(ui_conn->list);
+    ui_listing_inserted(ui_conn_tab->list);
     break;
   case UICONN_DEL:
-    ui_listing_remove(ui_conn->list, iter);
+    ui_listing_remove(ui_conn_tab->list, iter);
     break;
   case UICONN_MOD:
     g_sequence_sort_changed(iter, ui_conn_sort_func, NULL);
-    ui_listing_sorted(ui_conn->list);
+    ui_listing_sorted(ui_conn_tab->list);
     break;
   }
 }
@@ -992,8 +1016,8 @@ static void ui_conn_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, v
 }
 
 
-static void ui_conn_draw_details(int l) {
-  cc_t *cc = g_sequence_iter_is_end(ui_conn->list->sel) ? NULL : g_sequence_get(ui_conn->list->sel);
+static void ui_conn_draw_details(ui_tab_t *tab, int l) {
+  cc_t *cc = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
   if(!cc) {
     mvaddstr(l+1, 0, "Nothing selected.");
     return;
@@ -1058,7 +1082,7 @@ static void ui_conn_draw_details(int l) {
 }
 
 
-static void ui_conn_draw() {
+static void ui_conn_draw(ui_tab_t *tab) {
   attron(UIC(list_header));
   mvhline(1, 0, ' ', wincols);
   mvaddstr(1, 2,  "St Username");
@@ -1068,26 +1092,26 @@ static void ui_conn_draw() {
   mvaddstr(1, 58, "File");
   attroff(UIC(list_header));
 
-  int bottom = ui_conn->details ? winrows-11 : winrows-3;
-  int pos = ui_listing_draw(ui_conn->list, 2, bottom-1, ui_conn_draw_row, NULL);
+  int bottom = tab->details ? winrows-11 : winrows-3;
+  int pos = ui_listing_draw(tab->list, 2, bottom-1, ui_conn_draw_row, NULL);
 
   // footer
   attron(UIC(separator));
   mvhline(bottom, 0, ' ', wincols);
-  mvprintw(bottom, wincols-24, "%3d connections    %3d%%", g_sequence_iter_get_position(g_sequence_get_end_iter(ui_conn->list->list)), pos);
+  mvprintw(bottom, wincols-24, "%3d connections    %3d%%", g_sequence_iter_get_position(g_sequence_get_end_iter(tab->list->list)), pos);
   attroff(UIC(separator));
 
   // detailed info
-  if(ui_conn->details)
-    ui_conn_draw_details(bottom);
+  if(tab->details)
+    ui_conn_draw_details(tab, bottom);
 }
 
 
-static void ui_conn_key(guint64 key) {
-  if(ui_listing_key(ui_conn->list, key, (winrows-10)/2))
+static void ui_conn_key(ui_tab_t *tab, guint64 key) {
+  if(ui_listing_key(tab->list, key, (winrows-10)/2))
     return;
 
-  cc_t *cc = g_sequence_iter_is_end(ui_conn->list->sel) ? NULL : g_sequence_get(ui_conn->list->sel);
+  cc_t *cc = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
 
   switch(key) {
   case INPT_CHAR('?'):
@@ -1095,7 +1119,7 @@ static void ui_conn_key(guint64 key) {
     break;
   case INPT_CTRL('j'): // newline
   case INPT_CHAR('i'): // i - toggle detailed info
-    ui_conn->details = !ui_conn->details;
+    tab->details = !tab->details;
     break;
   case INPT_CHAR('f'): // f - find user
     if(!cc)
@@ -1120,7 +1144,7 @@ static void ui_conn_key(guint64 key) {
           ui_m(NULL, 0, "User has left the hub.");
         } else {
           t = ui_msg_create(cc->hub, u);
-          ui_tab_open(t, TRUE, ui_conn);
+          ui_tab_open(t, TRUE, tab);
         }
       }
     }
@@ -1143,10 +1167,10 @@ static void ui_conn_key(guint64 key) {
       if(!dl)
         ui_m(NULL, 0, "File has been removed from the queue.");
       else {
-        if(ui_dl)
-          ui_tab_cur = g_list_find(ui_tabs, ui_dl);
+        if(ui_dl_tab)
+          ui_tab_cur = g_list_find(ui_tabs, ui_dl_tab);
         else
-          ui_tab_open(ui_dl_create(), TRUE, ui_conn);
+          ui_tab_open(ui_dl_create(), TRUE, tab);
         ui_dl_select(dl, cc->uid);
       }
     }
@@ -1155,12 +1179,17 @@ static void ui_conn_key(guint64 key) {
 }
 
 
+ui_tab_type_t uit_conn[1] = { { ui_conn_draw, ui_conn_title, ui_conn_key, ui_conn_close } };
 
 
 
 
 
-// File list browser (UIT_FL)
+
+
+// File list browser
+
+ui_tab_type_t uit_fl[1];
 
 // Columns to sort on
 #define UIFL_NAME  0
@@ -1246,7 +1275,7 @@ static void ui_fl_loadmatch(fl_list_t *fl, GError *err, void *dat) {
     : g_strdup_printf("%016"G_GINT64_MODIFIER"x (user offline)", uid);
 
   if(err) {
-    ui_mf(ui_main, 0, "Error opening file list of %s for matching: %s", user, err->message);
+    ui_mf(ui_main_tab, 0, "Error opening file list of %s for matching: %s", user, err->message);
     g_error_free(err);
   } else {
     int a = 0;
@@ -1276,7 +1305,7 @@ void ui_fl_queue(guint64 uid, gboolean force, const char *sel, ui_tab_t *parent,
   ui_tab_t *t;
   for(n=ui_tabs; n; n=n->next) {
     t = n->data;
-    if(t->type == UIT_FL && t->uid == uid)
+    if(t->type == uit_fl && t->uid == uid)
       break;
   }
   if(n) {
@@ -1361,7 +1390,7 @@ ui_tab_t *ui_fl_create(guint64 uid, const char *sel) {
 
   // create tab
   ui_tab_t *tab = g_new0(ui_tab_t, 1);
-  tab->type = UIT_FL;
+  tab->type = uit_fl;
   tab->name = !uid ? g_strdup("/own") : u ? g_strdup_printf("/%s", u->name) : g_strdup_printf("/%016"G_GINT64_MODIFIER"x", uid);
   tab->fl_uname = u ? g_strdup(u->name) : NULL;
   tab->uid = uid;
@@ -1396,7 +1425,7 @@ ui_tab_t *ui_fl_create(guint64 uid, const char *sel) {
 }
 
 
-void ui_fl_close(ui_tab_t *tab) {
+static void ui_fl_close(ui_tab_t *tab) {
   if(tab->list) {
     g_sequence_free(tab->list->list);
     ui_listing_free(tab->list);
@@ -1588,12 +1617,16 @@ static void ui_fl_key(ui_tab_t *tab, guint64 key) {
 }
 
 
+ui_tab_type_t uit_fl[1] = { { ui_fl_draw, ui_fl_title, ui_fl_key, ui_fl_close } };
 
 
-// Download queue tab (UIT_DL)
 
-// these can only be one download queue tab, so this can be static
-ui_tab_t *ui_dl;
+
+// Download queue tab
+
+// there can only be one download queue tab, so this can be static
+ui_tab_t *ui_dl_tab;
+ui_tab_type_t uit_dl[1];
 
 
 static gint ui_dl_sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
@@ -1619,16 +1652,16 @@ static gint ui_dl_dud_sort_func(gconstpointer da, gconstpointer db, gpointer dat
 
 
 static void ui_dl_setusers(dl_t *dl) {
-  if(ui_dl->dl_cur == dl)
+  if(ui_dl_tab->dl_cur == dl)
     return;
   // free
   if(!dl) {
-    if(ui_dl->dl_cur && ui_dl->dl_users) {
-      g_sequence_free(ui_dl->dl_users->list);
-      ui_listing_free(ui_dl->dl_users);
+    if(ui_dl_tab->dl_cur && ui_dl_tab->dl_users) {
+      g_sequence_free(ui_dl_tab->dl_users->list);
+      ui_listing_free(ui_dl_tab->dl_users);
     }
-    ui_dl->dl_users = NULL;
-    ui_dl->dl_cur = NULL;
+    ui_dl_tab->dl_users = NULL;
+    ui_dl_tab->dl_cur = NULL;
     return;
   }
   // create
@@ -1637,15 +1670,15 @@ static void ui_dl_setusers(dl_t *dl) {
   int i;
   for(i=0; i<dl->u->len; i++)
     g_sequence_insert_sorted(l, g_sequence_get(g_ptr_array_index(dl->u, i)), ui_dl_dud_sort_func, NULL);
-  ui_dl->dl_users = ui_listing_create(l);
-  ui_dl->dl_cur = dl;
+  ui_dl_tab->dl_users = ui_listing_create(l);
+  ui_dl_tab->dl_cur = dl;
 }
 
 
 ui_tab_t *ui_dl_create() {
-  ui_dl = g_new0(ui_tab_t, 1);
-  ui_dl->name = "queue";
-  ui_dl->type = UIT_DL;
+  ui_dl_tab = g_new0(ui_tab_t, 1);
+  ui_dl_tab->name = "queue";
+  ui_dl_tab->type = uit_dl;
   // create and pupulate the list
   GSequence *l = g_sequence_new(NULL);
   GHashTableIter iter;
@@ -1653,38 +1686,38 @@ ui_tab_t *ui_dl_create() {
   dl_t *dl;
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&dl))
     dl->iter = g_sequence_insert_sorted(l, dl, ui_dl_sort_func, NULL);
-  ui_dl->list = ui_listing_create(l);
-  return ui_dl;
+  ui_dl_tab->list = ui_listing_create(l);
+  return ui_dl_tab;
 }
 
 
 void ui_dl_select(dl_t *dl, guint64 uid) {
-  g_return_if_fail(ui_dl);
+  g_return_if_fail(ui_dl_tab);
 
   // dl->iter should always be valid if the dl tab is open
-  ui_dl->list->sel = dl->iter;
+  ui_dl_tab->list->sel = dl->iter;
 
   // select the right user
   if(uid) {
-    ui_dl->details = TRUE;
+    ui_dl_tab->details = TRUE;
     ui_dl_setusers(dl);
-    GSequenceIter *i = g_sequence_get_begin_iter(ui_dl->dl_users->list);
+    GSequenceIter *i = g_sequence_get_begin_iter(ui_dl_tab->dl_users->list);
     for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i))
       if(((dl_user_dl_t *)g_sequence_get(i))->u->uid == uid) {
-        ui_dl->dl_users->sel = i;
+        ui_dl_tab->dl_users->sel = i;
         break;
       }
   }
 }
 
 
-void ui_dl_close() {
-  ui_tab_remove(ui_dl);
+static void ui_dl_close(ui_tab_t *tab) {
+  ui_tab_remove(ui_dl_tab);
   ui_dl_setusers(NULL);
-  g_sequence_free(ui_dl->list->list);
-  ui_listing_free(ui_dl->list);
-  g_free(ui_dl);
-  ui_dl = NULL;
+  g_sequence_free(ui_dl_tab->list->list);
+  ui_listing_free(ui_dl_tab->list);
+  g_free(ui_dl_tab);
+  ui_dl_tab = NULL;
 }
 
 
@@ -1695,16 +1728,16 @@ void ui_dl_close() {
 
 
 void ui_dl_listchange(dl_t *dl, int change) {
-  g_return_if_fail(ui_dl);
+  g_return_if_fail(ui_dl_tab);
   switch(change) {
   case UICONN_ADD:
-    dl->iter = g_sequence_insert_sorted(ui_dl->list->list, dl, ui_dl_sort_func, NULL);
-    ui_listing_inserted(ui_dl->list);
+    dl->iter = g_sequence_insert_sorted(ui_dl_tab->list->list, dl, ui_dl_sort_func, NULL);
+    ui_listing_inserted(ui_dl_tab->list);
     break;
   case UICONN_DEL:
-    if(dl == ui_dl->dl_cur)
+    if(dl == ui_dl_tab->dl_cur)
       ui_dl_setusers(NULL);
-    ui_listing_remove(ui_dl->list, dl->iter);
+    ui_listing_remove(ui_dl_tab->list, dl->iter);
     g_sequence_remove(dl->iter);
     break;
   }
@@ -1712,24 +1745,24 @@ void ui_dl_listchange(dl_t *dl, int change) {
 
 
 void ui_dl_dud_listchange(dl_user_dl_t *dud, int change) {
-  g_return_if_fail(ui_dl);
-  if(dud->dl != ui_dl->dl_cur || !ui_dl->dl_users)
+  g_return_if_fail(ui_dl_tab);
+  if(dud->dl != ui_dl_tab->dl_cur || !ui_dl_tab->dl_users)
     return;
   switch(change) {
   case UICONN_ADD:
     // Note that _insert_sorted() may not actually insert the item in the
     // correct position, since the list is not guaranteed to be correctly
     // sorted in the first place.
-    g_sequence_insert_sorted(ui_dl->dl_users->list, dud, ui_dl_dud_sort_func, NULL);
-    ui_listing_inserted(ui_dl->list);
+    g_sequence_insert_sorted(ui_dl_tab->dl_users->list, dud, ui_dl_dud_sort_func, NULL);
+    ui_listing_inserted(ui_dl_tab->list);
     break;
   case UICONN_DEL: ;
     GSequenceIter *i;
-    for(i=g_sequence_get_begin_iter(ui_dl->dl_users->list); !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i))
+    for(i=g_sequence_get_begin_iter(ui_dl_tab->dl_users->list); !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i))
       if(g_sequence_get(i) == dud)
         break;
     if(!g_sequence_iter_is_end(i)) {
-      ui_listing_remove(ui_dl->dl_users, i);
+      ui_listing_remove(ui_dl_tab->dl_users, i);
       g_sequence_remove(i);
     }
     break;
@@ -1813,7 +1846,7 @@ static void ui_dl_dud_draw_row(ui_listing_t *list, GSequenceIter *iter, int row,
 }
 
 
-static void ui_dl_draw() {
+static void ui_dl_draw(ui_tab_t *tab) {
   attron(UIC(list_header));
   mvhline(1, 0, ' ', wincols);
   mvaddstr(1, 2,  "Users");
@@ -1823,10 +1856,10 @@ static void ui_dl_draw() {
   mvaddstr(1, 32, "File");
   attroff(UIC(list_header));
 
-  int bottom = ui_dl->details ? winrows-14 : winrows-4;
-  int pos = ui_listing_draw(ui_dl->list, 2, bottom-1, ui_dl_draw_row, NULL);
+  int bottom = tab->details ? winrows-14 : winrows-4;
+  int pos = ui_listing_draw(tab->list, 2, bottom-1, ui_dl_draw_row, NULL);
 
-  dl_t *sel = g_sequence_iter_is_end(ui_dl->list->sel) ? NULL : g_sequence_get(ui_dl->list->sel);
+  dl_t *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
 
   // footer / separator
   attron(UIC(separator));
@@ -1845,32 +1878,32 @@ static void ui_dl_draw() {
     mvprintw(++bottom, 0, "Error: %s", dl_strerror(sel->error, sel->error_msg));
 
   // user list
-  if(sel && ui_dl->details) {
+  if(sel && tab->details) {
     ui_dl_setusers(sel);
     attron(A_BOLD);
     mvaddstr(bottom+1, 2, "User");
     mvaddstr(bottom+1, 22, "Hub");
     mvaddstr(bottom+1, 36, "Status");
     attroff(A_BOLD);
-    if(!ui_dl->dl_users || !g_sequence_get_length(ui_dl->dl_users->list))
+    if(!tab->dl_users || !g_sequence_get_length(tab->dl_users->list))
       mvaddstr(bottom+3, 0, "  No users for this download.");
     else
-      ui_listing_draw(ui_dl->dl_users, bottom+2, winrows-3, ui_dl_dud_draw_row, NULL);
+      ui_listing_draw(tab->dl_users, bottom+2, winrows-3, ui_dl_dud_draw_row, NULL);
   }
 }
 
 
-static void ui_dl_key(guint64 key) {
-  if(ui_listing_key(ui_dl->list, key, (winrows-(ui_dl->details?14:4))/2))
+static void ui_dl_key(ui_tab_t *tab, guint64 key) {
+  if(ui_listing_key(tab->list, key, (winrows-(tab->details?14:4))/2))
     return;
 
-  dl_t *sel = g_sequence_iter_is_end(ui_dl->list->sel) ? NULL : g_sequence_get(ui_dl->list->sel);
+  dl_t *sel = g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
   dl_user_dl_t *usel = NULL;
-  if(!ui_dl->details)
+  if(!tab->details)
     usel = NULL;
   else {
     ui_dl_setusers(sel);
-    usel = !ui_dl->dl_users || g_sequence_iter_is_end(ui_dl->dl_users->sel) ? NULL : g_sequence_get(ui_dl->dl_users->sel);
+    usel = !tab->dl_users || g_sequence_iter_is_end(tab->dl_users->sel) ? NULL : g_sequence_get(tab->dl_users->sel);
   }
 
   switch(key) {
@@ -1879,15 +1912,15 @@ static void ui_dl_key(guint64 key) {
     break;
 
   case INPT_CHAR('J'): // J - user down
-    if(ui_dl->details && ui_dl->dl_users) {
-      ui_dl->dl_users->sel = g_sequence_iter_next(ui_dl->dl_users->sel);
-      if(g_sequence_iter_is_end(ui_dl->dl_users->sel))
-        ui_dl->dl_users->sel = g_sequence_iter_prev(ui_dl->dl_users->sel);
+    if(tab->details && tab->dl_users) {
+      tab->dl_users->sel = g_sequence_iter_next(tab->dl_users->sel);
+      if(g_sequence_iter_is_end(tab->dl_users->sel))
+        tab->dl_users->sel = g_sequence_iter_prev(tab->dl_users->sel);
     }
     break;
   case INPT_CHAR('K'): // K - user up
-    if(ui_dl->details && ui_dl->dl_users)
-      ui_dl->dl_users->sel = g_sequence_iter_prev(ui_dl->dl_users->sel);
+    if(tab->details && tab->dl_users)
+      tab->dl_users->sel = g_sequence_iter_prev(tab->dl_users->sel);
     break;
 
   case INPT_CHAR('f'): // f - find user
@@ -1927,12 +1960,12 @@ static void ui_dl_key(guint64 key) {
       if(!cc)
         ui_m(NULL, 0, "Download not in progress.");
       else {
-        if(ui_conn)
-          ui_tab_cur = g_list_find(ui_tabs, ui_conn);
+        if(ui_conn_tab)
+          ui_tab_cur = g_list_find(ui_tabs, ui_conn_tab);
         else
-          ui_tab_open(ui_conn_create(), TRUE, ui_dl);
+          ui_tab_open(ui_conn_create(), TRUE, tab);
         // cc->iter should be valid at this point
-        ui_conn->list->sel = cc->iter;
+        ui_conn_tab->list->sel = cc->iter;
       }
     }
     break;
@@ -1942,7 +1975,7 @@ static void ui_dl_key(guint64 key) {
     else if(sel->islist)
       ui_m(NULL, 0, "Can't search for alternative sources for file lists.");
     else
-      ui_search_open_tth(sel->hash, ui_dl);
+      ui_search_open_tth(sel->hash, tab);
     break;
   case INPT_CHAR('R'): // R - remove user from all queued files
   case INPT_CHAR('r'): // r - remove user from file
@@ -1981,15 +2014,21 @@ static void ui_dl_key(guint64 key) {
     break;
   case INPT_CTRL('j'): // newline
   case INPT_CHAR('i'): // i       (toggle user list)
-    ui_dl->details = !ui_dl->details;
+    tab->details = !tab->details;
     break;
   }
 }
 
 
+ui_tab_type_t uit_dl[1] = { { ui_dl_draw, ui_dl_title, ui_dl_key, ui_dl_close } };
 
 
-// Search results tab (UIT_SEARCH)
+
+
+
+// Search results tab
+
+ui_tab_type_t uit_search[1];
 
 
 // Columns to sort on
@@ -2069,7 +2108,7 @@ void ui_search_result(search_r_t *r, void *dat) {
 // Ownership of q is passed to the tab, and will be freed on error or close.
 ui_tab_t *ui_search_create(hub_t *hub, search_q_t *q, GError **err) {
   ui_tab_t *tab = g_new0(ui_tab_t, 1);
-  tab->type = UIT_SEARCH;
+  tab->type = uit_search;
   tab->search_q = q;
   tab->hub = hub;
   tab->search_hide_hub = hub ? TRUE : FALSE;
@@ -2359,6 +2398,8 @@ static void ui_search_key(ui_tab_t *tab, guint64 key) {
   }
 }
 
+ui_tab_type_t uit_search[1] = { { ui_search_draw, ui_search_title, ui_search_key, ui_search_close } };
+
 
 
 
@@ -2438,7 +2479,7 @@ static gboolean ui_m_mainthread(gpointer dat) {
     ui_m_updated = TRUE;
   }
   if(tab->log && msg->msg && !(msg->flags & (UIM_NOLOG & ~UIM_NOTIFY))) {
-    if((msg->flags & UIM_CHAT) && tab->type == UIT_HUB && tab->hub_highlight
+    if((msg->flags & UIM_CHAT) && tab->type == uit_hub && tab->hub_highlight
         && g_regex_match(tab->hub_highlight, msg->msg, 0, NULL))
       prio = UIP_HIGH;
     ui_logwindow_add(tab->log, msg->msg);
@@ -2680,15 +2721,7 @@ void ui_draw() {
   erase();
 
   // first line - title
-  char *title =
-    curtab->type == UIT_MAIN     ? ui_main_title() :
-    curtab->type == UIT_HUB      ? ui_hub_title(curtab) :
-    curtab->type == UIT_USERLIST ? ui_userlist_title(curtab) :
-    curtab->type == UIT_MSG      ? ui_msg_title(curtab) :
-    curtab->type == UIT_CONN     ? ui_conn_title() :
-    curtab->type == UIT_FL       ? ui_fl_title(curtab) :
-    curtab->type == UIT_DL       ? ui_dl_title() :
-    curtab->type == UIT_SEARCH   ? ui_search_title(curtab) : g_strdup("");
+  char *title = curtab->type->title(curtab);
   attron(UIC(title));
   mvhline(0, 0, ' ', wincols);
   mvaddnstr(0, 0, title, str_offset_from_columns(title, wincols));
@@ -2725,16 +2758,7 @@ void ui_draw() {
   ui_draw_status();
 
   // tab contents
-  switch(curtab->type) {
-  case UIT_MAIN:     ui_main_draw(); break;
-  case UIT_HUB:      ui_hub_draw(curtab);  break;
-  case UIT_USERLIST: ui_userlist_draw(curtab);  break;
-  case UIT_MSG:      ui_msg_draw(curtab);  break;
-  case UIT_CONN:     ui_conn_draw(); break;
-  case UIT_FL:       ui_fl_draw(curtab); break;
-  case UIT_DL:       ui_dl_draw(); break;
-  case UIT_SEARCH:   ui_search_draw(curtab); break;
-  }
+  curtab->type->draw(curtab);
 
   refresh();
   if(ui_beep) {
@@ -2822,19 +2846,8 @@ void ui_input(guint64 key) {
       if(n)
         ui_tab_cur = n;
     // let tab handle it
-    } else {
-      switch(curtab->type) {
-      case UIT_MAIN:     ui_main_key(key); break;
-      case UIT_HUB:      ui_hub_key(curtab, key); break;
-      case UIT_USERLIST: ui_userlist_key(curtab, key); break;
-      case UIT_MSG:      ui_msg_key(curtab, key); break;
-      case UIT_CONN:     ui_conn_key(key); break;
-      case UIT_FL:       ui_fl_key(curtab, key); break;
-      case UIT_DL:       ui_dl_key(key); break;
-      case UIT_SEARCH:   ui_search_key(curtab, key); break;
-      }
-    }
-    // TODO: some user feedback on invalid key
+    } else
+      curtab->type->key(curtab, key);
   }
 }
 

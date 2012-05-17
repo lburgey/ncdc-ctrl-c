@@ -1879,6 +1879,8 @@ void hub_free(hub_t *hub) {
   hub_disconnect(hub, FALSE);
   cc_remove_hub(hub);
   g_hash_table_remove(hubs, &hub->id);
+  listen_refresh();
+
   net_unref(hub->net);
   g_free(hub->nfo_desc);
   g_free(hub->nfo_conn);

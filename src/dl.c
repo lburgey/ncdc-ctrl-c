@@ -123,7 +123,7 @@ struct dl_t {
   char *dest;            // destination path (must be on same filesystem as the incomplete file)
   guint64 hash_block;    // number of bytes that each block represents
   tth_ctx_t *hash_tth;   // TTH state of the last block that we have
-  GSequenceIter *iter;   // used by UIT_DL
+  GSequenceIter *iter;   // used by ui_dl
 };
 
 #endif
@@ -326,7 +326,7 @@ static void dl_user_add(dl_t *dl, guint64 uid, char error, const char *error_msg
 
   // Add to du->queue and dl->u
   g_ptr_array_add(dl->u, g_sequence_insert_sorted(du->queue, dud, dl_user_dl_sort, NULL));
-  if(ui_dl)
+  if(ui_dl_tab)
     ui_dl_dud_listchange(dud, UIDL_ADD);
 }
 
@@ -350,7 +350,7 @@ static void dl_user_rm(dl_t *dl, int i) {
     // rely on that, however.
   }
 
-  if(ui_dl)
+  if(ui_dl_tab)
     ui_dl_dud_listchange(dud, UIDL_DEL);
   g_sequence_remove(dudi); // dl_user_dl_free() will be called implicitely
   g_ptr_array_remove_index_fast(dl->u, i);
@@ -542,7 +542,7 @@ static void dl_queue_insert(dl_t *dl, gboolean init) {
   dl->u = g_ptr_array_new();
   // insert in the global queue
   g_hash_table_insert(dl_queue, dl->hash, dl);
-  if(ui_dl)
+  if(ui_dl_tab)
     ui_dl_listchange(dl, UIDL_ADD);
 
   // insert in the database
@@ -706,7 +706,7 @@ void dl_queue_rm(dl_t *dl) {
   // remove from dl list, if it's still in there. (Could have been removed
   // before, while dlthread was active)
   if(g_hash_table_lookup(dl_queue, dl->hash)) {
-    if(ui_dl)
+    if(ui_dl_tab)
       ui_dl_listchange(dl, UIDL_DEL);
     g_hash_table_remove(dl_queue, dl->hash);
   }
@@ -796,7 +796,7 @@ void dl_queue_setprio(dl_t *dl, char prio) {
     (dl)->error_msg = (sub) ? g_strdup(sub) : NULL;\
     dl_queue_setprio(dl, DLP_ERR);\
     g_debug("Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
-    ui_mf(ui_main, 0, "Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
+    ui_mf(ui_main_tab, 0, "Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
   } while(0)
 
 

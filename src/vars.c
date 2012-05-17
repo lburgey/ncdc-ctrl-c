@@ -617,7 +617,7 @@ static gboolean s_hubname(guint64 hub, const char *key, const char *val, GError 
   GList *n;
   for(n=ui_tabs; n; n=n->next) {
     ui_tab_t *t = n->data;
-    if(t->type == UIT_HUB && t->hub->id == hub) {
+    if(t->type == uit_hub && t->hub->id == hub) {
       g_free(t->name);
       t->name = g_strdup(val);
     }
