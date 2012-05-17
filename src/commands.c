@@ -890,7 +890,7 @@ static void c_browse(char *args) {
     }
   }
 
-  ui_fl_queue(u ? u->uid : 0, force, NULL, !args[0] ? NULL : tab, TRUE, FALSE);
+  uit_fl_queue(u ? u->uid : 0, force, NULL, !args[0] ? NULL : tab, TRUE, FALSE);
 }
 
 

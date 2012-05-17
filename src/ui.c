@@ -27,7 +27,6 @@
 #include "ncdc.h"
 #include "ui.h"
 #include <math.h>
-#include <unistd.h>
 
 
 #if INTERFACE
@@ -52,12 +51,12 @@ struct ui_tab_t {
   ui_tab_t *parent;       // the tab that opened this tab (may be NULL or dangling)
   ui_logwindow_t *log;    // MAIN, HUB, MSG
   hub_t *hub;             // HUB, USERLIST, MSG, SEARCH
-  ui_listing_t *list;     // USERLIST, FL, SEARCH
-  guint64 uid;            // FL, MSG
-  int order : 4;          // USERLIST, SEARCH, FL (has different interpretation per tab)
+  ui_listing_t *list;     // USERLIST, SEARCH
+  guint64 uid;            // MSG
+  int order : 4;          // USERLIST, SEARCH (has different interpretation per tab)
   gboolean o_reverse : 1; // USERLIST, SEARCH
   gboolean details : 1;   // USERLIST
-  time_t t_open;          // FL, SEARCH
+  time_t t_open;          // SEARCH
   // USERLIST
   gboolean user_opfirst : 1;
   gboolean user_hide_desc : 1;
@@ -70,14 +69,6 @@ struct ui_tab_t {
   GRegex *hub_highlight;
   char *hub_nick;
   ui_tab_t *userlist_tab;
-  // FL
-  fl_list_t *fl_list;
-  char *fl_uname;
-  gboolean fl_loading : 1;
-  gboolean fl_dirfirst : 1;
-  gboolean fl_match : 1;
-  GError *fl_err;
-  char *fl_sel;
   // SEARCH
   search_q_t *search_q;
   gboolean search_hide_hub : 1;
@@ -769,7 +760,7 @@ static void ui_userlist_key(ui_tab_t *tab, guint64 key) {
     if(!sel)
       ui_m(NULL, 0, "No user selected.");
     else
-      ui_fl_queue(sel->uid, key == INPT_CHAR('B'), NULL, tab, TRUE, FALSE);
+      uit_fl_queue(sel->uid, key == INPT_CHAR('B'), NULL, tab, TRUE, FALSE);
     break;
   }
 
@@ -815,444 +806,6 @@ void ui_userlist_userchange(ui_tab_t *tab, int change, hub_user_t *user) {
 
 
 ui_tab_type_t uit_userlist[1] = { { ui_userlist_draw, ui_userlist_title, ui_userlist_key, ui_userlist_close } };
-
-
-
-
-
-
-
-// File list browser
-
-ui_tab_type_t uit_fl[1];
-
-// Columns to sort on
-#define UIFL_NAME  0
-#define UIFL_SIZE  1
-
-
-static gint ui_fl_sort(gconstpointer a, gconstpointer b, gpointer dat) {
-  const fl_list_t *la = a;
-  const fl_list_t *lb = b;
-  ui_tab_t *tab = dat;
-
-  // dirs before files
-  if(tab->fl_dirfirst && !!la->isfile != !!lb->isfile)
-    return la->isfile ? 1 : -1;
-
-  int r = tab->order == UIFL_NAME ? fl_list_cmp(la, lb) : (la->size > lb->size ? 1 : la->size < lb->size ? -1 : 0);
-  if(!r)
-    r = tab->order == UIFL_NAME ? (la->size > lb->size ? 1 : la->size < lb->size ? -1 : 0) : fl_list_cmp(la, lb);
-  return tab->o_reverse ? -r : r;
-}
-
-
-static void ui_fl_setdir(ui_tab_t *tab, fl_list_t *fl, fl_list_t *sel) {
-  // Free previously opened dir
-  if(tab->list) {
-    g_sequence_free(tab->list->list);
-    ui_listing_free(tab->list);
-  }
-  // Open this one and select *sel, if set
-  tab->fl_list = fl;
-  GSequence *seq = g_sequence_new(NULL);
-  GSequenceIter *seli = NULL;
-  int i;
-  for(i=0; i<fl->sub->len; i++) {
-    GSequenceIter *iter = g_sequence_insert_sorted(seq, g_ptr_array_index(fl->sub, i), ui_fl_sort, tab);
-    if(sel == g_ptr_array_index(fl->sub, i))
-      seli = iter;
-  }
-  tab->list = ui_listing_create(seq);
-  if(seli)
-    tab->list->sel = seli;
-}
-
-
-static void ui_fl_matchqueue(ui_tab_t *tab, fl_list_t *root) {
-  if(!tab->fl_list) {
-    tab->fl_match = TRUE;
-    return;
-  }
-
-  if(!root) {
-    root = tab->fl_list;
-    while(root->parent)
-      root = root->parent;
-  }
-  int a = 0;
-  int n = dl_queue_match_fl(tab->uid, root, &a);
-  ui_mf(NULL, 0, "Matched %d files, %d new.", n, a);
-  tab->fl_match = FALSE;
-}
-
-
-static void ui_fl_dosel(ui_tab_t *tab, fl_list_t *fl, const char *sel) {
-  fl_list_t *root = fl;
-  while(root->parent)
-    root = root->parent;
-  fl_list_t *n = fl_list_from_path(root, sel);
-  if(!n)
-    ui_mf(tab, 0, "Can't select `%s': item not found.", sel);
-  // open the parent directory and select item
-  ui_fl_setdir(tab, n?n->parent:fl, n);
-}
-
-
-// Callback function for use in ui_fl_queue() - not associated with any tab.
-// Will just match the list against the queue and free it.
-static void ui_fl_loadmatch(fl_list_t *fl, GError *err, void *dat) {
-  guint64 uid = *(guint64 *)dat;
-  g_free(dat);
-  hub_user_t *u = g_hash_table_lookup(hub_uids, &uid);
-  char *user = u
-    ? g_strdup_printf("%s on %s", u->name, u->hub->tab->name)
-    : g_strdup_printf("%016"G_GINT64_MODIFIER"x (user offline)", uid);
-
-  if(err) {
-    ui_mf(uit_main_tab, 0, "Error opening file list of %s for matching: %s", user, err->message);
-    g_error_free(err);
-  } else {
-    int a = 0;
-    int n = dl_queue_match_fl(uid, fl, &a);
-    ui_mf(NULL, 0, "Matched queue for %s: %d files, %d new.", user, n, a);
-    fl_list_free(fl);
-  }
-  g_free(user);
-}
-
-
-// Open/match or queue a file list. (Not really a ui_* function, but where else would it belong?)
-void ui_fl_queue(guint64 uid, gboolean force, const char *sel, ui_tab_t *parent, gboolean open, gboolean match) {
-  if(!open && !match)
-    return;
-
-  hub_user_t *u = g_hash_table_lookup(hub_uids, &uid);
-  // check for u == we
-  if(u && (u->hub->adc ? u->hub->sid == u->sid : u->hub->nick_valid && strcmp(u->hub->nick_hub, u->name_hub) == 0)) {
-    u = NULL;
-    uid = 0;
-  }
-  g_warn_if_fail(uid || !match);
-
-  // check for existing tab
-  GList *n;
-  ui_tab_t *t;
-  for(n=ui_tabs; n; n=n->next) {
-    t = n->data;
-    if(t->type == uit_fl && t->uid == uid)
-      break;
-  }
-  if(n) {
-    if(open)
-      ui_tab_cur = n;
-    if(sel) {
-      if(!t->fl_loading && t->fl_list)
-        ui_fl_dosel(n->data, t->fl_list, sel);
-      else if(t->fl_loading) {
-        g_free(t->fl_sel);
-        t->fl_sel = g_strdup(sel);
-      }
-    }
-    if(match)
-      ui_fl_matchqueue(t, NULL);
-    return;
-  }
-
-  // open own list
-  if(!uid) {
-    if(open)
-      ui_tab_open(ui_fl_create(0, sel), TRUE, parent);
-    return;
-  }
-
-  // check for cached file list, otherwise queue it
-  char *tmp = g_strdup_printf("%016"G_GINT64_MODIFIER"x.xml.bz2", uid);
-  char *fn = g_build_filename(db_dir, "fl", tmp, NULL);
-  g_free(tmp);
-
-  gboolean e = !force;
-  if(!force) {
-    struct stat st;
-    int age = var_get_int(0, VAR_filelist_maxage);
-    e = stat(fn, &st) < 0 || st.st_mtime < time(NULL)-MAX(age, 30) ? FALSE : TRUE;
-  }
-  if(e) {
-    if(open) {
-      t = ui_fl_create(uid, sel);
-      ui_tab_open(t, TRUE, parent);
-      if(match)
-        ui_fl_matchqueue(t, NULL);
-    } else if(match)
-      fl_load_async(fn, ui_fl_loadmatch, g_memdup(&uid, 8));
-  } else {
-    g_return_if_fail(u); // the caller should have checked this
-    dl_queue_addlist(u, sel, parent, open, match);
-    ui_mf(NULL, 0, "File list of %s added to the download queue.", u->name);
-  }
-
-  g_free(fn);
-}
-
-
-static void ui_fl_loaddone(fl_list_t *fl, GError *err, void *dat) {
-  // If the tab has been closed, then we can ignore the result
-  if(!g_list_find(ui_tabs, dat)) {
-    if(fl)
-      fl_list_free(fl);
-    if(err)
-      g_error_free(err);
-    return;
-  }
-  // Otherwise, update state
-  ui_tab_t *tab = dat;
-  tab->fl_err = err;
-  tab->fl_loading = FALSE;
-  tab->prio = err ? UIP_HIGH : UIP_MED;
-  if(tab->fl_sel) {
-    if(fl)
-      ui_fl_dosel(tab, fl, tab->fl_sel);
-    g_free(tab->fl_sel);
-    tab->fl_sel = NULL;
-  } else if(fl)
-    ui_fl_setdir(tab, fl, NULL);
-}
-
-
-ui_tab_t *ui_fl_create(guint64 uid, const char *sel) {
-  // get user
-  hub_user_t *u = uid ? g_hash_table_lookup(hub_uids, &uid) : NULL;
-
-  // create tab
-  ui_tab_t *tab = g_new0(ui_tab_t, 1);
-  tab->type = uit_fl;
-  tab->name = !uid ? g_strdup("/own") : u ? g_strdup_printf("/%s", u->name) : g_strdup_printf("/%016"G_GINT64_MODIFIER"x", uid);
-  tab->fl_uname = u ? g_strdup(u->name) : NULL;
-  tab->uid = uid;
-  tab->fl_dirfirst = TRUE;
-  tab->order = UIFL_NAME;
-  time(&tab->t_open);
-
-  // get file list
-  if(!uid) {
-    fl_list_t *fl = fl_local_list ? fl_list_copy(fl_local_list) : NULL;
-    tab->prio = UIP_MED;
-    if(fl && fl->sub && sel)
-      ui_fl_dosel(tab, fl, sel);
-    else if(fl && fl->sub)
-      ui_fl_setdir(tab, fl, NULL);
-  } else {
-    char *tmp = g_strdup_printf("%016"G_GINT64_MODIFIER"x.xml.bz2", uid);
-    char *fn = g_build_filename(db_dir, "fl", tmp, NULL);
-    struct stat st;
-    if(stat(fn, &st) >= 0)
-      tab->t_open = st.st_mtime;
-    fl_load_async(fn, ui_fl_loaddone, tab);
-    g_free(tmp);
-    g_free(fn);
-    tab->prio = UIP_LOW;
-    tab->fl_loading = TRUE;
-    if(sel)
-      tab->fl_sel = g_strdup(sel);
-  }
-
-  return tab;
-}
-
-
-static void ui_fl_close(ui_tab_t *tab) {
-  if(tab->list) {
-    g_sequence_free(tab->list->list);
-    ui_listing_free(tab->list);
-  }
-  ui_tab_remove(tab);
-  fl_list_t *p = tab->fl_list;
-  while(p && p->parent)
-    p = p->parent;
-  if(p)
-    fl_list_free(p);
-  if(tab->fl_err)
-    g_error_free(tab->fl_err);
-  g_free(tab->fl_sel);
-  g_free(tab->name);
-  g_free(tab->fl_uname);
-  g_free(tab);
-}
-
-
-static char *ui_fl_title(ui_tab_t *tab) {
-  char *t = !tab->uid ? g_strdup_printf("Browsing own file list.")
-    : tab->fl_uname ? g_strdup_printf("Browsing file list of %s (%016"G_GINT64_MODIFIER"x)", tab->fl_uname, tab->uid)
-    : g_strdup_printf("Browsing file list of %016"G_GINT64_MODIFIER"x (user offline)", tab->uid);
-  char *tn = g_strdup_printf("%s [%s]", t, str_formatinterval(60*((time(NULL)-tab->t_open)/60)));
-  g_free(t);
-  return tn;
-}
-
-
-static void ui_fl_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
-  fl_list_t *fl = g_sequence_get(iter);
-
-  attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
-  mvhline(row, 0, ' ', wincols);
-  if(iter == list->sel)
-    mvaddstr(row, 0, ">");
-
-  mvaddch(row, 2, fl->isfile && !fl->hastth ? 'H' :' ');
-
-  mvaddstr(row, 4, str_formatsize(fl->size));
-  if(!fl->isfile)
-    mvaddch(row, 17, '/');
-  mvaddnstr(row, 18, fl->name, str_offset_from_columns(fl->name, wincols-19));
-
-  attroff(iter == list->sel ? UIC(list_select) : UIC(list_default));
-}
-
-
-static void ui_fl_draw(ui_tab_t *tab) {
-  // first line
-  mvhline(1, 0, ACS_HLINE, wincols);
-  mvaddch(1, 3, ' ');
-  char *path = tab->fl_list ? fl_list_path(tab->fl_list) : g_strdup("/");
-  int c = str_columns(path) - wincols + 8;
-  mvaddstr(1, 4, path+str_offset_from_columns(path, MAX(0, c)));
-  g_free(path);
-  addch(' ');
-
-  // rows
-  int pos = -1;
-  if(tab->fl_loading)
-    mvaddstr(3, 2, "Loading filelist...");
-  else if(tab->fl_err)
-    mvprintw(3, 2, "Error loading filelist: %s", tab->fl_err->message);
-  else if(tab->fl_list && tab->fl_list->sub && tab->fl_list->sub->len)
-    pos = ui_listing_draw(tab->list, 2, winrows-4, ui_fl_draw_row, NULL);
-  else
-    mvaddstr(3, 2, "Directory empty.");
-
-  // footer
-  fl_list_t *sel = pos >= 0 && !g_sequence_iter_is_end(tab->list->sel) ? g_sequence_get(tab->list->sel) : NULL;
-  attron(UIC(separator));
-  mvhline(winrows-3, 0, ' ', wincols);
-  if(pos >= 0)
-    mvprintw(winrows-3, wincols-34, "%6d items   %s   %3d%%", tab->fl_list->sub->len, str_formatsize(tab->fl_list->size), pos);
-  if(sel && sel->isfile) {
-    if(!sel->hastth)
-      mvaddstr(winrows-3, 0, "Not hashed yet, this file is not visible to others.");
-    else {
-      char hash[40] = {};
-      base32_encode(sel->tth, hash);
-      mvaddstr(winrows-3, 0, hash);
-      mvprintw(winrows-3, 40, "(%s bytes)", str_fullsize(sel->size));
-    }
-  }
-  if(sel && !sel->isfile) {
-    int num = sel->sub ? sel->sub->len : 0;
-    if(!num)
-      mvaddstr(winrows-3, 0, " Selected directory is empty.");
-    else
-      mvprintw(winrows-3, 0, " %d items, %s bytes", num, str_fullsize(sel->size));
-  }
-  attroff(UIC(separator));
-}
-
-
-static void ui_fl_key(ui_tab_t *tab, guint64 key) {
-  if(tab->list && ui_listing_key(tab->list, key, winrows/2))
-    return;
-
-  fl_list_t *sel = !tab->list || g_sequence_iter_is_end(tab->list->sel) ? NULL : g_sequence_get(tab->list->sel);
-  gboolean sort = FALSE;
-
-  switch(key) {
-  case INPT_CHAR('?'):
-    uit_main_keys("browse");
-    break;
-
-  case INPT_CTRL('j'):      // newline
-  case INPT_KEY(KEY_RIGHT): // right
-  case INPT_CHAR('l'):      // l          open selected directory
-    if(sel && !sel->isfile && sel->sub)
-      ui_fl_setdir(tab, sel, NULL);
-    break;
-
-  case INPT_CTRL('h'):     // backspace
-  case INPT_KEY(KEY_LEFT): // left
-  case INPT_CHAR('h'):     // h          open parent directory
-    if(tab->fl_list && tab->fl_list->parent)
-      ui_fl_setdir(tab, tab->fl_list->parent, tab->fl_list);
-    break;
-
-  // Sorting
-#define SETSORT(c) \
-  tab->o_reverse = tab->order == c ? !tab->o_reverse : FALSE;\
-  tab->order = c;\
-  sort = TRUE;
-
-  case INPT_CHAR('s'): // s - sort on file size
-    SETSORT(UIFL_SIZE);
-    break;
-  case INPT_CHAR('n'): // n - sort on file name
-    SETSORT(UIFL_NAME);
-    break;
-  case INPT_CHAR('t'): // o - toggle sorting dirs before files
-    tab->fl_dirfirst = !tab->fl_dirfirst;
-    sort = TRUE;
-    break;
-#undef SETSORT
-
-  case INPT_CHAR('d'): // d (download)
-    if(!sel)
-      ui_m(NULL, 0, "Nothing selected.");
-    else if(!tab->uid)
-      ui_m(NULL, 0, "Can't download from yourself.");
-    else if(!sel->isfile && fl_list_isempty(sel))
-      ui_m(NULL, 0, "Directory empty.");
-    else {
-      g_return_if_fail(!sel->isfile || sel->hastth);
-      char *excl = var_get(0, VAR_download_exclude);
-      GRegex *r = excl ? g_regex_new(excl, 0, 0, NULL) : NULL;
-      dl_queue_add_fl(tab->uid, sel, NULL, r);
-      if(r)
-        g_regex_unref(r);
-    }
-    break;
-
-  case INPT_CHAR('m'): // m - match queue with selected file/dir
-  case INPT_CHAR('M'): // M - match queue with entire file list
-    if(!tab->fl_list)
-      ui_m(NULL, 0, "File list empty.");
-    else if(!tab->uid)
-      ui_m(NULL, 0, "Can't download from yourself.");
-    else if(key == INPT_CHAR('m') && !sel)
-      ui_m(NULL, 0, "Nothing selected.");
-    else
-      ui_fl_matchqueue(tab, key == INPT_CHAR('m') ? sel : NULL);
-    break;
-
-  case INPT_CHAR('a'): // a - search for alternative sources
-    if(!sel)
-      ui_m(NULL, 0, "Nothing selected.");
-    else if(!sel->isfile)
-      ui_m(NULL, 0, "Can't look for alternative sources for directories.");
-    else if(!sel->hastth)
-      ui_m(NULL, 0, "No TTH hash known.");
-    else
-      ui_search_open_tth(sel->tth, tab);
-    break;
-  }
-
-  if(sort && tab->fl_list) {
-    g_sequence_sort(tab->list->list, ui_fl_sort, tab);
-    ui_listing_sorted(tab->list);
-    ui_mf(NULL, 0, "Ordering by %s (%s%s)",
-      tab->order == UIFL_NAME  ? "file name" : "file size",
-      tab->o_reverse ? "descending" : "ascending", tab->fl_dirfirst ? ", dirs first" : "");
-  }
-}
-
-
-ui_tab_type_t uit_fl[1] = { { ui_fl_draw, ui_fl_title, ui_fl_key, ui_fl_close } };
 
 
 
@@ -1520,7 +1073,7 @@ static void ui_search_key(ui_tab_t *tab, guint64 key) {
       if(!u)
         ui_m(NULL, 0, "User is not online.");
       else
-        ui_fl_queue(u->uid, key == INPT_CHAR('B'), sel->file, tab, TRUE, FALSE);
+        uit_fl_queue(u->uid, key == INPT_CHAR('B'), sel->file, tab, TRUE, FALSE);
     }
     break;
   case INPT_CHAR('d'): // d - download file
@@ -1563,7 +1116,7 @@ static void ui_search_key(ui_tab_t *tab, guint64 key) {
     if(!sel)
       ui_m(NULL, 0, "Nothing selected.");
     else
-      ui_fl_queue(sel->uid, FALSE, NULL, NULL, FALSE, TRUE);
+      uit_fl_queue(sel->uid, FALSE, NULL, NULL, FALSE, TRUE);
     break;
 
   case INPT_CHAR('Q'):{// Q - download filelist and match queue for all results
@@ -1581,7 +1134,7 @@ static void ui_search_key(ui_tab_t *tab, guint64 key) {
     g_hash_table_iter_init(&iter, uids);
     guint64 *uid;
     while(g_hash_table_iter_next(&iter, (gpointer *)&uid, NULL))
-      ui_fl_queue(*uid, FALSE, NULL, NULL, FALSE, TRUE);
+      uit_fl_queue(*uid, FALSE, NULL, NULL, FALSE, TRUE);
     ui_mf(NULL, 0, "Matching %d file lists...", g_hash_table_size(uids));
     g_hash_table_unref(uids);
   } break;

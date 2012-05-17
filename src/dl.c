@@ -940,7 +940,7 @@ static void dl_finished(dl_t *dl) {
     g_return_if_fail(dl->u->len == 1);
     // Ugly hack: make sure to not select the browse tab, if one is opened
     GList *cur = ui_tab_cur;
-    ui_fl_queue(((dl_user_dl_t *)g_sequence_get(g_ptr_array_index(dl->u, 0)))->u->uid,
+    uit_fl_queue(((dl_user_dl_t *)g_sequence_get(g_ptr_array_index(dl->u, 0)))->u->uid,
         FALSE, dl->flsel, dl->flpar, dl->flopen, dl->flmatch);
     ui_tab_cur = cur;
   }
