@@ -796,7 +796,7 @@ void dl_queue_setprio(dl_t *dl, char prio) {
     (dl)->error_msg = (sub) ? g_strdup(sub) : NULL;\
     dl_queue_setprio(dl, DLP_ERR);\
     g_debug("Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
-    ui_mf(ui_main_tab, 0, "Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
+    ui_mf(uit_main_tab, 0, "Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
   } while(0)
 
 

@@ -376,7 +376,7 @@ static void c_reconnect(char *args) {
       ui_tab_cur = n;
       c_connect("");
     }
-    ui_tab_cur = g_list_find(ui_tabs, ui_main_tab);
+    ui_tab_cur = g_list_find(ui_tabs, uit_main_tab);
   } else
     ui_m(NULL, 0, "This command can only be used on the main tab or on hub tabs.");
 }

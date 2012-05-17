@@ -141,7 +141,7 @@ static gboolean listen_tcp_handle(gpointer dat) {
   if(c < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
-    ui_mf(ui_main_tab, 0, "TCP accept error on %s:%d: %s. Switching to passive mode.",
+    ui_mf(uit_main_tab, 0, "TCP accept error on %s:%d: %s. Switching to passive mode.",
       ip4_unpack(b->ip4), b->port, g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
@@ -168,7 +168,7 @@ static gboolean listen_udp_handle(gpointer dat) {
   if(r < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
-    ui_mf(ui_main_tab, 0, "UDP read error on %s:%d: %s. Switching to passive mode.",
+    ui_mf(uit_main_tab, 0, "UDP read error on %s:%d: %s. Switching to passive mode.",
       ip4_unpack(b->ip4), b->port, g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
@@ -284,7 +284,7 @@ static void bind_create(listen_bind_t *b) {
   // least it avoids any other problems that may arise from a partially
   // activated configuration).
   if(err) {
-    ui_mf(ui_main_tab, UIP_MED, "Error binding to %s %s:%d, %s. Switching to passive mode.",
+    ui_mf(uit_main_tab, UIP_MED, "Error binding to %s %s:%d, %s. Switching to passive mode.",
       b->type == LBT_UDP ? "UDP" : "TCP", ip4_unpack(b->ip4), b->port, g_strerror(err));
     close(sock);
     listen_stop();

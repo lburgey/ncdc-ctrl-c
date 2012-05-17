@@ -105,72 +105,6 @@ GHashTable *ui_msg_tabs = NULL;
 
 
 
-// Main tab
-
-
-// these is only one main tab, so this can be static
-ui_tab_t *ui_main_tab;
-ui_tab_type_t uit_main[1];
-
-static ui_tab_t *ui_main_create() {
-  ui_main_tab = g_new0(ui_tab_t, 1);
-  ui_main_tab->name = "main";
-  ui_main_tab->log = ui_logwindow_create("main", 0);
-  ui_main_tab->type = uit_main;
-
-  ui_mf(ui_main_tab, 0, "Welcome to ncdc %s!", VERSION);
-  ui_m(ui_main_tab, 0,
-    "Check out the manual page for a general introduction to ncdc.\n"
-    "Make sure you always run the latest version available from http://dev.yorhel.nl/ncdc\n");
-  ui_mf(ui_main_tab, 0, "Using working directory: %s", db_dir);
-
-  return ui_main_tab;
-}
-
-
-static void ui_main_close(ui_tab_t *tab) {
-  ui_m(tab, 0, "Main tab cannot be closed.");
-}
-
-
-static void ui_main_draw(ui_tab_t *t) {
-  ui_logwindow_draw(t->log, 1, 0, winrows-4, wincols);
-
-  mvaddstr(winrows-3, 0, "main>");
-  ui_textinput_draw(ui_global_textinput, winrows-3, 6, wincols-6);
-}
-
-
-static char *ui_main_title(ui_tab_t *t) {
-  return g_strdup_printf("Welcome to ncdc %s!", VERSION);
-}
-
-
-static void ui_main_key(ui_tab_t *t, guint64 key) {
-  char *str = NULL;
-  if(!ui_logwindow_key(t->log, key, winrows) &&
-      ui_textinput_key(ui_global_textinput, key, &str) && str) {
-    cmd_handle(str);
-    g_free(str);
-  }
-}
-
-
-// Select the main tab and run `/help keys <s>'.
-static void ui_main_keys(const char *s) {
-  ui_tab_cur = g_list_find(ui_tabs, ui_main_tab);
-  char *c = g_strdup_printf("/help keys %s", s);
-  cmd_handle(c);
-  g_free(c);
-}
-
-
-ui_tab_type_t uit_main[1] = { { ui_main_draw, ui_main_title, ui_main_key, ui_main_close } };
-
-
-
-
-
 // User message tab
 
 ui_tab_type_t uit_msg[1];
@@ -754,7 +688,7 @@ static void ui_userlist_key(ui_tab_t *tab, guint64 key) {
   gboolean sort = FALSE;
   switch(key) {
   case INPT_CHAR('?'):
-    ui_main_keys("userlist");
+    uit_main_keys("userlist");
     break;
 
   // Sorting
@@ -1115,7 +1049,7 @@ static void ui_conn_key(ui_tab_t *tab, guint64 key) {
 
   switch(key) {
   case INPT_CHAR('?'):
-    ui_main_keys("connections");
+    uit_main_keys("connections");
     break;
   case INPT_CTRL('j'): // newline
   case INPT_CHAR('i'): // i - toggle detailed info
@@ -1275,7 +1209,7 @@ static void ui_fl_loadmatch(fl_list_t *fl, GError *err, void *dat) {
     : g_strdup_printf("%016"G_GINT64_MODIFIER"x (user offline)", uid);
 
   if(err) {
-    ui_mf(ui_main_tab, 0, "Error opening file list of %s for matching: %s", user, err->message);
+    ui_mf(uit_main_tab, 0, "Error opening file list of %s for matching: %s", user, err->message);
     g_error_free(err);
   } else {
     int a = 0;
@@ -1531,7 +1465,7 @@ static void ui_fl_key(ui_tab_t *tab, guint64 key) {
 
   switch(key) {
   case INPT_CHAR('?'):
-    ui_main_keys("browse");
+    uit_main_keys("browse");
     break;
 
   case INPT_CTRL('j'):      // newline
@@ -1908,7 +1842,7 @@ static void ui_dl_key(ui_tab_t *tab, guint64 key) {
 
   switch(key) {
   case INPT_CHAR('?'):
-    ui_main_keys("queue");
+    uit_main_keys("queue");
     break;
 
   case INPT_CHAR('J'): // J - user down
@@ -2265,7 +2199,7 @@ static void ui_search_key(ui_tab_t *tab, guint64 key) {
 
   switch(key) {
   case INPT_CHAR('?'):
-    ui_main_keys("search");
+    uit_main_keys("search");
     break;
 
   case INPT_CHAR('f'): // f - find user
@@ -2563,7 +2497,7 @@ void ui_init() {
   ui_global_textinput = ui_textinput_create(TRUE, cmd_suggest);
 
   // first tab = main tab
-  ui_tab_open(ui_main_create(), TRUE, NULL);
+  ui_tab_open(uit_main_create(), TRUE, NULL);
 
   // init curses
   initscr();

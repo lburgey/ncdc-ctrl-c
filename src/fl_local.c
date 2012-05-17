@@ -120,7 +120,7 @@ gboolean fl_flush(gpointer dat) {
     GError *err = NULL;
     if(!fl_save(fl_local_list, fl_local_list_file, NULL, 9999, &err)) {
       // this is a pretty fatal error... oh well, better luck next time
-      ui_mf(ui_main_tab, UIP_MED, "Error saving file list: %s", err->message);
+      ui_mf(uit_main_tab, UIP_MED, "Error saving file list: %s", err->message);
       g_error_free(err);
     }
   }
@@ -195,7 +195,7 @@ static void fl_scan_rmdupes(fl_list_t *fl, const char *vpath) {
     fl_list_t *b = g_ptr_array_index(fl->sub, i);
     if(fl_list_cmp_strict(a, b) == 0) {
       char *tmp = g_build_filename(vpath, b->name, NULL);
-      ui_mf(ui_main_tab, UIP_MED, "Not sharing \"%s\": Other file with same name (but different case) already shared.", tmp);
+      ui_mf(uit_main_tab, UIP_MED, "Not sharing \"%s\": Other file with same name (but different case) already shared.", tmp);
       fl_list_remove(b);
       g_free(tmp);
     } else
@@ -281,7 +281,7 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
   // isn't worth the effort.
   ename = g_filename_from_utf8(uname, -1, NULL, NULL, NULL);
   if(!ename) {
-    ui_mf(ui_main_tab, UIP_MED, "Error reading directory entry in \"%s\": Invalid encoding.", vcpath);
+    ui_mf(uit_main_tab, UIP_MED, "Error reading directory entry in \"%s\": Invalid encoding.", vcpath);
     goto done;
   }
 
@@ -292,9 +292,9 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
   int r = stat(cpath, &dat);
   if(r < 0 || !(S_ISREG(dat.st_mode) || S_ISDIR(dat.st_mode))) {
     if(r < 0)
-      ui_mf(ui_main_tab, UIP_MED, "Error stat'ing \"%s\": %s", vcpath, g_strerror(errno));
+      ui_mf(uit_main_tab, UIP_MED, "Error stat'ing \"%s\": %s", vcpath, g_strerror(errno));
     else
-      ui_mf(ui_main_tab, UIP_MED, "Not sharing \"%s\": Neither file nor directory.", vcpath);
+      ui_mf(uit_main_tab, UIP_MED, "Not sharing \"%s\": Neither file nor directory.", vcpath);
     goto done;
   }
 
@@ -304,13 +304,13 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
   // this code when this is the case.
   char *tmp = realpath(cpath, NULL);
   if(!tmp) {
-    ui_mf(ui_main_tab, UIP_MED, "Error getting file path for \"%s\": %s", vcpath, g_strerror(errno));
+    ui_mf(uit_main_tab, UIP_MED, "Error getting file path for \"%s\": %s", vcpath, g_strerror(errno));
     goto done;
   }
   real = g_filename_to_utf8(tmp, -1, NULL, NULL, NULL);
   free(tmp);
   if(!real) {
-    ui_mf(ui_main_tab, UIP_MED, "Error getting file path for \"%s\": %s", vcpath, "Encoding error.");
+    ui_mf(uit_main_tab, UIP_MED, "Error getting file path for \"%s\": %s", vcpath, "Encoding error.");
     goto done;
   }
 
@@ -343,7 +343,7 @@ static void fl_scan_dir(fl_list_t *parent, fl_list_t *old, const char *path, con
   GError *err = NULL;
   GDir *dir = g_dir_open(path, 0, &err);
   if(!dir) {
-    ui_mf(ui_main_tab, UIP_MED, "Error reading directory \"%s\": %s", vpath, g_strerror(errno));
+    ui_mf(uit_main_tab, UIP_MED, "Error reading directory \"%s\": %s", vpath, g_strerror(errno));
     g_error_free(err);
     return;
   }
@@ -652,7 +652,7 @@ static gboolean fl_hash_done(gpointer dat) {
   fl_hash_queue_size -= fl->size;
 
   if(args->err) {
-    ui_mf(ui_main_tab, UIP_MED, "Error hashing \"%s\": %s", args->path, args->err->message);
+    ui_mf(uit_main_tab, UIP_MED, "Error hashing \"%s\": %s", args->path, args->err->message);
     goto fl_hash_done_f;
   }
 
@@ -1011,7 +1011,7 @@ void fl_init() {
   // load our files.xml.bz2
   fl_local_list = sharing ? fl_load(fl_local_list_file, &err, TRUE) : NULL;
   if(sharing && !fl_local_list) {
-    ui_mf(ui_main_tab, UIP_MED, "Error loading local filelist: %s. Re-building list.", err->message);
+    ui_mf(uit_main_tab, UIP_MED, "Error loading local filelist: %s. Re-building list.", err->message);
     g_error_free(err);
     dorefresh = TRUE;
   } else if(!sharing)
@@ -1030,7 +1030,7 @@ void fl_init() {
   // this time to continue the hash progress.
   if(sharing && !var_get_bool(0, VAR_fl_done)) {
     dorefresh = TRUE;
-    ui_m(ui_main_tab, UIM_NOTIFY, "File list incomplete, refreshing...");
+    ui_m(uit_main_tab, UIM_NOTIFY, "File list incomplete, refreshing...");
   }
 
   // Initialize the fl_hash_index
