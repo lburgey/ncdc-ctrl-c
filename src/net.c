@@ -233,7 +233,7 @@ static int low_send(net_t *n, const char *buf, int len, const char **err) {
 
 static void asy_setuppoll(net_t *n);
 
-typedef struct synfer_t {
+struct synfer_t {
   GStaticMutex lock; // protects net->sock and net->tls in the case of a disconnect.
   net_t *net;
   int left;
@@ -247,7 +247,7 @@ typedef struct synfer_t {
   void (*cb_downdone)(net_t *, void *);
   gboolean (*cb_downdata)(void *, const char *, int);
   void (*cb_upldone)(net_t *);
-} synfer_t;
+};
 
 static GThreadPool *syn_pool = NULL;
 
@@ -1014,7 +1014,7 @@ void net_connected(net_t *n, int sock, const char *addr) {
 
 // DNS resolution and connecting
 
-typedef struct dnscon_t {
+struct dnscon_t {
   net_t *net;
   char *addr;
   int port;
@@ -1023,7 +1023,7 @@ typedef struct dnscon_t {
   struct sockaddr_in laddr;
   char *err;
   void(*cb)(net_t *, const char *);
-} dnscon_t;
+};
 
 
 static GThreadPool *dns_pool = NULL;
