@@ -377,7 +377,7 @@ struct cc_t {
 static void adc_handle(net_t *net, char *msg, int _len);
 static void nmdc_handle(net_t *net, char *msg, int _len);
 
-// opened connections - ui_conn is responsible for the ordering
+// opened connections - uit_conn is responsible for the ordering
 GSequence *cc_list;
 
 
@@ -842,8 +842,7 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
   cc->isop = u->isop;
   cc->uid = u->uid;
 
-  if(ui_conn_tab)
-    ui_conn_listchange(cc->iter, UICONN_MOD);
+  uit_conn_listchange(cc->iter, UITCONN_MOD);
 
   if(cc->adc)
     memcpy(cc->cid, u->cid, 8);
@@ -1379,8 +1378,7 @@ cc_t *cc_create(hub_t *hub) {
   cc->hub = hub;
   cc->iter = g_sequence_append(cc_list, cc);
   cc->state = CCS_CONN;
-  if(ui_conn_tab)
-    ui_conn_listchange(cc->iter, UICONN_ADD);
+  uit_conn_listchange(cc->iter, UITCONN_ADD);
   return cc;
 }
 
@@ -1535,8 +1533,7 @@ void cc_free(cc_t *cc) {
     cc_disconnect(cc, TRUE);
   if(cc->timeout_src)
     g_source_remove(cc->timeout_src);
-  if(ui_conn_tab)
-    ui_conn_listchange(cc->iter, UICONN_DEL);
+  uit_conn_listchange(cc->iter, UITCONN_DEL);
   g_sequence_remove(cc->iter);
   net_unref(cc->net);
   if(cc->err)

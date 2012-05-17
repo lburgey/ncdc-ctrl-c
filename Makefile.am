@@ -54,6 +54,7 @@ ncdc_SOURCES=\
 	src/search.c\
 	src/tth.c\
 	src/ui.c\
+	src/uit_conn.c\
 	src/uit_main.c\
 	src/ui_util.c\
 	src/util.c\

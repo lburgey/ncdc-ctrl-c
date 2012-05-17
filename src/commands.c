@@ -663,12 +663,8 @@ static void c_version(char *args) {
 static void c_connections(char *args) {
   if(args[0])
     ui_m(NULL, 0, "This command does not accept any arguments.");
-  else {
-    if(ui_conn_tab)
-      ui_tab_cur = g_list_find(ui_tabs, ui_conn_tab);
-    else
-      ui_tab_open(ui_conn_create(), TRUE, NULL);
-  }
+  else
+    uit_conn_open(NULL, NULL);
 }
 
 
