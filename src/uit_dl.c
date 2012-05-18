@@ -270,7 +270,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     break;
 
   case INPT_CHAR('J'): // J - user down
-    if(tab->details && dltab->users) {
+    if(dltab->details && dltab->users) {
       dltab->users->sel = g_sequence_iter_next(dltab->users->sel);
       if(g_sequence_iter_is_end(dltab->users->sel))
         dltab->users->sel = g_sequence_iter_prev(dltab->users->sel);
