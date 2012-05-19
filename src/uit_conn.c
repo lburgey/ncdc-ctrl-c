@@ -257,7 +257,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
       ui_m(NULL, 0, "Nothing selected.");
     else if(!cc->hub || !cc->uid)
       ui_m(NULL, 0, "User or hub unknown.");
-    else if(!ui_hub_finduser(cc->hub->tab, cc->uid, NULL, FALSE))
+    else if(!uit_userlist_open(cc->hub, cc->uid, NULL, FALSE))
       ui_m(NULL, 0, "User has left the hub.");
     break;
   case INPT_CHAR('m'): // m - /msg user

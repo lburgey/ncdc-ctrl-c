@@ -484,7 +484,7 @@ static void c_userlist(char *args) {
   else if(tab->type != uit_hub)
     ui_m(NULL, 0, "This command can only be used on hub tabs.");
   else
-    ui_hub_userlist_open(tab);
+    uit_userlist_open(tab->hub, 0, NULL, FALSE);
 }
 
 
@@ -711,7 +711,7 @@ static void c_whois(char *args) {
     tab = tab->hub->tab;
   } else
     u = args;
-  if((u || uid) && !ui_hub_finduser(tab, uid, u, utf8))
+  if((u || uid) && !uit_userlist_open(tab->hub, uid, u, utf8))
     ui_m(NULL, 0, "No user found with that name.");
 }
 

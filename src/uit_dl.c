@@ -289,7 +289,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
       if(!u)
         ui_m(NULL, 0, "User is not online.");
       else
-        ui_hub_finduser(u->hub->tab, u->uid, NULL, FALSE);
+        uit_userlist_open(u->hub, u->uid, NULL, FALSE);
     }
     break;
   case INPT_CHAR('d'): // d - remove item
