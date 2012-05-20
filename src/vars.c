@@ -769,6 +769,54 @@ static char *p_tls_priority(const char *val, GError **err) {
 }
 
 
+// notify_bell
+
+#if INTERFACE
+#define VAR_NOTB_DISABLE 1
+#define VAR_NOTB_LOW     2
+#define VAR_NOTB_MED     4
+#define VAR_NOTB_HIGH    8
+#endif
+
+static flag_option_t var_notify_bell_ops[] = {
+  { VAR_NOTB_DISABLE, "disabled" },
+  { VAR_NOTB_LOW,     "low"      },
+  { VAR_NOTB_MED,     "medium"   },
+  { VAR_NOTB_HIGH,    "high"     },
+  { 0 }
+};
+
+static char *f_notify_bell(const char *val) {
+  return flags_fmt(var_notify_bell_ops, int_raw(val));
+}
+
+static char *p_notify_bell(const char *val, GError **err) {
+  int n = flags_raw(var_notify_bell_ops, FALSE, val, err);
+  return n ? g_strdup_printf("%d", n) : NULL;
+}
+
+static void su_notify_bell(const char *old, const char *val, char **sug) {
+  flags_sug(var_notify_bell_ops, val, sug);
+}
+
+static char *g_notify_bell(guint64 hub, const char *key) {
+  char *r = db_vars_get(hub, key);
+  if(!r)
+    return NULL;
+  static char num[2] = {};
+  num[0] = '0' + flags_raw(var_notify_bell_ops, FALSE, r, NULL);
+  return num;
+}
+
+static gboolean s_notify_bell(guint64 hub, const char *key, const char *val, GError **err) {
+  char *r = flags_fmt(var_notify_bell_ops, int_raw(val));
+  db_vars_set(hub, key, r[0] ? r : NULL);
+  g_free(r);
+  return TRUE;
+}
+
+
+
 
 
 // Exported data
@@ -850,6 +898,7 @@ struct var_t {
   V(minislots,        1,0, f_int,          p_int_ge1,       NULL,          NULL,         NULL,            "3")\
   V(minislot_size,    1,0, f_minislot_size,p_minislot_size, NULL,          NULL,         NULL,            "65536")\
   V(nick,             1,1, f_id,           p_nick,          su_old,        NULL,         s_nick,          i_nick())\
+  V(notify_bell,      1,0, f_notify_bell,  p_notify_bell,   su_notify_bell,g_notify_bell,s_notify_bell,   G_STRINGIFY(VAR_NOTB_DISABLE))\
   V(password,         0,1, f_password,     p_id,            NULL,          NULL,         s_password,      NULL)\
   V(pid,              0,0, NULL,           NULL,            NULL,          NULL,         NULL,            i_cid_pid())\
   V(reconnect_timeout,1,1, f_interval,     p_interval,      su_old,        NULL,         NULL,            "30")\

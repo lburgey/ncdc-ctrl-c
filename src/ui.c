@@ -159,7 +159,7 @@ static gboolean ui_m_mainthread(gpointer dat) {
     if((msg->flags & UIM_CHAT) && tab->type == uit_hub && uit_hub_checkhighlight(tab, msg->msg))
       prio = UIP_HIGH;
     ui_logwindow_add(tab->log, msg->msg);
-    tab->prio = MAX(tab->prio, MAX(prio, notify ? UIP_EMPTY : UIP_LOW));
+    ui_tab_incprio(tab, MAX(prio, notify ? UIP_EMPTY : UIP_LOW));
   }
 
 ui_m_cleanup:
@@ -231,6 +231,18 @@ void ui_tab_remove(ui_tab_t *tab) {
   }
   // And remove the tab
   ui_tabs = g_list_delete_link(ui_tabs, cur);
+}
+
+
+// Increases the priority of the given tab, if the current priority is lower.
+void ui_tab_incprio(ui_tab_t *tab, int prio) {
+  if(prio <= tab->prio)
+    return;
+  int set = var_get_int(0, VAR_notify_bell);
+  set = set == VAR_NOTB_LOW ? UIP_LOW : set == VAR_NOTB_MED ? UIP_MED : set == VAR_NOTB_HIGH ? UIP_HIGH : UIP_EMPTY;
+  if(set != UIP_EMPTY && prio >= set)
+    ui_beep = TRUE;
+  tab->prio = prio;
 }
 
 

@@ -232,7 +232,7 @@ static void loaddone(fl_list_t *fl, GError *err, void *dat) {
   tab_t *t = dat;
   t->err = err;
   t->loading = FALSE;
-  t->tab.prio = err ? UIP_HIGH : UIP_MED;
+  ui_tab_incprio((ui_tab_t *)t, err ? UIP_HIGH : UIP_MED);
   if(t->sel) {
     if(fl)
       dosel(t, fl, t->sel);
@@ -260,7 +260,7 @@ ui_tab_t *uit_fl_create(guint64 uid, const char *sel) {
   // get file list
   if(!uid) {
     fl_list_t *fl = fl_local_list ? fl_list_copy(fl_local_list) : NULL;
-    t->tab.prio = UIP_MED;
+    ui_tab_incprio((ui_tab_t *)t, UIP_MED);
     if(fl && fl->sub && sel)
       dosel(t, fl, sel);
     else if(fl && fl->sub)
@@ -274,7 +274,7 @@ ui_tab_t *uit_fl_create(guint64 uid, const char *sel) {
     fl_load_async(fn, loaddone, t);
     g_free(tmp);
     g_free(fn);
-    t->tab.prio = UIP_LOW;
+    ui_tab_incprio((ui_tab_t *)t, UIP_LOW);
     t->loading = TRUE;
     if(sel)
       t->sel = g_strdup(sel);

@@ -475,6 +475,18 @@ static const doc_set_t doc_sets[] = {
   " clients downloading from you have no way of knowing that you changed your"
   " nick, and therefore can't immediately continue to download from you."
 },
+{ "notify_bell", 0, "<disable|low|medium|high>",
+  "When enabled, ncdc will send a bell to your terminal when a tab indicates a"
+  " notification. The notification types are:\n\n"
+  "  high   - Messages directed to you (PM or highlight in hub chat),\n"
+  "  medium - Regular hub chat,\n"
+  "  low    - User joins/quits, new search results, etc.\n"
+  "\nHow a \"bell\" (or \"beep\" or \"alert\", whatever you prefer to call it)"
+  " manifests itself depends on your terminal. In some setups, this generates an"
+  " audible system bell. In other setups it can makes your terminal window flash"
+  " or do other annoying things to get your attention.  And in some setups it is"
+  " ignored completely."
+},
 { "password", 1, "<string>",
   "Sets your password for the current hub and enables auto-login on connect. If"
   " you just want to login to a hub without saving your password, use the"

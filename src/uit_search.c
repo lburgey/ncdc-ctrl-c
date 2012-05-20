@@ -118,7 +118,7 @@ static void result(search_r_t *r, void *dat) {
   tab_t *t = dat;
   g_sequence_insert_sorted(t->list->list, search_r_copy(r), sort_func, t);
   ui_listing_inserted(t->list);
-  t->tab.prio = MAX(t->tab.prio, UIP_LOW);
+  ui_tab_incprio((ui_tab_t *)t, UIP_LOW);
 }
 
 
