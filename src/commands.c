@@ -398,7 +398,27 @@ static void c_accept(char *args) {
 }
 
 
+static void c_open_list() {
+  char **hubs = db_vars_hubs();
+  if(!*hubs) {
+    ui_m(NULL, 0, "No hubs found in the configuration data.");
+  } else {
+    ui_m(NULL, 0, "");
+    char **hub;
+    for(hub=hubs; *hub; hub++)
+      ui_mf(NULL, 0, "%20s  %s", *hub, var_get(db_vars_hubid(*hub), VAR_hubaddr));
+    ui_m(NULL, 0, "");
+  }
+  g_strfreev(hubs);
+}
+
+
 static void c_open(char *args) {
+  if(!*args) {
+    c_open_list();
+    return;
+  }
+
   ui_tab_t *tab = ui_tab_cur->data;
   gboolean conn = TRUE;
   if(strncmp(args, "-n ", 3) == 0) {

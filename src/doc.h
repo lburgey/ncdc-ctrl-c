@@ -133,10 +133,11 @@ static const doc_cmd_t doc_cmds[] = {
 { "nick", "[<nick>]", "Alias for `/hset nick' on hub tabs, and `/set nick' otherwise.",
   NULL
 },
-{ "open", "[-n] <name> [<address>]", "Open a new hub tab and connect to the hub.",
-  "Opens a new tab to use for a hub. The name is a (short) personal name you"
-  " use to identify the hub, and will be used for storing hub-specific"
-  " configuration.\n\n"
+{ "open", "[-n] [<name>] [<address>]", "Open a new hub tab and connect to the hub.",
+  "Without arguments, list all hubs known by the current configuration."
+  " Otherwise, this opens a new tab to use for a hub. The name is a (short)"
+  " personal  name you use to identify the hub, and will be used for storing"
+  " hub-specific  configuration.\n\n"
   "If you have specified an address or have previously connected to a hub"
   " from a tab with the same name, /open will automatically connect to"
   " the hub. Use the `-n' flag to disable this behaviour.\n\n"
