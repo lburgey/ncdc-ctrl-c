@@ -86,7 +86,7 @@ static void setdir(tab_t *t, fl_list_t *fl, fl_list_t *sel) {
     if(sel == g_ptr_array_index(fl->sub, i))
       seli = iter;
   }
-  t->list = ui_listing_create(seq);
+  t->list = ui_listing_create(seq, NULL, NULL);
   if(seli)
     t->list->sel = seli;
 }
@@ -360,7 +360,7 @@ static void t_draw(ui_tab_t *tab) {
   else if(t->err)
     mvprintw(3, 2, "Error loading filelist: %s", t->err->message);
   else if(t->fl && t->fl->sub && t->fl->sub->len)
-    pos = ui_listing_draw(t->list, 2, winrows-4, draw_row, NULL);
+    pos = ui_listing_draw(t->list, 2, winrows-4, draw_row);
   else
     mvaddstr(3, 2, "Directory empty.");
 

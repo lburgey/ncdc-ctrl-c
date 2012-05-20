@@ -44,6 +44,7 @@ typedef struct tab_t {
   gboolean hide_mail : 1;
   gboolean hide_conn : 1;
   gboolean hide_ip : 1;
+  int cw_user, cw_share, cw_conn, cw_desc, cw_mail, cw_tag, cw_ip;
 } tab_t;
 
 
@@ -108,7 +109,7 @@ ui_tab_t *uit_userlist_create(hub_t *hub) {
   hub_user_t *u;
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&u))
     u->iter = g_sequence_insert_sorted(users, u, sort_func, t);
-  t->list = ui_listing_create(users);
+  t->list = ui_listing_create(users, NULL, t);
 
   return (ui_tab_t *)t;
 }
@@ -140,14 +141,9 @@ static char *t_title(ui_tab_t *tab) {
   } while(0)
 
 
-typedef struct draw_opts_t {
-  int cw_user, cw_share, cw_conn, cw_desc, cw_mail, cw_tag, cw_ip;
-} draw_opts_t;
-
-
 static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
   hub_user_t *user = g_sequence_get(iter);
-  draw_opts_t *o = dat;
+  tab_t *t = dat;
 
   char *tag = hub_user_tag(user);
   char *conn = hub_user_conn(user);
@@ -162,13 +158,13 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
     mvaddch(row, 2, 'O');
   if(!user->active)
     mvaddch(row, 3, 'P');
-  DRAW_COL(row, j, o->cw_user,  user->name);
-  DRAW_COL(row, j, o->cw_share, user->hasinfo ? str_formatsize(user->sharesize) : "");
-  DRAW_COL(row, j, o->cw_desc,  user->desc?user->desc:"");
-  DRAW_COL(row, j, o->cw_tag,   tag?tag:"");
-  DRAW_COL(row, j, o->cw_mail,  user->mail?user->mail:"");
-  DRAW_COL(row, j, o->cw_conn,  conn?conn:"");
-  DRAW_COL(row, j, o->cw_ip,    user->ip4?ip4_unpack(user->ip4):"");
+  DRAW_COL(row, j, t->cw_user,  user->name);
+  DRAW_COL(row, j, t->cw_share, user->hasinfo ? str_formatsize(user->sharesize) : "");
+  DRAW_COL(row, j, t->cw_desc,  user->desc?user->desc:"");
+  DRAW_COL(row, j, t->cw_tag,   tag?tag:"");
+  DRAW_COL(row, j, t->cw_mail,  user->mail?user->mail:"");
+  DRAW_COL(row, j, t->cw_conn,  conn?conn:"");
+  DRAW_COL(row, j, t->cw_ip,    user->ip4?ip4_unpack(user->ip4):"");
   g_free(conn);
   g_free(tag);
 
@@ -190,20 +186,20 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
  *
  * TODO: abstract this, so that the weights and such don't need repetition.
  */
-static void calc_widths(tab_t *t, draw_opts_t *o) {
+static void calc_widths(tab_t *t) {
   // available width
   int w = wincols-5;
 
   // share has a fixed size
-  o->cw_share = 12;
+  t->cw_share = 12;
   w -= 12;
 
   // IP column as well
-  o->cw_ip = t->hide_ip ? 0 : 16;
-  w -= o->cw_ip;
+  t->cw_ip = t->hide_ip ? 0 : 16;
+  w -= t->cw_ip;
 
   // User column has a minimum size (but may grow a bit later on, so will still be counted as a column)
-  o->cw_user = 15;
+  t->cw_user = 15;
   w -= 15;
 
   // Total weight (first one is for the user column)
@@ -225,44 +221,43 @@ static void calc_widths(tab_t *t, draw_opts_t *o) {
   // Get the column widths. Note the use of floor() here, this prevents that
   // the total width exceeds the available width. The remaining columns will be
   // given to the user column, which is always present anyway.
-  o->cw_conn = t->hide_conn ? 0 : floor(0.16*ws);
-  o->cw_desc = t->hide_desc ? 0 : floor(0.32*ws);
-  o->cw_mail = t->hide_mail ? 0 : floor(0.18*ws);
-  o->cw_tag  = t->hide_tag  ? 0 : floor(0.32*ws);
-  o->cw_user += w - o->cw_conn - o->cw_desc - o->cw_mail - o->cw_tag;
+  t->cw_conn = t->hide_conn ? 0 : floor(0.16*ws);
+  t->cw_desc = t->hide_desc ? 0 : floor(0.32*ws);
+  t->cw_mail = t->hide_mail ? 0 : floor(0.18*ws);
+  t->cw_tag  = t->hide_tag  ? 0 : floor(0.32*ws);
+  t->cw_user += w - t->cw_conn - t->cw_desc - t->cw_mail - t->cw_tag;
 }
 
 
 static void t_draw(ui_tab_t *tab) {
   tab_t *t = (tab_t *)tab;
 
-  draw_opts_t o;
-  calc_widths(t, &o);
+  calc_widths(t);
 
   // header
   int i = 5;
   attron(UIC(list_header));
   mvhline(1, 0, ' ', wincols);
   mvaddstr(1, 2, "OP");
-  DRAW_COL(1, i, o.cw_user,  "Username");
-  DRAW_COL(1, i, o.cw_share, "Share");
-  DRAW_COL(1, i, o.cw_desc,  "Description");
-  DRAW_COL(1, i, o.cw_tag,   "Tag");
-  DRAW_COL(1, i, o.cw_mail,  "E-Mail");
-  DRAW_COL(1, i, o.cw_conn,  "Connection");
-  DRAW_COL(1, i, o.cw_ip,    "IP");
+  DRAW_COL(1, i, t->cw_user,  "Username");
+  DRAW_COL(1, i, t->cw_share, "Share");
+  DRAW_COL(1, i, t->cw_desc,  "Description");
+  DRAW_COL(1, i, t->cw_tag,   "Tag");
+  DRAW_COL(1, i, t->cw_mail,  "E-Mail");
+  DRAW_COL(1, i, t->cw_conn,  "Connection");
+  DRAW_COL(1, i, t->cw_ip,    "IP");
   attroff(UIC(list_header));
 
   // rows
   int bottom = t->details ? winrows-7 : winrows-3;
-  int pos = ui_listing_draw(t->list, 2, bottom-1, draw_row, &o);
+  int pos = ui_listing_draw(t->list, 2, bottom-1, draw_row);
 
   // footer
   attron(UIC(separator));
   mvhline(bottom, 0, ' ', wincols);
   int count = g_hash_table_size(t->tab.hub->users);
   mvaddstr(bottom, 0, "Totals:");
-  mvprintw(bottom, o.cw_user+5, "%s%c   %d users",
+  mvprintw(bottom, t->cw_user+5, "%s%c   %d users",
     str_formatsize(t->tab.hub->sharesize), t->tab.hub->sharecount == count ? ' ' : '+', count);
   mvprintw(bottom, wincols-6, "%3d%%", pos);
   attroff(UIC(separator));
@@ -417,7 +412,7 @@ void uit_userlist_disconnect(ui_tab_t *tab) {
 
   g_sequence_free(t->list->list);
   ui_listing_free(t->list);
-  t->list = ui_listing_create(g_sequence_new(NULL));
+  t->list = ui_listing_create(g_sequence_new(NULL), NULL, t);
 }
 
 

@@ -87,7 +87,7 @@ static void setusers(dl_t *dl) {
   int i;
   for(i=0; i<dl->u->len; i++)
     g_sequence_insert_sorted(l, g_sequence_get(g_ptr_array_index(dl->u, i)), dud_sort_func, NULL);
-  dltab->users = ui_listing_create(l);
+  dltab->users = ui_listing_create(l, NULL, NULL);
   dltab->cur = dl;
 }
 
@@ -106,7 +106,7 @@ ui_tab_t *uit_dl_create() {
   dl_t *dl;
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&dl))
     dl->iter = g_sequence_insert_sorted(l, dl, sort_func, NULL);
-  dltab->list = ui_listing_create(l);
+  dltab->list = ui_listing_create(l, NULL, NULL);
 
   return (ui_tab_t *)dltab;
 }
@@ -213,7 +213,7 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = dltab->details ? winrows-14 : winrows-4;
-  int pos = ui_listing_draw(dltab->list, 2, bottom-1, draw_row, NULL);
+  int pos = ui_listing_draw(dltab->list, 2, bottom-1, draw_row);
 
   dl_t *sel = g_sequence_iter_is_end(dltab->list->sel) ? NULL : g_sequence_get(dltab->list->sel);
 
@@ -244,7 +244,7 @@ static void t_draw(ui_tab_t *tab) {
     if(!dltab->users || !g_sequence_get_length(dltab->users->list))
       mvaddstr(bottom+3, 0, "  No users for this download.");
     else
-      ui_listing_draw(dltab->users, bottom+2, winrows-3, dud_draw_row, NULL);
+      ui_listing_draw(dltab->users, bottom+2, winrows-3, dud_draw_row);
   }
 }
 

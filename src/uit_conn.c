@@ -34,7 +34,12 @@ ui_tab_type_t uit_conn[1];
 typedef struct tab_t {
   ui_tab_t tab;
   ui_listing_t *list;
-  gboolean details;
+  gboolean details : 1;
+  gboolean s_conn : 1;
+  gboolean s_idle : 1;
+  gboolean s_upload : 1;
+  gboolean s_download : 1;
+  gboolean s_discon : 1;
 } tab_t;
 
 
@@ -57,16 +62,28 @@ static gint sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
 }
 
 
+static gboolean skip_func(ui_listing_t *ul, GSequenceIter *iter, void *dat) {
+  tab_t *t = dat;
+  cc_t *cc = g_sequence_get(iter);
+
+  return cc->state == CCS_CONN || cc->state == CCS_HANDSHAKE ? !t->s_conn :
+    cc->state == CCS_DISCONN  ? !t->s_discon :
+        cc->state == CCS_IDLE ? !t->s_idle :
+                       cc->dl ? !t->s_download : !t->s_upload;
+}
+
+
 ui_tab_t *uit_conn_create() {
   g_return_val_if_fail(!conntab, NULL);
 
-  tab_t *tab = conntab = g_new0(tab_t, 1);
-  tab->tab.name = "connections";
-  tab->tab.type = uit_conn;
+  tab_t *t = conntab = g_new0(tab_t, 1);
+  t->tab.name = "connections";
+  t->tab.type = uit_conn;
+  t->s_conn = t->s_idle = t->s_upload = t->s_download = t->s_discon = TRUE;
   // sort the connection list
   g_sequence_sort(cc_list, sort_func, NULL);
-  tab->list = ui_listing_create(cc_list);
-  return (ui_tab_t *)tab;
+  t->list = ui_listing_create(cc_list, skip_func, t);
+  return (ui_tab_t *)t;
 }
 
 
@@ -213,6 +230,12 @@ static void t_draw_details(tab_t *t, int l) {
 static void t_draw(ui_tab_t *tab) {
   tab_t *t = (tab_t *)tab;
 
+  // The skip function itself doesn't really change that often (only when user
+  // modifies the filters). However, the state of the connections does change a
+  // lot, and we're not notified on that. Luckily, _skipchanged() is fast so we
+  // can call it on each redraw.
+  ui_listing_skipchanged(t->list);
+
   attron(UIC(list_header));
   mvhline(1, 0, ' ', wincols);
   mvaddstr(1, 2,  "St Username");
@@ -223,12 +246,27 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = t->details ? winrows-11 : winrows-3;
-  int pos = ui_listing_draw(t->list, 2, bottom-1, t_draw_row, NULL);
+  ui_listing_draw(t->list, 2, bottom-1, t_draw_row);
 
   // footer
   attron(UIC(separator));
   mvhline(bottom, 0, ' ', wincols);
-  mvprintw(bottom, wincols-24, "%3d connections    %3d%%", g_sequence_iter_get_position(g_sequence_get_end_iter(t->list->list)), pos);
+
+#define S(name, str)\
+  if(t->s_##name)\
+    attron(A_BOLD);\
+  addstr(str);\
+  if(t->s_##name)\
+    attroff(A_BOLD);\
+  addch(' ');
+  S(conn, "1:Connecting");
+  S(idle, "2:Idle");
+  S(upload, "3:Upload");
+  S(download, "4:Download");
+  S(discon, "5:Disconnected");
+#undef S
+
+  mvprintw(bottom, wincols-18, "%3d connections ", g_sequence_iter_get_position(g_sequence_get_end_iter(t->list->list)));
   attroff(UIC(separator));
 
   // detailed info
@@ -245,13 +283,16 @@ static void t_key(ui_tab_t *tab, guint64 key) {
   cc_t *cc = g_sequence_iter_is_end(t->list->sel) ? NULL : g_sequence_get(t->list->sel);
 
   switch(key) {
+
   case INPT_CHAR('?'):
     uit_main_keys("connections");
     break;
+
   case INPT_CTRL('j'): // newline
   case INPT_CHAR('i'): // i - toggle detailed info
     t->details = !t->details;
     break;
+
   case INPT_CHAR('f'): // f - find user
     if(!cc)
       ui_m(NULL, 0, "Nothing selected.");
@@ -260,6 +301,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     else if(!uit_userlist_open(cc->hub, cc->uid, NULL, FALSE))
       ui_m(NULL, 0, "User has left the hub.");
     break;
+
   case INPT_CHAR('m'): // m - /msg user
     if(!cc)
       ui_m(NULL, 0, "Nothing selected.");
@@ -268,6 +310,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     else if(!uit_msg_open(cc->uid, tab))
       ui_m(NULL, 0, "User has left the hub.");
     break;
+
   case INPT_CHAR('d'): // d - disconnect
     if(!cc)
       ui_m(NULL, 0, "Nothing selected.");
@@ -276,6 +319,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     else
       cc_disconnect(cc, FALSE);
     break;
+
   case INPT_CHAR('q'): // q - find queue item
     if(!cc)
       ui_m(NULL, 0, "Nothing selected.");
@@ -289,6 +333,17 @@ static void t_key(ui_tab_t *tab, guint64 key) {
         uit_dl_open(dl, cc->uid, tab);
     }
     break;
+
+#define S(num, name)\
+  case INPT_CHAR('0'+num):\
+    t->s_##name = !t->s_##name;\
+    break;
+  S(1, conn);
+  S(2, idle);
+  S(3, upload);
+  S(4, download);
+  S(5, discon);
+#undef S
   }
 }
 
