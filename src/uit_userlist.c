@@ -375,14 +375,8 @@ static void t_key(ui_tab_t *tab, guint64 key) {
   case INPT_CHAR('m'): // m (/msg user)
     if(!sel)
       ui_m(NULL, 0, "No user selected.");
-    else {
-      ui_tab_t *mt = g_hash_table_lookup(ui_msg_tabs, &sel->uid);
-      if(!mt) {
-        mt = ui_msg_create(t->tab.hub, sel);
-        ui_tab_open(mt, TRUE, tab);
-      } else
-        ui_tab_cur = g_list_find(ui_tabs, mt);
-    }
+    else
+      uit_msg_open(sel->uid, tab);
     break;
   case INPT_CHAR('g'): // g (grant slot)
     if(!sel)

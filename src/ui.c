@@ -51,14 +51,11 @@ struct ui_tab_t {
   ui_tab_t *parent;       // the tab that opened this tab (may be NULL or dangling)
   ui_logwindow_t *log;    // HUB, MSG
   hub_t *hub;             // HUB, USERLIST, MSG - TODO: Remove this somehow?
-  guint64 uid;            // MSG
   // HUB
   gboolean hub_joincomplete : 1;
   GRegex *hub_highlight;
   char *hub_nick;
   ui_tab_t *userlist_tab;
-  // MSG
-  int msg_replyto;
 };
 
 #endif
@@ -71,104 +68,6 @@ int wincols;
 int winrows;
 
 gboolean ui_beep = FALSE; // set to true anywhere to send a beep
-
-// uid -> tab lookup table for MSG tabs.
-GHashTable *ui_msg_tabs = NULL;
-
-
-
-
-// User message tab
-
-ui_tab_type_t uit_msg[1];
-
-ui_tab_t *ui_msg_create(hub_t *hub, hub_user_t *user) {
-  g_return_val_if_fail(!g_hash_table_lookup(ui_msg_tabs, &user->uid), NULL);
-
-  ui_tab_t *tab = g_new0(ui_tab_t, 1);
-  tab->type = uit_msg;
-  tab->hub = hub;
-  tab->uid = user->uid;
-  tab->name = g_strdup_printf("~%s", user->name);
-  tab->log = ui_logwindow_create(tab->name, var_get_int(0, VAR_backlog));
-  tab->log->handle = tab;
-  tab->log->checkchat = ui_hub_log_checkchat;
-
-  ui_mf(tab, 0, "Chatting with %s on %s.", user->name, hub->tab->name);
-  g_hash_table_insert(ui_msg_tabs, &tab->uid, tab);
-
-  return tab;
-}
-
-
-static void ui_msg_close(ui_tab_t *tab) {
-  g_hash_table_remove(ui_msg_tabs, &tab->uid);
-  ui_tab_remove(tab);
-  ui_logwindow_free(tab->log);
-  g_free(tab->name);
-  g_free(tab);
-}
-
-
-// *u may be NULL if change = QUIT. A QUIT is always done before the user is
-// removed from the hub_uids table.
-static void ui_msg_userchange(ui_tab_t *tab, int change, hub_user_t *u) {
-  switch(change) {
-  case UIHUB_UC_JOIN:
-    ui_mf(tab, 0, "--> %s has joined.", u->name);
-    break;
-  case UIHUB_UC_QUIT:
-    if(g_hash_table_lookup(hub_uids, &tab->uid))
-      ui_mf(tab, 0, "--< %s has quit.", tab->name+1);
-    break;
-  case UIHUB_UC_NFO:
-    // Detect nick changes.
-    // Note: the name of the log file remains the same even after a nick
-    // change. This probably isn't a major problem, though. Nick changes are
-    // not very common and are only detected on ADC hubs.
-    if(strcmp(u->name, tab->name+1) != 0) {
-      ui_mf(tab, 0, "%s is now known as %s.", tab->name+1, u->name);
-      g_free(tab->name);
-      tab->name = g_strdup_printf("~%s", u->name);
-    }
-    break;
-  }
-}
-
-
-static void ui_msg_draw(ui_tab_t *tab) {
-  ui_logwindow_draw(tab->log, 1, 0, winrows-4, wincols);
-
-  mvaddstr(winrows-3, 0, tab->name);
-  addstr("> ");
-  int pos = str_columns(tab->name)+2;
-  ui_textinput_draw(ui_global_textinput, winrows-3, pos, wincols-pos);
-}
-
-
-static char *ui_msg_title(ui_tab_t *tab) {
-  return g_strdup_printf("Chatting with %s on %s%s.",
-    tab->name+1, tab->hub->tab->name, g_hash_table_lookup(hub_uids, &tab->uid) ? "" : " (offline)");
-}
-
-
-static void ui_msg_key(ui_tab_t *tab, guint64 key) {
-  char *str = NULL;
-  if(!ui_logwindow_key(tab->log, key, winrows) &&
-      ui_textinput_key(ui_global_textinput, key, &str) && str) {
-    cmd_handle(str);
-    g_free(str);
-  }
-}
-
-
-static void ui_msg_msg(ui_tab_t *tab, const char *msg, int replyto) {
-  ui_m(tab, UIP_HIGH, msg);
-  tab->msg_replyto = replyto;
-}
-
-
-ui_tab_type_t uit_msg[1] = { { ui_msg_draw, ui_msg_title, ui_msg_key, ui_msg_close } };
 
 
 
@@ -186,7 +85,6 @@ ui_tab_type_t uit_hub[1];
 #endif
 
 
-// Also used for ui_msg_*
 int ui_hub_log_checkchat(void *dat, char *nick, char *msg) {
   ui_tab_t *tab = dat;
   tab = tab->hub->tab;
@@ -241,13 +139,13 @@ static void ui_hub_close(ui_tab_t *tab) {
   // close the userlist tab
   if(tab->userlist_tab)
     tab->userlist_tab->type->close(tab->userlist_tab);
-  // close msg and search tabs
+  // close msg tabs
   GList *n;
   for(n=ui_tabs; n;) {
     ui_tab_t *t = n->data;
     n = n->next;
     if(t->type == uit_msg && t->hub == tab->hub)
-      ui_msg_close(t);
+      t->type->close(t);
   }
   // remove ourself from the list
   ui_tab_remove(tab);
@@ -322,10 +220,8 @@ void ui_hub_userchange(ui_tab_t *tab, int change, hub_user_t *user) {
   if(tab->userlist_tab)
     uit_userlist_userchange(tab->userlist_tab, change, user);
 
-  // notify the MSG tab, if we have one open for this user
-  ui_tab_t *mt = g_hash_table_lookup(ui_msg_tabs, &user->uid);
-  if(mt)
-    ui_msg_userchange(mt, change, user);
+  // notify any msg tab
+  uit_msg_userchange(user, change);
 
   // display the join/quit, when requested
   gboolean log = var_get_bool(tab->hub->id, VAR_show_joinquit);
@@ -346,22 +242,12 @@ void ui_hub_disconnect(ui_tab_t *tab) {
   if(tab->userlist_tab)
     uit_userlist_disconnect(tab->userlist_tab);
   // msg tabs
-  GList *n = ui_tabs;
-  for(; n; n=n->next) {
-    ui_tab_t *t = n->data;
-    if(t->type == uit_msg && t->hub == tab->hub)
-      ui_msg_userchange(t, UIHUB_UC_QUIT, NULL);
-  }
+  uit_msg_disconnect(tab->hub);
 }
 
 
 void ui_hub_msg(ui_tab_t *tab, hub_user_t *user, const char *msg, int replyto) {
-  ui_tab_t *t = g_hash_table_lookup(ui_msg_tabs, &user->uid);
-  if(!t) {
-    t = ui_msg_create(tab->hub, user);
-    ui_tab_open(t, FALSE, tab);
-  }
-  ui_msg_msg(t, msg, replyto);
+  uit_msg_msg(user, msg, replyto);
 }
 
 
@@ -524,8 +410,6 @@ void ui_tab_remove(ui_tab_t *tab) {
 
 
 void ui_init() {
-  ui_msg_tabs = g_hash_table_new(g_int64_hash, g_int64_equal);
-
   // global textinput field
   ui_global_textinput = ui_textinput_create(TRUE, cmd_suggest);
 

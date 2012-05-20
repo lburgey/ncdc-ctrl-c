@@ -90,11 +90,12 @@ static void sayme(char *args, gboolean me) {
   else if(tab->type == uit_hub)
     hub_say(tab->hub, args, me);
   else {
-    hub_user_t *u = g_hash_table_lookup(hub_uids, &tab->uid);
+    guint64 uid = uit_msg_uid(tab);
+    hub_user_t *u = g_hash_table_lookup(hub_uids, &uid);
     if(!u)
       ui_m(NULL, 0, "User is not online.");
     else
-      hub_msg(tab->hub, u, args, me, tab->msg_replyto);
+      hub_msg(tab->hub, u, args, me, uit_msg_replyto(tab));
   }
 }
 
@@ -128,11 +129,7 @@ static void c_msg(char *args) {
       ui_m(NULL, 0, "No user found with that name. Note that usernames are case-sensitive.");
     else {
       // get or open tab and make sure it's selected
-      ui_tab_t *t = g_hash_table_lookup(ui_msg_tabs, &u->uid);
-      if(!t)
-        ui_tab_open(ui_msg_create(tab->hub, u), TRUE, tab);
-      else
-        ui_tab_cur = g_list_find(ui_tabs, t);
+      uit_msg_open(u->uid, tab);
       // if we need to send something, do so
       if(sep && *sep)
         hub_msg(tab->hub, u, sep, FALSE, 0);
@@ -707,7 +704,7 @@ static void c_whois(char *args) {
     if(args[0])
       u = args;
     else
-      uid = tab->uid;
+      uid = uit_msg_uid(tab);
     tab = tab->hub->tab;
   } else
     u = args;
@@ -748,7 +745,8 @@ static void c_grant(char *args) {
     if(!u)
       ui_m(NULL, 0, "No user found with that name.");
   } else {
-    u = g_hash_table_lookup(hub_uids, &tab->uid);
+    guint64 uid = uit_msg_uid(tab);
+    u = g_hash_table_lookup(hub_uids, &uid);
     if(!u)
       ui_m(NULL, 0, "User not online.");
   }
@@ -767,7 +765,7 @@ static void c_ungrant(char *args) {
     listgrants();
     return;
   } else if(!*args && tab->type == uit_msg)
-    uid = tab->uid;
+    uid = uit_msg_uid(tab);
   else {
     guint64 *key;
     char id[17] = {};

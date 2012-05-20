@@ -265,20 +265,8 @@ static void t_key(ui_tab_t *tab, guint64 key) {
       ui_m(NULL, 0, "Nothing selected.");
     else if(!cc->hub || !cc->uid)
       ui_m(NULL, 0, "User or hub unknown.");
-    else {
-      ui_tab_t *t = g_hash_table_lookup(ui_msg_tabs, &cc->uid);
-      if(t) {
-        ui_tab_cur = g_list_find(ui_tabs, t);
-      } else {
-        hub_user_t *u = g_hash_table_lookup(hub_uids, &cc->uid);
-        if(!u) {
-          ui_m(NULL, 0, "User has left the hub.");
-        } else {
-          t = ui_msg_create(cc->hub, u);
-          ui_tab_open(t, TRUE, t);
-        }
-      }
-    }
+    else if(!uit_msg_open(cc->uid, tab))
+      ui_m(NULL, 0, "User has left the hub.");
     break;
   case INPT_CHAR('d'): // d - disconnect
     if(!cc)
