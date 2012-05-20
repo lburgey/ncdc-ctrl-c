@@ -266,7 +266,7 @@ static void open_autoconnect() {
   // TODO: make sure the tabs are opened in the same order as they were in the last run?
   for(hub=hubs; *hub; hub++)
     if(var_get_bool(db_vars_hubid(*hub), VAR_autoconnect))
-      ui_tab_open(ui_hub_create(*hub+1, TRUE), FALSE, NULL);
+      ui_tab_open(uit_hub_create(*hub+1, TRUE), FALSE, NULL);
   listen_refresh();
   g_strfreev(hubs);
 }

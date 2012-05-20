@@ -51,11 +51,6 @@ struct ui_tab_t {
   ui_tab_t *parent;       // the tab that opened this tab (may be NULL or dangling)
   ui_logwindow_t *log;    // HUB, MSG
   hub_t *hub;             // HUB, USERLIST, MSG - TODO: Remove this somehow?
-  // HUB
-  gboolean hub_joincomplete : 1;
-  GRegex *hub_highlight;
-  char *hub_nick;
-  ui_tab_t *userlist_tab;
 };
 
 #endif
@@ -68,193 +63,6 @@ int wincols;
 int winrows;
 
 gboolean ui_beep = FALSE; // set to true anywhere to send a beep
-
-
-
-
-
-// Hub tab
-
-ui_tab_type_t uit_hub[1];
-
-#if INTERFACE
-// change types for ui_hub_userchange()
-#define UIHUB_UC_JOIN 0
-#define UIHUB_UC_QUIT 1
-#define UIHUB_UC_NFO 2
-#endif
-
-
-int ui_hub_log_checkchat(void *dat, char *nick, char *msg) {
-  ui_tab_t *tab = dat;
-  tab = tab->hub->tab;
-  if(!tab->hub_nick)
-    return 0;
-
-  if(strcmp(nick, tab->hub_nick) == 0)
-    return 2;
-
-  if(!tab->hub_highlight)
-    return 0;
-
-  return g_regex_match(tab->hub_highlight, msg, 0, NULL) ? 1 : 0;
-}
-
-
-// Called by hub.c when hub->nick is set or changed. (Not called when hub->nick is reset to NULL)
-// A local hub_nick field is kept in the hub tab struct to still provide
-// highlighting for it after disconnecting from the hub.
-void ui_hub_setnick(ui_tab_t *tab) {
-  if(!tab->hub->nick)
-    return;
-  g_free(tab->hub_nick);
-  if(tab->hub_highlight)
-    g_regex_unref(tab->hub_highlight);
-  tab->hub_nick = g_strdup(tab->hub->nick);
-  char *name = g_regex_escape_string(tab->hub->nick, -1);
-  char *pattern = g_strdup_printf("\\b%s\\b", name);
-  tab->hub_highlight = g_regex_new(pattern, G_REGEX_CASELESS|G_REGEX_OPTIMIZE, 0, NULL);
-  g_free(name);
-  g_free(pattern);
-}
-
-
-ui_tab_t *ui_hub_create(const char *name, gboolean conn) {
-  ui_tab_t *tab = g_new0(ui_tab_t, 1);
-  // NOTE: tab name is also used as configuration group
-  tab->name = g_strdup_printf("#%s", name);
-  tab->type = uit_hub;
-  tab->hub = hub_create(tab);
-  tab->log = ui_logwindow_create(tab->name, var_get_int(tab->hub->id, VAR_backlog));
-  tab->log->handle = tab;
-  tab->log->checkchat = ui_hub_log_checkchat;
-  // already used this name before? open connection again
-  if(conn && var_get(tab->hub->id, VAR_hubaddr))
-    hub_connect(tab->hub);
-  return tab;
-}
-
-
-static void ui_hub_close(ui_tab_t *tab) {
-  // close the userlist tab
-  if(tab->userlist_tab)
-    tab->userlist_tab->type->close(tab->userlist_tab);
-  // close msg tabs
-  GList *n;
-  for(n=ui_tabs; n;) {
-    ui_tab_t *t = n->data;
-    n = n->next;
-    if(t->type == uit_msg && t->hub == tab->hub)
-      t->type->close(t);
-  }
-  // remove ourself from the list
-  ui_tab_remove(tab);
-
-  hub_free(tab->hub);
-  ui_logwindow_free(tab->log);
-  g_free(tab->hub_nick);
-  if(tab->hub_highlight)
-    g_regex_unref(tab->hub_highlight);
-  g_free(tab->name);
-  g_free(tab);
-}
-
-
-static void ui_hub_draw(ui_tab_t *tab) {
-  ui_logwindow_draw(tab->log, 1, 0, winrows-5, wincols);
-
-  attron(UIC(separator));
-  mvhline(winrows-4, 0, ' ', wincols);
-  if(net_is_connecting(tab->hub->net))
-    mvaddstr(winrows-4, wincols-15, "Connecting...");
-  else if(!net_is_connected(tab->hub->net))
-    mvaddstr(winrows-4, wincols-16, "Not connected.");
-  else if(!tab->hub->nick_valid)
-    mvaddstr(winrows-4, wincols-15, "Logging in...");
-  else {
-    char *addr = var_get(tab->hub->id, VAR_hubaddr);
-    char *conn = !listen_hub_active(tab->hub->id) ? g_strdup("[passive]")
-      : g_strdup_printf("[active: %s]", ip4_unpack(hub_ip4(tab->hub)));
-    char *tmp = g_strdup_printf("%s @ %s%s %s", tab->hub->nick, addr,
-      tab->hub->isop ? " (operator)" : tab->hub->isreg ? " (registered)" : "", conn);
-    g_free(conn);
-    mvaddstr(winrows-4, 0, tmp);
-    g_free(tmp);
-    int count = g_hash_table_size(tab->hub->users);
-    tmp = g_strdup_printf("%6d users  %10s%c", count,
-      str_formatsize(tab->hub->sharesize), tab->hub->sharecount == count ? ' ' : '+');
-    mvaddstr(winrows-4, wincols-26, tmp);
-    g_free(tmp);
-  }
-  attroff(UIC(separator));
-
-  mvaddstr(winrows-3, 0, tab->name);
-  addstr("> ");
-  int pos = str_columns(tab->name)+2;
-  ui_textinput_draw(ui_global_textinput, winrows-3, pos, wincols-pos);
-}
-
-
-static char *ui_hub_title(ui_tab_t *tab) {
-  return g_strdup_printf("%s: %s", tab->name,
-    net_is_connecting(tab->hub->net) ? "Connecting..." :
-    !net_is_connected(tab->hub->net) ? "Not connected." :
-    !tab->hub->nick_valid            ? "Logging in..." :
-    tab->hub->hubname                ? tab->hub->hubname : "Connected.");
-}
-
-
-static void ui_hub_key(ui_tab_t *tab, guint64 key) {
-  char *str = NULL;
-  if(!ui_logwindow_key(tab->log, key, winrows) &&
-      ui_textinput_key(ui_global_textinput, key, &str) && str) {
-    cmd_handle(str);
-    g_free(str);
-  } else if(key == INPT_ALT('u'))
-    uit_userlist_open(tab->hub, 0, NULL, FALSE);
-}
-
-
-void ui_hub_userchange(ui_tab_t *tab, int change, hub_user_t *user) {
-  // notify the userlist, when it is open
-  if(tab->userlist_tab)
-    uit_userlist_userchange(tab->userlist_tab, change, user);
-
-  // notify any msg tab
-  uit_msg_userchange(user, change);
-
-  // display the join/quit, when requested
-  gboolean log = var_get_bool(tab->hub->id, VAR_show_joinquit);
-  if(change == UIHUB_UC_NFO && !user->isjoined) {
-    user->isjoined = TRUE;
-    if(log && tab->hub->joincomplete && (!tab->hub->nick_valid
-        || (tab->hub->adc ? (tab->hub->sid != user->sid) : (strcmp(tab->hub->nick_hub, user->name_hub) != 0))))
-      ui_mf(tab, 0, "--> %s has joined.", user->name);
-  } else if(change == UIHUB_UC_QUIT && log)
-    ui_mf(tab, 0, "--< %s has quit.", user->name);
-}
-
-
-// Called when the hub is disconnected. Notifies any msg tabs and the userlist
-// tab, if there's one open.
-void ui_hub_disconnect(ui_tab_t *tab) {
-  // userlist
-  if(tab->userlist_tab)
-    uit_userlist_disconnect(tab->userlist_tab);
-  // msg tabs
-  uit_msg_disconnect(tab->hub);
-}
-
-
-void ui_hub_msg(ui_tab_t *tab, hub_user_t *user, const char *msg, int replyto) {
-  uit_msg_msg(user, msg, replyto);
-}
-
-
-ui_tab_type_t uit_hub[1] = { { ui_hub_draw, ui_hub_title, ui_hub_key, ui_hub_close } };
-
-
-
 
 
 
@@ -332,8 +140,7 @@ static gboolean ui_m_mainthread(gpointer dat) {
     ui_m_updated = TRUE;
   }
   if(tab->log && msg->msg && !(msg->flags & (UIM_NOLOG & ~UIM_NOTIFY))) {
-    if((msg->flags & UIM_CHAT) && tab->type == uit_hub && tab->hub_highlight
-        && g_regex_match(tab->hub_highlight, msg->msg, 0, NULL))
+    if((msg->flags & UIM_CHAT) && tab->type == uit_hub && uit_hub_checkhighlight(tab, msg->msg))
       prio = UIP_HIGH;
     ui_logwindow_add(tab->log, msg->msg);
     tab->prio = MAX(tab->prio, MAX(prio, notify ? UIP_EMPTY : UIP_LOW));

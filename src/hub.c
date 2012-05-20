@@ -37,7 +37,7 @@
 struct hub_user_t {
   gboolean hasinfo : 1;
   gboolean isop : 1;
-  gboolean isjoined : 1; // managed by ui_hub_userchange()
+  gboolean isjoined : 1; // managed by uit_hub_userchange()
   gboolean active : 1;
   gboolean hasudp4 : 1;
   gboolean hastls : 1;   // NMDC: 0x10 flag in $MyINFO; ADC: SU has ADCS or ADC0
@@ -172,7 +172,7 @@ static hub_user_t *user_add(hub_t *hub, const char *name, const char *cid) {
   else
     g_hash_table_insert(hub_uids, &(u->uid), u);
   // notify the UI
-  ui_hub_userchange(hub->tab, UIHUB_UC_JOIN, u);
+  uit_hub_userchange(hub->tab, UIHUB_UC_JOIN, u);
   // notify the dl manager
   if(hub->nick_valid)
     dl_user_join(u->uid);
@@ -352,7 +352,7 @@ static void user_nmdc_nfo(hub_t *hub, hub_user_t *u, char *str) {
   u->hasinfo = TRUE;
   u->active = active;
   u->hastls = (flags & 0x10) ? TRUE : FALSE;
-  ui_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
+  uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
 }
 
 #undef cleanspace
@@ -444,7 +444,7 @@ static void user_adc_nfo(hub_t *hub, hub_user_t *u, adc_cmd_t *cmd) {
     }
   }
 
-  ui_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
+  uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
 }
 
 #undef P
@@ -798,7 +798,7 @@ void hub_msg(hub_t *hub, hub_user_t *user, const char *str, gboolean me, int des
     g_free(msg);
     // emulate protocol echo
     msg = g_strdup_printf(me ? "<%s> /me %s" : "<%s> %s", hub->nick, str);
-    ui_hub_msg(hub->tab, user, msg, dest);
+    uit_hub_msg(hub->tab, user, msg, dest);
     g_free(msg);
   }
 }
@@ -1023,7 +1023,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       hub->sid = ADC_DFCC(cmd.argv[0]);
       hub->state = ADC_S_IDENTIFY;
       hub->nick = g_strdup(var_get(hub->id, VAR_nick));
-      ui_hub_setnick(hub->tab);
+      uit_hub_setnick(hub->tab);
       hub_send_nfo(hub);
     }
     break;
@@ -1102,7 +1102,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
           ui_m(hub->tab, UIP_MED, ms);
         hub_disconnect(hub, rd || (tl && strcmp(tl, "-1") == 0) ? FALSE : TRUE);
       } else if(u) { // TODO: handle DI, and perhaps do something with MS
-        ui_hub_userchange(hub->tab, UIHUB_UC_QUIT, u);
+        uit_hub_userchange(hub->tab, UIHUB_UC_QUIT, u);
         hub->sharecount--;
         hub->sharesize -= u->sharesize;
         g_hash_table_remove(hub->users, u->name);
@@ -1208,7 +1208,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       else {
         char *m = g_strdup_printf(me ? "** %s %s" : "<%s> %s", cmd.type == 'I' ? "hub" : u->name, cmd.argv[0]);
         if(cmd.type == 'E' || cmd.type == 'D' || cmd.type == 'F')
-          ui_hub_msg(hub->tab, cmd.source == hub->sid ? d : u, m,
+          uit_hub_msg(hub->tab, cmd.source == hub->sid ? d : u, m,
             pm && strlen(pm) == 4 && ADC_DFCC(pm) != cmd.source ? ADC_DFCC(pm) : 0);
         else
           ui_m(hub->tab, UIM_CHAT|UIP_MED, m);
@@ -1376,7 +1376,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     net_writef(hub->net, "$Key %s|", key);
     hub->nick = g_strdup(var_get(hub->id, VAR_nick));
     hub->nick_hub = charset_convert(hub, FALSE, hub->nick);
-    ui_hub_setnick(hub->tab);
+    uit_hub_setnick(hub->tab);
     net_writef(hub->net, "$ValidateNick %s|", hub->nick_hub);
     g_free(key);
     g_free(lock);
@@ -1424,7 +1424,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     char *nick = g_match_info_fetch(nfo, 1);
     hub_user_t *u = g_hash_table_lookup(hub->users, nick);
     if(u) {
-      ui_hub_userchange(hub->tab, UIHUB_UC_QUIT, u);
+      uit_hub_userchange(hub->tab, UIHUB_UC_QUIT, u);
       if(u->hasinfo) {
         hub->sharecount--;
         hub->sharesize -= u->sharesize;
@@ -1467,7 +1467,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       hub_user_t *u = user_add(hub, *cur, NULL);
       if(!u->isop) {
         u->isop = TRUE;
-        ui_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
+        uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
       } else
         u->isop = TRUE;
       if(strcmp(hub->nick_hub, *cur) == 0)
@@ -1493,7 +1493,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       guint32 new = ip4_pack(sep+1);
       if(new != u->ip4) {
         u->ip4 = new;
-        ui_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
+        uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
       }
       // Our own IP, configure active mode
       if(strcmp(*cur, hub->nick_hub) == 0)
@@ -1543,7 +1543,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       g_message("[hub: %s] Got a $To from `%s', who is not on this hub!", hub->tab->name, from);
     else {
       char *msge = nmdc_unescape_and_decode(hub, msg);
-      ui_hub_msg(hub->tab, u, msge, 0);
+      uit_hub_msg(hub->tab, u, msge, 0);
       g_free(msge);
     }
     g_free(from);
@@ -1847,7 +1847,7 @@ void hub_disconnect(hub_t *hub, gboolean recon) {
     g_slice_free1(32, hub->kp);
     hub->kp = NULL;
   }
-  ui_hub_disconnect(hub->tab);
+  uit_hub_disconnect(hub->tab);
   g_hash_table_remove_all(hub->sessions);
   g_hash_table_remove_all(hub->users);
   g_free(hub->nick);     hub->nick = NULL;

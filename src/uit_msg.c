@@ -45,8 +45,8 @@ static GHashTable *msg_tabs = NULL;
 
 
 static int log_checkchat(void *dat, char *nick, char *msg) {
-  ui_tab_t *tab = ((ui_tab_t *)dat)->hub->tab;
-  return tab->hub_nick && strcmp(nick, tab->hub_nick) == 0 ? 2 : 0;
+  ui_tab_t *tab = dat;
+  return strcmp(nick, tab->name+1) == 0 ? 0 : 2;
 }
 
 

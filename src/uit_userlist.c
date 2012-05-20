@@ -116,7 +116,7 @@ ui_tab_t *uit_userlist_create(hub_t *hub) {
 
 static void t_close(ui_tab_t *tab) {
   tab_t *t = (tab_t *)tab;
-  t->tab.hub->tab->userlist_tab = NULL;
+  uit_hub_set_userlist(t->tab.hub->tab, NULL);
   ui_tab_remove(tab);
   // To clean things up, we should also reset all hub_user->iter fields. But
   // this isn't all that necessary since they won't be used anymore until they
@@ -449,15 +449,17 @@ gboolean uit_userlist_open(hub_t *hub, guint64 uid, const char *user, gboolean u
   if((uid || user) && (!u || u->hub != hub))
     return FALSE;
 
-  if(hub->tab->userlist_tab)
-    ui_tab_cur = g_list_find(ui_tabs, hub->tab->userlist_tab);
+  ui_tab_t *ut = uit_hub_userlist(hub->tab);
+  if(ut)
+    ui_tab_cur = g_list_find(ui_tabs, ut);
   else {
-    hub->tab->userlist_tab = uit_userlist_create(hub);
-    ui_tab_open(hub->tab->userlist_tab, TRUE, hub->tab);
+    ut = uit_userlist_create(hub);
+    ui_tab_open(ut, TRUE, hub->tab);
+    uit_hub_set_userlist(hub->tab, ut);
   }
 
   if(u) {
-    tab_t *t = (tab_t *)hub->tab->userlist_tab;
+    tab_t *t = (tab_t *)ut;
     // u->iter should be valid at this point.
     t->list->sel = u->iter;
     t->details = TRUE;

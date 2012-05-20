@@ -57,6 +57,7 @@ ncdc_SOURCES=\
 	src/uit_conn.c\
 	src/uit_dl.c\
 	src/uit_fl.c\
+	src/uit_hub.c\
 	src/uit_main.c\
 	src/uit_msg.c\
 	src/uit_search.c\

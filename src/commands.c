@@ -427,7 +427,7 @@ static void c_open(char *args) {
     }
     // Open or select tab
     if(!n) {
-      tab = ui_hub_create(name, addr ? FALSE : conn);
+      tab = uit_hub_create(name, addr ? FALSE : conn);
       ui_tab_open(tab, TRUE, NULL);
       listen_refresh();
     } else if(n != ui_tab_cur) {
