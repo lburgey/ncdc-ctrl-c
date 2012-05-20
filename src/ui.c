@@ -44,13 +44,29 @@ struct ui_tab_type_t {
   void (*close)(ui_tab_t *);
 };
 
+// This is a "base class", in OOP terms. Each tab inherits from this struct and
+// provides an implementation for the ui_tab_type_t functions.
 struct ui_tab_t {
+  // Tab type, can be any of the uit_* pointers defined in each uit_*.c file.
   ui_tab_type_t *type;
-  int prio;               // UIP_ type
+
+  // Tab priority, UIP_*.
+  int prio;
+
+  // Tab name, managed by the uit_* code.
   char *name;
-  ui_tab_t *parent;       // the tab that opened this tab (may be NULL or dangling)
-  ui_logwindow_t *log;    // HUB, MSG
-  hub_t *hub;             // HUB, USERLIST, MSG - TODO: Remove this somehow?
+
+  // The tab that opened this tab, may be NULL or dangling.
+  ui_tab_t *parent;
+
+  // If the tab has a logwindow, then this is a pointer to it. Used by the
+  // ui_m() family to send messages to the tab.
+  ui_logwindow_t *log;
+
+  // If the tab is associated with a hub, then this is a pointer to it.
+  // Currently used for uit_hub, uit_userlist and uit_msg.
+  // TODO: Find a better abstraction and remove this pointer.
+  hub_t *hub;
 };
 
 #endif
@@ -154,9 +170,9 @@ ui_m_cleanup:
 
 
 // a notication message, either displayed in the log of the current tab or, if
-// the hub has no tab, in the "status bar". Calling this function with NULL
-// will reset the status bar message. Unlike everything else, this function can
-// be called from any thread. (It will queue an idle function, after all)
+// the tab has no log window, in the "status bar". Calling this function with
+// NULL will reset the status bar message. Unlike everything else, this
+// function can be called from any thread.
 void ui_m(ui_tab_t *tab, int flags, const char *msg) {
   ui_m_t *dat = g_new0(ui_m_t, 1);
   dat->msg = (flags & UIM_PASS) ? (char *)msg : g_strdup(msg);
@@ -196,7 +212,9 @@ void ui_tab_open(ui_tab_t *tab, gboolean sel, ui_tab_t *parent) {
 }
 
 
-// to be called from ui_*_close()
+// To be called from ui_tab_type_t->close()
+// TODO: Do this the other way around. Have one global ui_tab_close() function
+// that performs this task and calls tab->close() to free things up.
 void ui_tab_remove(ui_tab_t *tab) {
   // Look for any tabs that have this one as parent, and let those inherit this tab's parent
   GList *n = ui_tabs;
@@ -217,12 +235,6 @@ void ui_tab_remove(ui_tab_t *tab) {
 
 
 void ui_init() {
-  // global textinput field
-  ui_global_textinput = ui_textinput_create(TRUE, cmd_suggest);
-
-  // first tab = main tab
-  ui_tab_open(uit_main_create(), TRUE, NULL);
-
   // init curses
   initscr();
   raw();
@@ -230,6 +242,12 @@ void ui_init() {
   curs_set(0);
   keypad(stdscr, 1);
   nodelay(stdscr, 1);
+
+  // global textinput field
+  ui_global_textinput = ui_textinput_create(TRUE, cmd_suggest);
+
+  // first tab = main tab
+  ui_tab_open(uit_main_create(), TRUE, NULL);
 
   ui_colors_init();
 
@@ -400,7 +418,7 @@ void ui_draw() {
     g_free(ts);
     g_date_time_unref(tm);
 #else
-    // Pre-2.6 users will have a possible buffer overflow and a slightly
+    // Pre-2.26 users will have a possible buffer overflow and a slightly
     // different formatting function. Just fucking update your system already!
     time_t tm = time(NULL);
     char ts[250];
