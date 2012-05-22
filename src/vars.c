@@ -265,9 +265,7 @@ static void flags_sug(flag_option_t *o, const char *val, char **sug) {
 // active_*port
 
 static char *p_active_port(const char *val, GError **err) {
-  if(strcmp(val, "0") == 0)
-    return g_strdup(val);
-  return p_int_range(val, 1, 65535, "Port number must be between 1 and 65535.", err);
+  return p_int_range(val, 0, 65535, "Port number must be between 1 and 65535.", err);
 }
 
 
