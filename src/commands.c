@@ -1347,8 +1347,8 @@ void cmd_suggest(char *ostr, char **sug) {
     int i = 0;
     int len = strlen(str)-1;
     for(c=cmds; i<20 && c->f; c++)
-      if(strncmp(str+1, c->name, len) == 0 && strlen(c->name) != len)
-        sug[i++] = g_strconcat("/", c->name, NULL);
+      if(strncmp(str+1, c->name, len) == 0 && strlen(c->name) >= len)
+        sug[i++] = g_strconcat("/", c->name, " ", NULL);
   } else {
     if(str[0] != '/')
       getcmd("say")->suggest(str, sug);
