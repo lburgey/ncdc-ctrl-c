@@ -147,7 +147,7 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
 
   char *tag = hub_user_tag(user);
   char *conn = hub_user_conn(user);
-  int j=5;
+  int j=6;
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
@@ -155,9 +155,11 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
     mvaddstr(row, 0, ">");
 
   if(user->isop)
-    mvaddch(row, 2, 'O');
+    mvaddch(row, 2, 'o');
   if(!user->active)
-    mvaddch(row, 3, 'P');
+    mvaddch(row, 3, 'p');
+  if(user->hastls)
+    mvaddch(row, 4, 't');
   DRAW_COL(row, j, t->cw_user,  user->name);
   DRAW_COL(row, j, t->cw_share, user->hasinfo ? str_formatsize(user->sharesize) : "");
   DRAW_COL(row, j, t->cw_desc,  user->desc?user->desc:"");
@@ -188,7 +190,7 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
  */
 static void calc_widths(tab_t *t) {
   // available width
-  int w = wincols-5;
+  int w = wincols-6;
 
   // share has a fixed size
   t->cw_share = 12;
@@ -235,10 +237,10 @@ static void t_draw(ui_tab_t *tab) {
   calc_widths(t);
 
   // header
-  int i = 5;
+  int i = 6;
   attron(UIC(list_header));
   mvhline(1, 0, ' ', wincols);
-  mvaddstr(1, 2, "OP");
+  mvaddstr(1, 2, "opt");
   DRAW_COL(1, i, t->cw_user,  "Username");
   DRAW_COL(1, i, t->cw_share, "Share");
   DRAW_COL(1, i, t->cw_desc,  "Description");
