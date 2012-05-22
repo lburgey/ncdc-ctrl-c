@@ -71,6 +71,9 @@ static const doc_cmd_t doc_cmds[] = {
 { "connections", NULL, "Open the connections tab.",
   NULL
 },
+{ "delhub", "<name>", "Remove a hub from the configuration",
+  NULL
+},
 { "disconnect", NULL, "Disconnect from a hub.",
   NULL
 },

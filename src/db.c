@@ -1052,6 +1052,24 @@ void db_vars_rm(guint64 hub, const char *name) {
 }
 
 
+// Unset all values for a certain hubid.
+void db_vars_rmhub(guint64 hub) {
+  g_return_if_fail(hub); // Not strictly an error, but not what this function was designed to do.
+  db_vars_cacheget();
+
+  // Update cache
+  GHashTableIter i;
+  db_var_item_t *n;
+  g_hash_table_iter_init(&i, db_vars_cache);
+  while(g_hash_table_iter_next(&i, NULL, (gpointer *)&n))
+    if(n->hub == hub)
+      g_hash_table_iter_remove(&i);
+
+  // Update database
+  db_queue_push(0, "DELETE FROM vars WHERE hub = ?", DBQ_INT64, hub, DBQ_END);
+}
+
+
 // Set a value. If val = NULL, then _rm() is called instead.
 void db_vars_set(guint64 hub, const char *name, const char *val) {
   if(!val) {
@@ -1080,11 +1098,14 @@ void db_vars_set(guint64 hub, const char *name, const char *val) {
 guint64 db_vars_hubid(const char *name) {
   db_vars_cacheget();
 
+  if(*name == '#')
+    name++;
+
   GHashTableIter i;
   db_var_item_t *n;
   g_hash_table_iter_init(&i, db_vars_cache);
   while(g_hash_table_iter_next(&i, NULL, (gpointer *)&n))
-    if(strcmp(n->name, "hubname") == 0 && strcmp(n->val, name) == 0)
+    if(strcmp(n->name, "hubname") == 0 && *n->val && strcmp(n->val+1, name) == 0)
       return n->hub;
   return 0;
 }

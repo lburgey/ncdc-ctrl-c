@@ -464,6 +464,7 @@ static void c_open(char *args) {
 }
 
 
+// Suggests hub names, also used for /delhub
 static void c_open_sug(char *args, char **sug) {
   int len = strlen(args);
   int i = 0;
@@ -1233,6 +1234,28 @@ static void c_listen(char *args) {
 }
 
 
+static void c_delhub(char *args) {
+  if(args[0] == '#')
+    args++;
+  if(!args[0]) {
+    ui_m(NULL, 0, "No hub name given.");
+    return;
+  }
+  guint64 id = db_vars_hubid(args);
+  if(!id) {
+    ui_m(NULL, 0, "No hub found by that name.");
+    return;
+  }
+  hub_t *hub = hub_global_byid(id);
+  if(hub) {
+    ui_m(NULL, 0, "Hub tab still open. Please close the hub tab before removing it from the configuration.");
+    return;
+  }
+  db_vars_rmhub(id);
+  ui_mf(NULL, 0, "Hub #%s deleted from the configuration.", args);
+}
+
+
 
 
 // definition of the command list
@@ -1243,6 +1266,7 @@ static cmd_t cmds[] = {
   { "close",       c_close,       NULL             },
   { "connect",     c_connect,     c_connect_sug    },
   { "connections", c_connections, NULL             },
+  { "delhub",      c_delhub,      c_open_sug,      },
   { "disconnect",  c_disconnect,  NULL             },
   { "gc",          c_gc,          NULL             },
   { "grant",       c_grant,       c_msg_sug        },
