@@ -504,6 +504,20 @@ void ui_input(guint64 key) {
       ui_tab_cur = next->next;
     }
     break;
+  case INPT_ALT('a'): { // alt+a (switch to next active tab)
+    GList *n = ui_tabs;
+    GList *c = NULL;
+    int max = UIP_EMPTY;
+    for(; n; n=n->next) {
+      if(((ui_tab_t *)n->data)->prio > max) {
+        max = ((ui_tab_t *)n->data)->prio;
+        c = n;
+      }
+    }
+    if(c)
+      ui_tab_cur = c;
+    break;
+  }
   case INPT_ALT('c'): // alt+c (alias for /close)
     cmd_handle("/close");
     break;

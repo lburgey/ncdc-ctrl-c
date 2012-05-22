@@ -591,6 +591,7 @@ static const doc_key_t doc_keys[] = {
   "Alt+k        Open next tab.\n"
   "Alt+h        Move current tab left.\n"
   "Alt+l        Move current tab right.\n"
+  "Alt+a        Move tab with recent activity.\n"
   "Alt+<num>    Open tab with number <num>.\n"
   "Alt+c        Close current tab.\n"
   "Alt+n        Open the connections tab.\n"
