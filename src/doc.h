@@ -516,6 +516,12 @@ static const doc_set_t doc_sets[] = {
   " is one of which the file name starts with a dot. (e.g. `.bashrc'). A file"
   " list refresh is required for this setting to be effective."
 },
+{ "share_symlinks", 0, "<boolean>",
+  "Whether to follow symlinks in shared directories. When disabled (default),"
+  " ncdc will never share any files outside of the directory you specified. When"
+  " enabled, any symlinks in your shared directories will be followed, even"
+  " when they point to a directory outside your share."
+},
 { "show_joinquit", 1, "<boolean>",
   "Whether to display join/quit messages in the hub chat."
 },
