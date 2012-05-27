@@ -941,10 +941,12 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: No token or CID present: %s", net_remoteaddr(cc->net), msg);
         cc_disconnect(cc, TRUE);
+        break;
       } else if(!istth(id) || (!cc->active && memcmp(cid, cc->cid, 8) != 0)) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: Incorrect CID: %s", net_remoteaddr(cc->net), msg);
         cc_disconnect(cc, TRUE);
+        break;
       } else if(cc->active) {
         cc->token = g_strdup(token);
         memcpy(cc->cid, cid, 24);
@@ -954,6 +956,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
           g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
           g_message("CC:%s: Unexpected ADC connection: %s", net_remoteaddr(cc->net), msg);
           cc_disconnect(cc, TRUE);
+          break;
         } else
           handle_id(cc, u);
       } else
