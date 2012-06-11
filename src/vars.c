@@ -827,7 +827,7 @@ static char *f_sudp_policy(const char *val) {
 
 static char *p_sudp_policy(const char *val, GError **err) {
   int n = flags_raw(var_sudp_policy_ops, FALSE, val, err);
-  return n ? g_strdup_printf("%d%s", n, SUDP_SUPPORT ? "" : " (not supported)") : NULL;
+  return !SUDP_SUPPORT ? g_strdup("disabled (not supported)") : n ? g_strdup_printf("%d", n) : NULL;
 }
 
 static void su_sudp_policy(const char *old, const char *val, char **sug) {
@@ -843,7 +843,7 @@ static char *g_sudp_policy(guint64 hub, const char *key) {
   num[0] = '0' + flags_raw(var_sudp_policy_ops, FALSE, r, NULL);
   return num;
 #else
-  num[0] = '0';
+  num[0] = '1';
   return num;
 #endif
 }
