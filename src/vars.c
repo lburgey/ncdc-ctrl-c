@@ -252,15 +252,6 @@ static void flags_sug(flag_option_t *o, const char *val, char **sug) {
 }
 
 
-// Var definitions
-//
-// Each variable is defined in a VAR_* (where * is all-capitals), which "calls"
-// a V() macro with the following arguments:
-//   V(name, global, hub, format, parse, suggest, getraw, setraw, default)
-// "default" does not need to be a run-time constant, it will be evaluated at
-// initialization instead (after the database has been initialized). Setting
-// this to a function allows it to initialize other stuff as well.
-
 
 // active_*port
 
