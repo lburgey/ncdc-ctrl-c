@@ -824,8 +824,8 @@ static void setownip(hub_t *hub, guint32 ip) {
 }
 
 
-static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, gboolean udp, const char *key) {
-  if(!udp) {
+static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, const char *key) {
+  if(!dest) {
     net_writestr(hub->net, r->str);
     return;
   } else if(!key || var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_DISABLE) {
@@ -887,15 +887,15 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
   char tth[40] = {};
   char *cid = NULL;
   char *dest = NULL;
-  if(u->hasudp4) {
+  if(u->hasudp4 && u->udp4) {
     cid = var_get(0, VAR_cid);
     dest = g_strdup_printf("%s:%d", ip4_unpack(u->ip4), u->udp4);
   }
 
   int i;
   for(i=0; i<len; i++) {
-    GString *r = u->hasudp4 ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
-    if(u->hasudp4)
+    GString *r = dest ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
+    if(dest)
       g_string_append_printf(r, " %s", cid);
     if(to)
       adc_append(r, "TO", to);
@@ -910,7 +910,7 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
       g_string_append_c(r, '/'); // make sure a directory path ends with a slash
     g_string_append_c(r, '\n');
 
-    adc_sch_reply_send(hub, dest, r, u->hasudp4, ky ? sudpkey : NULL);
+    adc_sch_reply_send(hub, dest, r, ky ? sudpkey : NULL);
     g_string_free(r, TRUE);
   }
 
@@ -966,7 +966,7 @@ static void adc_sch(hub_t *hub, adc_cmd_t *cmd) {
   s.ext = adc_getparams(cmd->argv, "EX");
 
   int i = 0;
-  int max = u->hasudp4 ? 10 : 5;
+  int max = u->hasudp4 && u->udp4 ? 10 : 5;
   fl_list_t *res[max];
 
   // TTH lookup
