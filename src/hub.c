@@ -557,8 +557,12 @@ void hub_search(hub_t *hub, search_q_t *q) {
   if(hub->adc) {
     // TODO: use FSCH to only get results from active users when we are passive?
     GString *cmd = adc_generate('B', ADCC_SCH, hub->sid, 0);
-    if(listen_hub_active(hub->id))
-      g_string_append_printf(cmd, " TO%"G_GUINT64_FORMAT, hub->id);
+    if(listen_hub_active(hub->id)) {
+      char token[14] = {};
+      base32_encode_dat((char *)&hub->id, token, 8);
+      g_string_append(cmd, " TO");
+      g_string_append(cmd, token);
+    }
     if(q->type == 9) {
       char tth[40] = {};
       base32_encode(q->tth, tth);

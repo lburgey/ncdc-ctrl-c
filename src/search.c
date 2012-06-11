@@ -448,14 +448,13 @@ static search_r_t *parse_adc(hub_t *hub, adc_cmd_t *cmd) {
   // which we can generate the uid.
   } else {
     tmp = adc_getparam(argv, "TO", NULL);
-    if(!tmp)
+    if(!tmp || strlen(tmp) != 13 || !isbase32(tmp))
       return NULL;
-    guint64 hubid = g_ascii_strtoull(tmp, &tmp2, 10);
-    if(tmp == tmp2 || !tmp2 || *tmp2)
-      return NULL;
+    char hubid[8];
+    base32_decode(tmp, hubid);
     tiger_ctx_t t;
     tiger_init(&t);
-    tiger_update(&t, (char *)&hubid, 8);
+    tiger_update(&t, hubid, 8);
     tiger_update(&t, cid, 24);
     char res[24];
     tiger_final(&t, res);
