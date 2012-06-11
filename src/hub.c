@@ -112,7 +112,7 @@ struct hub_t {
   guint64 nfo_share;
   guint32 nfo_ip4;
   guint16 nfo_udp_port;
-  gboolean nfo_sup_tls;
+  gboolean nfo_sup_tls, nfo_sup_sudp;
 
   // userlist fetching detection
   gboolean received_first;  // true if one precondition for joincomplete is satisfied.
@@ -579,7 +579,7 @@ void hub_search(hub_t *hub, search_q_t *q) {
         g_string_append_printf(cmd, " AN%s", *s);
     }
 #if SUDP_SUPPORT
-    if(hub->tls) {
+    if(hub->tls && var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_PREFER) {
       char key[27] = {};
       base32_encode_dat(q->key, key, 16);
       g_string_append_printf(cmd, " KY%s", key);
@@ -629,7 +629,7 @@ void hub_send_nfo(hub_t *hub) {
   guint64 share;
   guint32 ip4;
   guint16 udp_port;
-  gboolean sup_tls;
+  gboolean sup_tls, sup_sudp;
 
   desc = var_get(hub->id, VAR_description);
   mail = var_get(hub->id, VAR_email);
@@ -666,10 +666,11 @@ void hub_send_nfo(hub_t *hub) {
   udp_port = listen_hub_udp(hub->id);
   share = fl_local_list_size;
   sup_tls = var_get_int(hub->id, VAR_tls_policy) > VAR_TLSP_DISABLE ? TRUE : FALSE;
+  sup_sudp = SUDP_SUPPORT && hub->tls && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE ? TRUE : FALSE;
 
   // check whether we need to make any further effort
   if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots)
-      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(ip4) && eq(udp_port) && beq(sup_tls))
+      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(ip4) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp))
     return;
 
   char *nfo;
@@ -687,14 +688,14 @@ void hub_send_nfo(hub_t *hub) {
     }
     if(f || !eq(ip4))
       g_string_append_printf(cmd, " I4%s", ip4_unpack(ip4)); // ip4 = 0 == 0.0.0.0, which is exactly what we want
-    if(f || !eq(ip4) || !beq(sup_tls)) {
+    if(f || !eq(ip4) || !beq(sup_tls) || !beq(sup_sudp)) {
       g_string_append(cmd, " SU");
       int comma = 0;
       if(ip4)
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "TCP4,UDP4");
       if(sup_tls)
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "ADC0,ADCS");
-      if(SUDP_SUPPORT && hub->tls)
+      if(sup_sudp)
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "SUD1,SUDP");
     }
     if((f || !eq(udp_port))) {
@@ -754,6 +755,7 @@ void hub_send_nfo(hub_t *hub) {
   hub->nfo_ip4 = ip4;
   hub->nfo_udp_port = udp_port;
   hub->nfo_sup_tls = sup_tls;
+  hub->nfo_sup_sudp = sup_sudp;
 }
 
 #undef eq
@@ -822,7 +824,7 @@ static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, gboolea
   if(!udp) {
     net_writestr(hub->net, r->str);
     return;
-  } else if(!key) {
+  } else if(!key || var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_DISABLE) {
     net_udp_send(dest, r->str);
     return;
   }

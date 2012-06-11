@@ -814,6 +814,63 @@ static gboolean s_notify_bell(guint64 hub, const char *key, const char *val, GEr
 }
 
 
+// sudp_policy
+
+
+#if INTERFACE
+#define VAR_SUDPP_DISABLE 1
+#define VAR_SUDPP_ALLOW   2
+#define VAR_SUDPP_PREFER  4
+#endif
+
+static flag_option_t var_sudp_policy_ops[] = {
+  { VAR_SUDPP_DISABLE, "disabled" },
+  { VAR_SUDPP_ALLOW,   "allow"    },
+  { VAR_SUDPP_PREFER,  "prefer"   },
+  { 0 }
+};
+
+static char *f_sudp_policy(const char *val) {
+  return flags_fmt(var_sudp_policy_ops, int_raw(val));
+}
+
+static char *p_sudp_policy(const char *val, GError **err) {
+  int n = flags_raw(var_sudp_policy_ops, FALSE, val, err);
+  return n ? g_strdup_printf("%d%s", n, SUDP_SUPPORT ? "" : " (not supported)") : NULL;
+}
+
+static void su_sudp_policy(const char *old, const char *val, char **sug) {
+  flags_sug(var_sudp_policy_ops, val, sug);
+}
+
+static char *g_sudp_policy(guint64 hub, const char *key) {
+  static char num[2] = {};
+#if SUDP_SUPPORT
+  char *r = db_vars_get(hub, key);
+  if(!r)
+    return NULL;
+  num[0] = '0' + flags_raw(var_sudp_policy_ops, FALSE, r, NULL);
+  return num;
+#else
+  num[0] = '0';
+  return num;
+#endif
+}
+
+static gboolean s_sudp_policy(guint64 hub, const char *key, const char *val, GError **err) {
+#if SUDP_SUPPORT
+  char *r = flags_fmt(var_sudp_policy_ops, int_raw(val));
+  db_vars_set(hub, key, r[0] ? r : NULL);
+  g_free(r);
+  hub_global_nfochange();
+  return TRUE;
+#else
+  g_set_error(err, 1, 0, "This option can't be modified: %s.", "SUDP not supported");
+  return FALSE;
+#endif
+}
+
+
 
 
 
@@ -906,6 +963,7 @@ struct var_t {
   V(share_symlinks,   1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(show_joinquit,    1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(slots,            1,0, f_int,          p_int_ge1,       NULL,          NULL,         s_hubinfo,       "10")\
+  V(sudp_policy,      1,0, f_sudp_policy,  p_sudp_policy,   su_sudp_policy,g_sudp_policy,s_sudp_policy,   G_STRINGIFY(VAR_SUDPP_PREFER))\
   V(tls_policy,       1,1, f_tls_policy,   p_tls_policy,    su_tls_policy, g_tls_policy, s_tls_policy,    G_STRINGIFY(VAR_TLSP_PREFER))\
   V(tls_priority,     1,0, f_id,           p_tls_priority,  su_old,        NULL,         NULL,            "NORMAL")\
   V(ui_time_format,   1,0, f_id,           p_id,            su_old,        NULL,         NULL,            "[%H:%M:%S]")\

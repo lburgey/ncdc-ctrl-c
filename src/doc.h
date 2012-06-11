@@ -531,6 +531,17 @@ static const doc_set_t doc_sets[] = {
   " is exceeded in certain circumstances, see the `minislots' setting and the"
   " `/grant' command."
 },
+{ "sudp_policy", 1, "<disabled|allow|prefer>",
+  "Set the policy for sending or receiving encrypted UDP search results. When"
+  " set to `disabled', all UDP search results will be sent and received in"
+  " plain text. Set this to `allow' to let ncdc reply with encrypted search"
+  " results if the other client requested it. `prefer' will also cause ncdc"
+  " itself to request encryption.\n\n"
+  "Note that, regardless of this setting, encrypted UDP search results are only"
+  " used on ADCS hubs. They will never be sent on NMDC or non-TLS ADC hubs. Also"
+  " note that, even if you set this to `prefer', encryption is still only used"
+  " when the client on the other side of the connection also supports it."
+},
 { "tls_policy", 1, "<disabled|allow|prefer>",
   "Set the policy for secure client-to-client connections. Setting this to"
   " `disabled' disables TLS support for client connections, but still allows"

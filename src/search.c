@@ -177,7 +177,8 @@ gboolean search_add(hub_t *hub, search_q_t *q, GError **err) {
   }
 
 #if SUDP_SUPPORT
-  g_warn_if_fail(gnutls_rnd(GNUTLS_RND_NONCE, q->key, 16) == 0);
+  if(var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_PREFER)
+    g_warn_if_fail(gnutls_rnd(GNUTLS_RND_NONCE, q->key, 16) == 0);
 #endif
 
   // Search a single hub
@@ -539,7 +540,7 @@ gboolean search_handle_udp(const char *addr, char *pack, int len) {
   else if(strncmp(msg, "URES ", 5) == 0)
     adc = TRUE;
 #if SUDP_SUPPORT
-  else if(!(len & 15)) {
+  else if(!(len & 15) && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE) {
     char *buf = g_malloc(len);
     GHashTableIter i;
     g_hash_table_iter_init(&i, search_list);
