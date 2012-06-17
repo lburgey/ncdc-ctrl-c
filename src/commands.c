@@ -548,9 +548,13 @@ static void c_share(char *args) {
     else {
       // Check whether it (or a subdirectory) is already shared
       db_share_item_t *l = db_share_list();
-      for(; l->name; l++)
-        if(strncmp(l->path, path, MIN(strlen(l->path), strlen(path))) == 0)
+      int plen = strlen(path);
+      for(; l->name; l++) {
+        int llen = strlen(l->path);
+        if(strncmp(l->path, path, MIN(llen, plen)) == 0 &&
+            (llen > plen ? !l->path[plen] || l->path[plen] == '/' : !path[llen] || path[llen] == '/'))
           break;
+      }
       if(l->name)
         ui_mf(NULL, 0, "Directory already (partly) shared in /%s", l->name);
       else {
