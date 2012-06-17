@@ -234,9 +234,9 @@ static int low_send(net_t *n, const char *buf, int len, const char **err) {
 static void asy_setuppoll(net_t *n);
 
 struct synfer_t {
-  GStaticMutex lock; // protects net->sock and net->tls in the case of a disconnect.
+  GStaticMutex lock; // protects n->left, any data used within the low_* functions and, in the case of a disconnect, net->sock and net->tls.
   net_t *net;
-  int left;
+  guint64 left; // The transfer thread itself does not need the lock to read this value, only to write. (It is the only writer)
   int fd;     // for uploads
   int cancel; // set to 1 to cancel transfer
   int can[2]; // close() this pipe (can[1]) to cancel the transfer
@@ -252,7 +252,7 @@ struct synfer_t {
 static GThreadPool *syn_pool = NULL;
 
 
-static void syn_new(net_t *n, gboolean upl, int len) {
+static void syn_new(net_t *n, gboolean upl, guint64 len) {
   n->syn = g_slice_new0(synfer_t);
   n->syn->left = len;
   n->syn->net = n;
@@ -392,13 +392,13 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
       if(s->flush)
         fadv_purge(adv, r);
       off = oldoff + r;
-      g_atomic_int_add(&s->left, -r);
       // This bypasses the low_send() function, so manually add it to the
       // ratecalc thing and update timeout_last.
       ratecalc_add(&net_out, r);
       ratecalc_add(&s->net->rate_out, r);
       g_static_mutex_lock(&s->lock);
       time(&s->net->timeout_last);
+      s->left -= r;
       g_static_mutex_unlock(&s->lock);
       continue;
     } else if(errno == EAGAIN || errno == EINTR) {
@@ -440,6 +440,12 @@ static void syn_upload_buf(synfer_t *s, int sock, fadv_t *adv) {
       g_static_mutex_lock(&s->lock);
       const char *err = NULL;
       int wr = s->cancel || !s->net->sock ? 0 : low_send(s->net, p, MIN(rd, b), &err);
+      // successful write
+      if(wr > 0) {
+        p += wr;
+        s->left -= wr;
+        rd -= wr;
+      }
       g_static_mutex_unlock(&s->lock);
 
       if(!wr) // cancelled
@@ -450,10 +456,6 @@ static void syn_upload_buf(synfer_t *s, int sock, fadv_t *adv) {
         s->err = g_strdup(err);
         goto done;
       }
-      // successful write
-      p += wr;
-      g_atomic_int_add(&s->left, -wr);
-      rd -= wr;
     }
   }
 
@@ -473,6 +475,8 @@ static void syn_download(synfer_t *s, int sock) {
     g_static_mutex_lock(&s->lock);
     const char *err = NULL;
     int r = s->cancel || !s->net->sock ? 0 : low_recv(s->net, buf, MIN(NET_TRANS_BUF, s->left), &err);
+    if(r > 0)
+      s->left -= r;
     g_static_mutex_unlock(&s->lock);
 
     if(!r)
@@ -484,7 +488,6 @@ static void syn_download(synfer_t *s, int sock) {
       break;
     }
 
-    g_atomic_int_add(&s->left, -r);
     if(!s->cb_downdata(s->ctx, buf, r)) {
       s->err = g_strdup("Operation cancelled");
       break;
@@ -539,8 +542,13 @@ static void syn_start(net_t *n) {
 }
 
 
-int net_left(net_t *n) {
-  return n->syn ? g_atomic_int_get(&n->syn->left) : 0;
+guint64 net_left(net_t *n) {
+  if(!n->syn)
+    return 0;
+  g_static_mutex_lock(&n->syn->lock);
+  guint64 r = n->syn->left;
+  g_static_mutex_unlock(&n->syn->lock);
+  return r;
 }
 
 
@@ -864,7 +872,7 @@ void net_peekbytes(net_t *n, int bytes, void(*cb)(net_t *, char *, int)) {
 // Similar to net_readbytes(), but will call the data() callback for every read
 // from the network, this callback may be run from another thread. When done,
 // the done() callback will be run in the main thread.
-void net_recvfile(net_t *n, int len, gboolean(*data)(void *, const char *, int), void(*done)(net_t *, void *), void *ctx) {
+void net_recvfile(net_t *n, guint64 len, gboolean(*data)(void *, const char *, int), void(*done)(net_t *, void *), void *ctx) {
   g_return_if_fail(n->state == NETST_ASY);
   syn_new(n, FALSE, len);
   n->syn->cb_downdata = data;
@@ -932,7 +940,7 @@ void net_writef(net_t *n, const char *fmt, ...) {
 
 // Switches to the SYN state when the write buffer has been flushed. fd will be
 // close()'d when done. cb() will be called in the main thread.
-void net_sendfile(net_t *n, int fd, int len, gboolean flush, void (*cb)(net_t *)) {
+void net_sendfile(net_t *n, int fd, guint64 len, gboolean flush, void (*cb)(net_t *)) {
   g_return_if_fail(n->state == NETST_ASY && !n->syn);
   syn_new(n, TRUE, len);
   n->syn->flush = flush;

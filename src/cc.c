@@ -301,7 +301,7 @@ struct cc_t {
   guint64 uid;
   guint64 last_size;
   guint64 last_offset;
-  int last_length;
+  guint64 last_length;
   gboolean last_tthl;
   time_t last_start;
   char last_hash[24];
@@ -501,7 +501,7 @@ static void xfer_log_add(cc_t *cc) {
   else
     base32_encode(cc->last_hash, tth);
 
-  int transfer_size = cc->last_length - net_left(cc->net);
+  guint64 transfer_size = cc->last_length - net_left(cc->net);
 
   char *nick = adc_escape(cc->nick, FALSE);
   char *file = adc_escape(cc->last_file, FALSE);
@@ -510,7 +510,7 @@ static void xfer_log_add(cc_t *cc) {
   if(tmp)
     *tmp = 0;
 
-  char *msg = g_strdup_printf("%s %s %s %s %c %c %s %d %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %d %s",
+  char *msg = g_strdup_printf("%s %s %s %s %c %c %s %d %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %s",
     cc->hub ? cc->hub->tab->name : cc->hub_name, cid, nick, cc->remoteaddr, cc->dl ? 'd' : 'u',
     transfer_size == cc->last_length ? 'c' : 'i', tth, (int)(time(NULL)-cc->last_start),
     cc->last_size, cc->last_offset, transfer_size, file);
@@ -587,6 +587,7 @@ void cc_download(cc_t *cc, dl_t *dl) {
       net_writef(cc->net, "$ADCGET tthl %s 0 -1|", fn);
   // otherwise, send GET request
   } else {
+    // Don't download files in chunks >= 2GB, older ncdc's don't like that.
     int len = dl->islist ? -1 : MIN(G_MAXINT-1, dl->size-dl->have);
     if(cc->adc)
       net_writef(cc->net, "CGET file %s %"G_GUINT64_FORMAT" %d\n", fn, dl->have, len);
@@ -649,9 +650,6 @@ static void handle_adcsnd(cc_t *cc, gboolean tthl, guint64 start, gint64 bytes) 
     bytes = cc->last_size - cc->last_offset;
   }
 
-  // We shouldn't have requested more than MAXINT bytes.
-  bytes = MIN(bytes, G_MAXINT-1);
-
   cc->last_length = bytes;
   cc->last_tthl = tthl;
   if(!tthl) {
@@ -679,7 +677,7 @@ static void handle_sendcomplete(net_t *net) {
 }
 
 
-static void send_file(cc_t *cc, const char *path, guint64 start, int len, gboolean flush, GError **err) {
+static void send_file(cc_t *cc, const char *path, guint64 start, guint64 len, gboolean flush, GError **err) {
   int fd = 0;
   if((fd = open(path, O_RDONLY)) < 0 || lseek(fd, start, SEEK_SET) == (off_t)-1) {
     // Don't give a detailed error message, the remote shouldn't know too much about us.
@@ -811,7 +809,7 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
   if(request_slot(cc, needslot)) {
     g_free(cc->last_file);
     cc->last_file = vpath;
-    cc->last_length = MIN(bytes, G_MAXINT-1);
+    cc->last_length = bytes;
     cc->last_offset = start;
     cc->last_size = st.st_size;
     if(f)
