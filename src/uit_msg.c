@@ -180,7 +180,8 @@ void uit_msg_disconnect(hub_t *hub) {
   while(g_hash_table_iter_next(&i, NULL, (gpointer *)&t)) {
     // The user could have quit while we kept this tab open, so check that the
     // user was still online when the disconnect happened.
-    if(g_hash_table_lookup(hub_uids, &t->uid))
+    hub_user_t *u = g_hash_table_lookup(hub_uids, &t->uid);
+    if(u && u->hub == hub)
       ui_mf((ui_tab_t *)t, 0, "--< %s has quit.", t->tab.name+1);
   }
 }
