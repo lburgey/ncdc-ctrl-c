@@ -257,8 +257,9 @@ static void t_draw(ui_tab_t *tab) {
     base32_encode(sel->tth, tth);
     mvprintw(bottom, 0, "%s (%s bytes)", tth, str_fullsize(sel->size));
   }
-  mvprintw(bottom, wincols-29, "%5d results in%4ds - %3d%%",
-    g_sequence_get_length(t->list->list), time(NULL)-t->age, pos);
+  const char *age = str_formatinterval(time(NULL)-t->age);
+  mvprintw(bottom, wincols-25-strlen(age), "%5d results in %s - %3d%%",
+    g_sequence_get_length(t->list->list), age, pos);
   attroff(UIC(separator));
   if(sel)
     mvaddnstr(bottom+1, 3, sel->file, str_offset_from_columns(sel->file, wincols-3));
