@@ -25,3 +25,5 @@ doc/*.1
 doc/ncdc.pod
 ncdc-db-upgrade
 INSTALL
+static/*
+!static/GNUmakefile
