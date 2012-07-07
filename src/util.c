@@ -552,8 +552,10 @@ void path_suggest(const char *opath, char **sug) {
   // special-case ~ and .
   if((path[0] == '~' || path[0] == '.') && (path[1] == 0 || (path[1] == '/' && path[2] == 0))) {
     name = path_expand(path);
-    sug[0] = g_strconcat(name, "/", NULL);
-    g_free(name);
+    if(name) {
+      sug[0] = g_strconcat(name, "/", NULL);
+      g_free(name);
+    }
     goto path_suggest_f;
   }
 
