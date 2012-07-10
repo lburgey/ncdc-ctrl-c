@@ -1,3 +1,21 @@
+1.12 - 2012-07-10
+	- Don't follow symlinks in share by default
+	- Added 'share_symlink' option
+	- Added bell notification and 'notify_bell' option
+	- Added 'sudp_policy' setting
+	- List all configured hubs on '/open'
+	- Added '/delhub' command to remove hub configuration
+	- Added filtering options to connections tab
+	- Added TLS support indication to user list
+	- Added Alt+a key to cycle through tabs with recent activity
+	- Allow binding to ports below 1024
+	- Add space after autocompleting a command
+	- Fix uploading chunks of 2GiB and larger (bug #12)
+	- Fix bug with duplicate directory detection in '/share'
+	- Fix display of timer on search tab
+	- ADC: Use shorter search token to save some bandwidth
+	- Various attempts at cleaning up some code
+
 1.11 - 2012-05-15
 	- Drop libxml2 in favour of custom XML parser & writer
 	- Allow using a single listen port for TCP and TLS
