@@ -822,12 +822,12 @@ static flag_option_t var_sudp_policy_ops[] = {
 };
 
 static char *f_sudp_policy(const char *val) {
-  return flags_fmt(var_sudp_policy_ops, int_raw(val));
+  return !SUDP_SUPPORT ? g_strdup("disabled (not supported)") : flags_fmt(var_sudp_policy_ops, int_raw(val));
 }
 
 static char *p_sudp_policy(const char *val, GError **err) {
   int n = flags_raw(var_sudp_policy_ops, FALSE, val, err);
-  return !SUDP_SUPPORT ? g_strdup("disabled (not supported)") : n ? g_strdup_printf("%d", n) : NULL;
+  return n ? g_strdup_printf("%d", n) : NULL;
 }
 
 static void su_sudp_policy(const char *old, const char *val, char **sug) {
