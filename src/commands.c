@@ -1002,11 +1002,6 @@ static void c_search(char *args) {
   }
 
   // validate & send
-  if(q->type != 9 && !qlen) {
-    ui_m(NULL, 0, "No search query given.");
-    goto c_search_clean;
-  }
-
   ui_tab_t *tab = ui_tab_cur->data;
   if(!allhubs && tab->type != uit_hub && tab->type != uit_msg) {
     ui_m(NULL, 0, "This command can only be used on hub tabs. Use the `-all' option to search on all connected hubs.");
@@ -1014,14 +1009,13 @@ static void c_search(char *args) {
   }
 
   ui_tab_t *rtab = uit_search_create(allhubs ? NULL : tab->hub, q, &err);
+  q = NULL; // make sure to not free it
   if(err) {
     ui_mf(NULL, 0, "%s%s", rtab ? "Warning: " : "", err->message);
     g_error_free(err);
   }
-  if(!rtab)
-    goto c_search_clean;
-  ui_tab_open(rtab, TRUE, allhubs ? NULL : tab);
-  q = NULL; // make sure to not free it
+  if(rtab)
+    ui_tab_open(rtab, TRUE, allhubs ? NULL : tab);
 
 c_search_clean:
   g_strfreev(argv);
