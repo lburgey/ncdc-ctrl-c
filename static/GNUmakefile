@@ -54,7 +54,7 @@ ZV=http://zlib.net/zlib-1.2.7.tar.gz
 SQLV=http://sqlite.org/sqlite-autoconf-3071300.tar.gz
 GMPV=ftp://ftp.gmplib.org/pub/gmp-5.0.5/gmp-5.0.5.tar.xz
 NETV=http://www.lysator.liu.se/~nisse/archive/nettle-2.4.tar.gz
-TLSV=http://ftp.gnu.org/gnu/gnutls/gnutls-3.0.20.tar.xz
+TLSV=http://ftp.gnu.org/gnu/gnutls/gnutls-3.0.21.tar.xz
 PKGV=http://pkgconfig.freedesktop.org/releases/pkg-config-0.26.tar.gz
 NCV=http://ftp.gnu.org/pub/gnu/ncurses/ncurses-5.9.tar.gz
 MUSLV=http://www.etalabs.net/musl/releases/musl-0.9.2.tar.gz
@@ -75,6 +75,7 @@ HOSTCC=gcc
 LIBC=
 GLIBICONV=no
 CFLAGS=-O2 -static
+GMPABI=
 
 # linux (uses musl)
 ifeq ($(HOST),linux)
@@ -83,6 +84,7 @@ LIBC=$(MUSLD)/_done
 CC=$(PREFIX)/bin/musl-gcc -D_GNU_SOURCE
 ifeq ($(ARCH),i386)
 CFLAGS+= -march=i486
+GMPABI=ABI=32
 endif
 
 # freebsd (native libc)
@@ -176,7 +178,7 @@ $(NETD)/_done: $(LIBC) $(GMPD)/_done
 $(GMPD)/_done: $(LIBC)
 	[ -e "`basename $(GMPV)`" ] || wget "$(GMPV)"
 	[ -e "$(GMPD)" ] || $(TAR) -xvf "`basename $(GMPV)`"
-	cd "$(GMPD)" && ./configure --prefix="$(PREFIX)" --without-readline --disable-shared --enable-static
+	cd "$(GMPD)" && ./configure --prefix="$(PREFIX)" --without-readline --disable-shared --enable-static $(GMPABI)
 	$(MAKE) -C "$(GMPD)" install
 	touch $(GMPD)/_done
 
