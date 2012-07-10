@@ -939,6 +939,8 @@ static void c_search(char *args) {
   // Loop through arguments. (Later arguments overwrite earlier ones)
   int i;
   for(i=0; i<argc; i++) {
+    if(!argv[i][0])
+      continue;
     // query
     if(stoparg || argv[i][0] != '-')
       q->query[qlen++] = g_strdup(argv[i]);
