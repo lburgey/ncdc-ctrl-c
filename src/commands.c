@@ -1002,6 +1002,11 @@ static void c_search(char *args) {
   }
 
   // validate & send
+  if(q->type != 9 && !qlen) {
+    ui_m(NULL, 0, "No search query given.");
+    goto c_search_clean;
+  }
+
   ui_tab_t *tab = ui_tab_cur->data;
   if(!allhubs && tab->type != uit_hub && tab->type != uit_msg) {
     ui_m(NULL, 0, "This command can only be used on hub tabs. Use the `-all' option to search on all connected hubs.");
