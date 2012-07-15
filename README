@@ -83,6 +83,6 @@ CROSS COMPILING
 CONTACT
 
   Email: projects@yorhel.nl
-    Web: http://dev.yorhel.nl/
-     DC: adc://dc.blicky.net:2780/
+    Web: http://dev.yorhel.nl/ncdc
+     DC: adc://dc.blicky.net:2780/ or adcs://dc.blicky.net:2780/
 
