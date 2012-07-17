@@ -126,12 +126,136 @@ void certificate_sha256(gnutls_datum_t cert, char *digest) {
 }
 
 
-// like realpath(), but also expands ~
+// Turns any path into an absolute path. Doesn't do any canonicalization.
+static char *path_absolute(const char *path) {
+  char *p = NULL;
+  if(path[0] == '~' && (!path[1] || path[1] == '/')) {
+    const char *home = g_get_home_dir();
+    if(!home)
+      return NULL;
+    p = path[1] ? g_build_filename(home, path+1, NULL) : g_strdup(home);
+  } else if(path[0] != '/') {
+    char *cwd = g_get_current_dir();
+    if(!cwd)
+      return NULL;
+    if(!path[0] || (path[0] == '.' && !path[1])) // Handles "" and "."
+      p = cwd;
+    else { // Handles "./$stuff" and "$everythingelse"
+      p = g_build_filename(cwd, path[0] == '.' && path[1] == '/' ? path+1 : path, NULL);
+      g_free(cwd);
+    }
+  } else
+    p = g_strdup(path);
+  return p;
+}
+
+
+// Handy wrapper around the readlink() syscall. Returns a null-terminated
+// string that should be g_free()'d.
+static char *path_readlink(const char *path) {
+  int len = 128;
+  char *buf = g_malloc(len);
+  while(1) {
+    int n = readlink(path, buf, len);
+    if(n >= 0 && n < len) {
+      buf[n] = 0;
+      return buf;
+    }
+    if(n < 0 && errno != ERANGE) {
+      g_free(buf);
+      return NULL;
+    }
+    // Gotta put a limit *somewhere*.
+    if(len > 512*1024) {
+      g_free(buf);
+      errno = ENAMETOOLONG;
+      return NULL;
+    }
+    len *= 2;
+    buf = g_realloc(buf, len);
+  }
+}
+
+
+// Canonicalize a path and expand symlinks. A portable implementation of
+// realpath(), but also expands ~. Return value should be g_free()'d.
+// Notes:
+// - The path argument is assumed to be in the filename encoding, and the
+//   returned value will be in the filename encoding.
+// - An error is returned if the file/dir pointed to by path does not exist.
+// - If the path ends with '/' or '/.' or '/../$file' or similar constructs,
+//   the final component is not validated to actually be a directory.
+// - path_expand("") = path_expand(".")
 char *path_expand(const char *path) {
-  char *p = path[0] == '~' ? g_build_filename(g_get_home_dir(), path+1, NULL) : g_strdup(path);
-  char *r = realpath(p, NULL);
+  GString *cur;
+  char *tail;
+  int links = 32; // Probably should use LINK_MAX for this.
+
+  char *p = path_absolute(path);
+  if(!p)
+    return NULL;
+
+resolve:
+  cur = g_string_new("/");
+  tail = p;
+  while(*tail) {
+    char *comp = tail;
+    tail = strchr(comp, '/');
+    if(!tail)
+      tail = comp + strlen(comp);
+    if(*tail)
+      *(tail++) = 0;
+    // We now have a zero-terminated component in *comp.
+    if(!*comp)
+      continue;
+    if(*comp == '.' && comp[1] == 0)
+      continue;
+    if(*comp == '.' && comp[1] == '.' && !comp[2]) {
+      char *prev = strrchr(cur->str, '/');
+      g_assert(prev);
+      g_string_truncate(cur, prev == cur->str ? 1 : cur->len-strlen(prev));
+      continue;
+    }
+    // We now have a component that isn't "." or ".."
+    if(cur->str[cur->len-1] != '/')
+      g_string_append_c(cur, '/');
+    g_string_append(cur, comp);
+    // Let's see if it's a symlink
+    char *link = path_readlink(cur->str);
+    if(!link && errno == EINVAL) // Nope, not a symlink
+      continue;
+    if(!link) { // Nope, we got an error instead.
+      tail = NULL;
+      break;
+    }
+    // Now we have a symlink.
+    if(!--links) {
+      g_free(link);
+      errno = ELOOP;
+      tail = NULL;
+      break;
+    }
+    char *newp = NULL;
+    if(*link == '/')
+      newp = g_build_filename(link, tail, NULL);
+    else {
+      char *prev = strrchr(cur->str, '/');
+      g_assert(prev);
+      g_string_truncate(cur, prev == cur->str ? 1 : cur->len-strlen(prev));
+      newp = g_build_filename(cur->str, link, tail, NULL);
+    }
+    g_string_free(cur, TRUE);
+    g_free(link);
+    g_free(p);
+    p = newp;
+    goto resolve;
+  }
+
   g_free(p);
-  return r;
+  if(tail)
+    return g_string_free(cur, FALSE);
+  g_string_free(cur, TRUE);
+  return NULL;
 }
 
 

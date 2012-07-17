@@ -261,7 +261,7 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
   char *vcpath = NULL; // vpath + uname
   char *ename = NULL;  // uname-to-filesystem
   char *cpath = NULL;  // path + ename
-  char *real = NULL;   // realpath(cpath)-to-UTF8
+  char *real = NULL;   // path_expand(cpath)-to-UTF8
   fl_list_t *node = NULL;
 
   // Try to get a UTF-8 filename
@@ -298,11 +298,11 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
     goto done;
   }
 
-  // Get the realpath() (for lookup in the database)
+  // Get the path_expand() (for lookup in the database)
   // TODO: this path is only used if fl_scan_check() can't find the item in the
   // old fl_list structure. It may be more efficient to only try to execute
   // this code when this is the case.
-  char *tmp = realpath(cpath, NULL);
+  char *tmp = path_expand(cpath);
   if(!tmp) {
     ui_mf(uit_main_tab, UIP_MED, "Error getting file path for \"%s\": %s", vcpath, g_strerror(errno));
     goto done;
@@ -516,7 +516,7 @@ static void fl_hash_thread(gpointer data, gpointer udata) {
   time(&args->lastmod);
   GTimer *tm = g_timer_new();
 
-  char *tmp = realpath(args->path, NULL);
+  char *tmp = path_expand(args->path);
   if(!tmp) {
     g_set_error(&args->err, 1, 0, "Error getting file path: %s", g_strerror(errno));
     goto finish;

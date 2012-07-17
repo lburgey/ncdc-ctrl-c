@@ -1305,14 +1305,13 @@ static int db_dir_init() {
   if(g_access(db_dir, F_OK | R_OK | X_OK | W_OK) < 0)
     g_error("Directory '%s' does not exist or is not writable.", db_dir);
 
-  // Make sure it's an absolute path (yes, after mkdir'ing it, realpath() may
-  // return an error if it doesn't exist). Just stick with the relative path if
-  // realpath() fails, it's not critical anyway.
-  char *real = realpath(db_dir, NULL);
+  // Make sure it's an absolute path (yes, after mkdir'ing it, path_expand()
+  // may return an error if it doesn't exist). Just stick with the relative
+  // path if this fails, it's not critical anyway.
+  char *real = path_expand(db_dir);
   if(real) {
     g_free((char *)db_dir);
-    db_dir = g_strdup(real);
-    free(real);
+    db_dir = real;
   }
 
   // make sure some subdirectories exist and are writable
