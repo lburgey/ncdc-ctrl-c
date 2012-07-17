@@ -725,8 +725,8 @@ void hub_send_nfo(hub_t *hub) {
       adc_append(cmd, "DE", desc?desc:"");
     if(f || !streq(mail))
       adc_append(cmd, "EM", mail?mail:"");
-    if((f || !streq(conn)) && connection_to_speed(conn))
-      g_string_append_printf(cmd, " US%"G_GUINT64_FORMAT, connection_to_speed(conn));
+    if((f || !streq(conn)) && str_connection_to_speed(conn))
+      g_string_append_printf(cmd, " US%"G_GUINT64_FORMAT, str_connection_to_speed(conn));
     g_string_append_c(cmd, '\n');
     nfo = g_string_free(cmd, FALSE);
 

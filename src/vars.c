@@ -491,7 +491,7 @@ static void su_encoding(const char *old, const char *val, char **sug) {
 // email / description / connection
 
 static char *p_connection(const char *val, GError **err) {
-  if(!connection_to_speed(val))
+  if(!str_connection_to_speed(val))
     ui_mf(NULL, 0, "Couldn't convert `%s' to bytes/second, won't broadcast upload speed on ADC. See `/help set connection' for more information.", val);
   return g_strdup(val);
 }
@@ -585,7 +585,7 @@ static char *p_hubname(const char *val, GError **err) {
   if(val[0] == '#')
     val++;
   char *g = g_strdup_printf("#%s", val);
-  if(!is_valid_hubname(g+1)) {
+  if(!str_is_valid_hubname(g+1)) {
     g_set_error_literal(err, 1, 0, "Illegal characters or too long.");
     g_free(g);
     return NULL;

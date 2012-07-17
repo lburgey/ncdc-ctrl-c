@@ -435,7 +435,7 @@ static void c_open(char *args) {
     ui_m(NULL, 0, "No hub name given.");
     return;
   }
-  if(!is_valid_hubname(name))
+  if(!str_is_valid_hubname(name))
     ui_m(NULL, 0, "Sorry, hub name may only consist of alphanumeric characters, and must not exceed 25 characters.");
   else {
     // Look for existing tab

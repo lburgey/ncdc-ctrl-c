@@ -52,6 +52,7 @@ ncdc_SOURCES=\
 	src/net.c\
 	src/proto.c\
 	src/search.c\
+	src/strutil.c\
 	src/tth.c\
 	src/ui.c\
 	src/uit_conn.c\
