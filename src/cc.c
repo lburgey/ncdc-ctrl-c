@@ -1078,12 +1078,8 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         cc_disconnect(cc, TRUE);
       } else {
         dl_queue_setuerr(cc->uid, cc->last_hash, DLE_NOFILE, NULL);
-        if(cmd.argv[0][0] == '2')
-          cc_disconnect(cc, FALSE);
-        else {
-          cc->state = CCS_IDLE;
-          dl_user_cc(cc->uid, cc);
-        }
+        cc->state = CCS_IDLE;
+        dl_user_cc(cc->uid, cc);
       }
 
     // Other message
