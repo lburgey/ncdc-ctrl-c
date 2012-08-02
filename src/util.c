@@ -259,18 +259,22 @@ resolve:
 }
 
 
-// Expand and auto-complete a filesystem path
+// Expand and auto-complete a filesystem path. Given argument and returned
+// suggestions are UTF-8.
 void path_suggest(const char *opath, char **sug) {
-  char *path = g_strdup(opath);
   char *name, *dir = NULL;
+  char *path = g_filename_from_utf8(opath, -1, NULL, NULL, NULL);
+  if(!path)
+    return;
 
   // special-case ~ and .
   if((path[0] == '~' || path[0] == '.') && (path[1] == 0 || (path[1] == '/' && path[2] == 0))) {
     name = path_expand(path);
-    if(name) {
+    char *uname = name ? g_filename_to_utf8(name, -1, NULL, NULL, NULL) : NULL;
+    if(uname)
       sug[0] = g_strconcat(name, "/", NULL);
-      g_free(name);
-    }
+    g_free(name);
+    g_free(uname);
     goto path_suggest_f;
   }
 
@@ -285,6 +289,7 @@ void path_suggest(const char *opath, char **sug) {
     name = path;
     dir = path_expand(".");
   }
+
   GDir *d = g_dir_open(dir, 0, NULL);
   if(!d)
     goto path_suggest_f;
@@ -295,8 +300,12 @@ void path_suggest(const char *opath, char **sug) {
     if(strcmp(n, ".") == 0 || strcmp(n, "..") == 0)
       continue;
     char *fn = g_build_filename(dir, n, NULL);
-    if(strncmp(n, name, len) == 0 && strlen(n) != len)
-      sug[i++] = g_file_test(fn, G_FILE_TEST_IS_DIR) ? g_strconcat(fn, "/", NULL) : g_strdup(fn);
+    char *ufn = g_filename_to_utf8(fn, -1, NULL, NULL, NULL);
+    char *un = g_filename_to_utf8(n, -1, NULL, NULL, NULL);
+    if(ufn && un && strncmp(un, name, len) == 0 && strlen(un) != len)
+      sug[i++] = g_file_test(fn, G_FILE_TEST_IS_DIR) ? g_strconcat(ufn, "/", NULL) : g_strdup(ufn);
+    g_free(un);
+    g_free(ufn);
     g_free(fn);
   }
   g_dir_close(d);
@@ -304,8 +313,7 @@ void path_suggest(const char *opath, char **sug) {
 
 path_suggest_f:
   g_free(path);
-  if(dir)
-    free(dir);
+  g_free(dir);
 }
 
 

@@ -308,7 +308,7 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
     goto done;
   }
   real = g_filename_to_utf8(tmp, -1, NULL, NULL, NULL);
-  free(tmp);
+  g_free(tmp);
   if(!real) {
     ui_mf(uit_main_tab, UIP_MED, "Error getting file path for \"%s\": %s", vcpath, "Encoding error.");
     goto done;
@@ -522,7 +522,7 @@ static void fl_hash_thread(gpointer data, gpointer udata) {
     goto finish;
   }
   real = g_filename_to_utf8(tmp, -1, NULL, NULL, NULL);
-  free(tmp);
+  g_free(tmp);
   g_return_if_fail(real); // really shouldn't happen, we fetched this from a UTF-8 string after all.
 
   f = open(args->path, O_RDONLY);

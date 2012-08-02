@@ -563,8 +563,7 @@ static void c_share(char *args) {
         ui_mf(NULL, 0, "Added to share: /%s -> %s", first, path);
       }
     }
-    if(path)
-      free(path);
+    g_free(path);
   }
   g_free(first);
 }
