@@ -534,7 +534,9 @@ static void c_share(char *args) {
   else if(db_share_path(first))
     ui_m(NULL, 0, "You have already shared a directory with that name.");
   else {
-    char *path = path_expand(second);
+    char *fpath = g_filename_from_utf8(second, -1, NULL, NULL, NULL);
+    char *rpath = fpath ? path_expand(fpath) : NULL;
+    char *path = rpath ? g_filename_to_utf8(rpath, -1, NULL, NULL, NULL) : NULL;
     char *tmp;
     for(tmp = first; *tmp; tmp++)
       if(*tmp == '/' || *tmp == '\\')
@@ -543,7 +545,7 @@ static void c_share(char *args) {
       ui_m(NULL, 0, "Invalid character in share name.");
     else if(!path)
       ui_mf(NULL, 0, "Error obtaining absolute path: %s", g_strerror(errno));
-    else if(!g_file_test(path, G_FILE_TEST_IS_DIR))
+    else if(!g_file_test(rpath, G_FILE_TEST_IS_DIR))
       ui_m(NULL, 0, "Not a directory.");
     else {
       // Check whether it (or a subdirectory) is already shared
@@ -563,6 +565,8 @@ static void c_share(char *args) {
         ui_mf(NULL, 0, "Added to share: /%s -> %s", first, path);
       }
     }
+    g_free(fpath);
+    g_free(rpath);
     g_free(path);
   }
   g_free(first);
