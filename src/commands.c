@@ -631,6 +631,8 @@ static void c_refresh(char *args) {
   fl_list_t *n = fl_local_from_path(args);
   if(!n)
     ui_mf(NULL, 0, "Directory `%s' not found.", args);
+  else if(n->isfile)
+    ui_mf(NULL, 0, "Can't refresh a single file, please provide a directory.");
   else
     fl_refresh(n);
 }
