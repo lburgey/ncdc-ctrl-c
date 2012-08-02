@@ -120,7 +120,7 @@ struct dl_t {
   guint64 size;          // total size of the file
   guint64 have;          // what we have so far
   char *inc;             // path to the incomplete file (<incoming_dir>/<base32-hash>)
-  char *dest;            // destination path (must be on same filesystem as the incomplete file)
+  char *dest;            // destination path
   guint64 hash_block;    // number of bytes that each block represents
   tth_ctx_t *hash_tth;   // TTH state of the last block that we have
   GSequenceIter *iter;   // used by ui_dl
@@ -904,8 +904,13 @@ static void dl_finished(dl_t *dl) {
   if(dl->incfd > 0)
     g_warn_if_fail(close(dl->incfd) == 0);
   dl->incfd = 0;
+
+  char *fdest = g_filename_from_utf8(dl->dest, -1, NULL, NULL, NULL);
+  if(!fdest) // Just insist on UTF-8 if the conversion fails.
+    fdest = g_strdup(dl->dest);
+
   // Create destination directory, if it does not exist yet.
-  char *parent = g_path_get_dirname(dl->dest);
+  char *parent = g_path_get_dirname(fdest);
   if(g_mkdir_with_parents(parent, 0755) < 0)
     dl_queue_seterr(dl, DLE_IO_DEST, g_strerror(errno));
   g_free(parent);
@@ -915,10 +920,10 @@ static void dl_finished(dl_t *dl) {
   // does not exceed NAME_MAX. (Not that checking against NAME_MAX is really
   // reliable - some filesystems have an even more strict limit)
   int num = 1;
-  char *dest = g_strdup(dl->dest);
+  char *dest = g_strdup(fdest);
   while(!dl->islist && g_file_test(dest, G_FILE_TEST_EXISTS)) {
     g_free(dest);
-    dest = g_strdup_printf("%s.%d", dl->dest, num++);
+    dest = g_strdup_printf("%s.%d", fdest, num++);
   }
 
   // Move the file to the destination.
@@ -928,12 +933,15 @@ static void dl_finished(dl_t *dl) {
   if(dl->prio != DLP_ERR) {
     file_move(dl->inc, dest, dl->islist, &err);
     if(err) {
+      // Note: 'dest' is in filename encoding, but that's not a huge problem
+      // when it's just going to a g_warning().
       g_warning("Error moving `%s' to `%s': %s", dl->inc, dest, err->message);
       dl_queue_seterr(dl, DLE_IO_DEST, err->message);
       g_error_free(err);
     }
   }
   g_free(dest);
+  g_free(fdest);
 
   // open the file list
   if(dl->islist && dl->prio != DLP_ERR) {
