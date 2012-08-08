@@ -17,16 +17,14 @@
 #
 # Usage:
 #   ./build.sh $arch
-#   Where $arch = 'arm' or 'mipsel'
+#   Where $arch = 'arm', 'mipsel', 'i486' or 'x86_64'
 #
 # Note: The mipsel version compiles, but is currently broken. The mips port of
 # musl is currently a bit too experimental for ncdc.
 # (Current issue: http://www.openwall.com/lists/musl/2012/08/08/11)
 #
 # TODO:
-# - Add i486 and x84-64 architectures
 # - Cross-compile to platforms other than Linux?
-# - Put ncdc version in tarball name
 
 
 MUSL_VERSION=0.9.3
@@ -107,10 +105,11 @@ postbuild() {
 # Pre-built cross-compilation binaries for musl. Handy. :)
 getmusl() {
   # Order of $HOST is different than the tar/dir names, so we need this case.
-  DIR=
   case $TARGET in
     arm)    DIR=arm-linux-musleabi ;;
     mipsel) DIR=mipsel-linux-musl ;;
+    i486)   DIR=i486-linux-musl ;;
+    x86_64) DIR=x86_64-linux-musl ;;
   esac
   fem https://bitbucket.org/GregorR/musl-cross/downloads/ crossx86-$DIR-$MUSL_VERSION.tar.xz "musl-$TARGET" $DIR
 }
@@ -153,7 +152,8 @@ getgmp() {
   fem ftp://ftp.gmplib.org/pub/gmp-$GMP_VERSION/ gmp-$GMP_VERSION.tar.xz gmp
   prebuild gmp || return
   case $TARGET in
-    mipsel) ABI=o32
+    mipsel) ABI=o32 ;;
+    i486)   ABI=32 ;;
   esac
   $srcdir/configure --host=$HOST ABI=$ABI --disable-shared --without-readline --enable-static --prefix=$PREFIX || exit
   make install || exit
@@ -217,7 +217,10 @@ getglib() {
   export ac_cv_func_posix_getgrgid_r=yes    # libc
   export ac_cv_alignof_guint32=4            # Arch, not mentioned in Glib docs...
   export ac_cv_alignof_guint64=8            # Arch, ~
-  export ac_cv_alignof_unsigned_long=4      # Arch, ~
+  case $TARGET in                           # Arch, ~
+    x86_64) export ac_cv_alignof_unsigned_long=8 ;;
+    *)      export ac_cv_alignof_unsigned_long=4 ;;
+  esac
   $srcdir/configure --prefix=$PREFIX --enable-static --disable-shared\
     --disable-gtk-doc-html --disable-xattr --disable-fam --disable-dtrace\
     --disable-gcov --with-pcre=internal\
@@ -272,6 +275,8 @@ buildarch() {
   case $TARGET in
     arm)    HOST=arm-musl-linuxeabi ;;
     mipsel) HOST=mipsel-musl-linux ;;
+    i486)   HOST=i486-musl-linux ;;
+    x86_64) HOST=x86_64-musl-linux ;;
     *)      echo "Unknown target: $TARGET" ;;
   esac
   PREFIX="`pwd`/$TARGET/inst"
