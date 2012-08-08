@@ -9,9 +9,10 @@
 #   ncurses (with the 'tic' binary)
 #   perl
 #   python2
+#   git
 #   (Anything else I forgot)
-# - The ncdc source tree can be found in "..", and the configure script exists
-#   (i.e. autoreconf has been run).
+# - A checkout of the ncdc git repo can be found in "..", and the configure
+#   script exists (i.e. autoreconf has been run).
 # - This script is run on an x86 machine
 #
 # Usage:
@@ -25,7 +26,7 @@
 # TODO:
 # - Add i486 and x84-64 architectures
 # - Cross-compile to platforms other than Linux?
-# - Fix ncdc's --enable-git-version
+# - Put ncdc version in tarball name
 
 
 MUSL_VERSION=0.9.3
@@ -231,7 +232,7 @@ getglib() {
 getncdc() {
   prebuild ncdc || return
   srcdir=../../..
-  $srcdir/configure --host=$HOST --disable-git-version\
+  $srcdir/configure --host=$HOST\
     CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -lz -lbz2"\
     SQLITE_LIBS=-lsqlite3 GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp"\
     GLIB_LIBS="-pthread -lglib-2.0 -lgthread-2.0"\
@@ -243,9 +244,11 @@ getncdc() {
   gcc -I. -I$srcdir $srcdir/doc/gendoc.c -o gendoc || exit
   make V=1 || exit
 
-  cp ncdc ncdc-unstripped
+  VER=`cd '../../..' && git describe --abbrev=5 --dirty= | sed s/^v//`
+  tar -czf ../../ncdc-linux-$TARGET-$VER-unstripped.tar.gz ncdc
   $HOST-strip ncdc
-  tar -czf ../../ncdc-linux-$TARGET.tar.gz ncdc
+  tar -czf ../../ncdc-linux-$TARGET-$VER.tar.gz ncdc
+  echo "====== ncdc-linux-$TARGET-$VER.tar.gz and -unstripped created."
 
   postbuild
 }
