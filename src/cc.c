@@ -1418,7 +1418,7 @@ static void handle_connect(net_t *n, const char *addr) {
     // having an actual IP, but an attacked user who gets incoming connections
     // from both ncdc and other clients now knows both the DNS *and* the IP of
     // the hub. :-)
-    net_writef(n, "CSTA 000 referrer RFadc://%s\n", net_remoteaddr(cc->hub->net));
+    net_writef(n, "CSTA 000 referrer RFadc%s://%s\n", cc->hub->tls ? "s" : "", net_remoteaddr(cc->hub->net));
   } else {
     net_writef(n, "$MyNick %s|", cc->hub->nick_hub);
     net_writef(n, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s,Ref=%s|", PACKAGE_NAME, VERSION, net_remoteaddr(cc->hub->net));
