@@ -711,8 +711,19 @@ static char *f_tls_policy(const char *val) {
   return flags_fmt(var_tls_policy_ops, int_raw(val));
 }
 
+// Throw a warnnig in the users' face when they try to enable TLS-enabled file
+// transfers with an old GnuTLS version.
+void var_tls_policy_warn_threadsafe(int val) {
+  if(!THREADSAFE_TLS && val != VAR_TLSP_DISABLE) {
+    ui_m(NULL, 0, "\n"
+     "WARNING: You are using GnuTLS 2.x and have enabled the 'tls_policy' setting.\n"
+     "If you encounter any crashes while transferring files, please upgrade to GnuTLS 3.x or use '/set tls_policy disabled'.\n");
+  }
+}
+
 static char *p_tls_policy(const char *val, GError **err) {
   int n = flags_raw(var_tls_policy_ops, FALSE, val, err);
+  var_tls_policy_warn_threadsafe(n);
   return n ? g_strdup_printf("%d", n) : NULL;
 }
 
@@ -955,7 +966,7 @@ struct var_t {
   V(show_joinquit,    1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(slots,            1,0, f_int,          p_int_ge1,       NULL,          NULL,         s_hubinfo,       "10")\
   V(sudp_policy,      1,0, f_sudp_policy,  p_sudp_policy,   su_sudp_policy,g_sudp_policy,s_sudp_policy,   G_STRINGIFY(VAR_SUDPP_PREFER))\
-  V(tls_policy,       1,1, f_tls_policy,   p_tls_policy,    su_tls_policy, g_tls_policy, s_tls_policy,    G_STRINGIFY(VAR_TLSP_PREFER))\
+  V(tls_policy,       1,1, f_tls_policy,   p_tls_policy,    su_tls_policy, g_tls_policy, s_tls_policy,    THREADSAFE_TLS ? G_STRINGIFY(VAR_TLSP_PREFER) : G_STRINGIFY(VAR_TLSP_DISABLE))\
   V(tls_priority,     1,0, f_id,           p_tls_priority,  su_old,        NULL,         NULL,            "NORMAL")\
   V(ui_time_format,   1,0, f_id,           p_id,            su_old,        NULL,         NULL,            "[%H:%M:%S]")\
   V(upload_rate,      1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)
