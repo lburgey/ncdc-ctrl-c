@@ -256,7 +256,7 @@ static void fl_scan_check(fl_list_t *oldpar, fl_list_t *new, const char *real) {
 
 
 // *name is in filesystem encoding. For *path and *vpath see fl_scan_dir().
-static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpath, const char *name, gboolean symlink, GRegex *excl) {
+static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpath, const char *name, fl_scan_t *opts) {
   char *uname = NULL;  // name-to-UTF8
   char *vcpath = NULL; // vpath + uname
   char *ename = NULL;  // uname-to-filesystem
@@ -270,7 +270,7 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
     uname = g_filename_display_name(name);
 
   // Check for share_exclude as soon as we have the confname
-  if(excl && g_regex_match(excl, uname, 0, NULL))
+  if(opts->excl_regex && g_regex_match(opts->excl_regex, uname, 0, NULL))
     goto done;
 
   // Get the virtual path (for reporting purposes)
@@ -289,7 +289,7 @@ static fl_list_t *fl_scan_item(fl_list_t *old, const char *path, const char *vpa
   // Get cpath and try to stat() the file
   cpath = g_build_filename(path, ename, NULL);
   struct stat dat;
-  int r = symlink ? stat(cpath, &dat) : lstat(cpath, &dat);
+  int r = opts->symlink ? stat(cpath, &dat) : lstat(cpath, &dat);
   if(r < 0 || S_ISLNK(dat.st_mode) || !(S_ISREG(dat.st_mode) || S_ISDIR(dat.st_mode))) {
     if(r < 0)
       ui_mf(uit_main_tab, UIP_MED, "Error stat'ing \"%s\": %s", vcpath, g_strerror(errno));
@@ -339,7 +339,7 @@ done:
 // recursive
 // Doesn't handle paths longer than PATH_MAX, but I don't think it matters all that much.
 // *path is the filesystem path in filename encoding, vpath is the virtual path in UTF-8.
-static void fl_scan_dir(fl_list_t *parent, fl_list_t *old, const char *path, const char *vpath, gboolean inc_hidden, gboolean symlink, GRegex *excl) {
+static void fl_scan_dir(fl_list_t *parent, fl_list_t *old, const char *path, const char *vpath, fl_scan_t *opts) {
   GError *err = NULL;
   GDir *dir = g_dir_open(path, 0, &err);
   if(!dir) {
@@ -351,10 +351,10 @@ static void fl_scan_dir(fl_list_t *parent, fl_list_t *old, const char *path, con
   while((name = g_dir_read_name(dir))) {
     if(strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
       continue;
-    if(!inc_hidden && name[0] == '.')
+    if(!opts->inc_hidden && name[0] == '.')
       continue;
     // check with *excl, stat and create
-    fl_list_t *item = fl_scan_item(old, path, vpath, name, symlink, excl);
+    fl_list_t *item = fl_scan_item(old, path, vpath, name, opts);
     // and add it
     if(item)
       fl_list_add(parent, item, -1);
@@ -375,7 +375,7 @@ static void fl_scan_dir(fl_list_t *parent, fl_list_t *old, const char *path, con
       char *cpath = g_build_filename(path, enc, NULL);
       char *virtpath = g_build_filename(vpath, cur->name, NULL);
       cur->sub = g_ptr_array_new_with_free_func(fl_list_free);
-      fl_scan_dir(cur, old && old->sub ? fl_list_file_strict(old, cur) : NULL, cpath, virtpath, inc_hidden, symlink, excl);
+      fl_scan_dir(cur, old && old->sub ? fl_list_file_strict(old, cur) : NULL, cpath, virtpath, opts);
       g_free(virtpath);
       g_free(cpath);
       g_free(enc);
@@ -393,7 +393,7 @@ static void fl_scan_thread(gpointer data, gpointer udata) {
     fl_list_t *cur = fl_list_create("", FALSE);
     char *tmp = g_filename_from_utf8(args->path[i], -1, NULL, NULL, NULL);
     cur->sub = g_ptr_array_new_with_free_func(fl_list_free);
-    fl_scan_dir(cur, args->file[i], tmp, args->path[i], args->inc_hidden, args->symlink, args->excl_regex);
+    fl_scan_dir(cur, args->file[i], tmp, args->path[i], args);
     g_free(tmp);
     args->res[i] = cur;
   }
