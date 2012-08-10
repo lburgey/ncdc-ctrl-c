@@ -181,6 +181,7 @@ typedef struct fl_scan_t {
   fl_list_t **file, **res;
   char **path;
   GRegex *excl_regex;
+  gboolean emptydirs;
   gboolean inc_hidden;
   gboolean symlink;
   gboolean (*donefun)(gpointer);
@@ -379,6 +380,11 @@ static void fl_scan_dir(fl_list_t *parent, fl_list_t *old, const char *path, con
       g_free(virtpath);
       g_free(cpath);
       g_free(enc);
+    }
+    // Removes this item if it is an empty directory and if !opts->emptydirs.
+    if(!opts->emptydirs && !cur->isfile && !cur->sub->len) {
+      fl_list_remove(cur);
+      i--; // Make sure that the index doesn't change with the next iteration
     }
   }
 }
@@ -819,6 +825,7 @@ static void fl_refresh_process() {
   fl_list_t *dir = fl_refresh_queue->head->data;
   fl_scan_t *args = g_slice_new0(fl_scan_t);
   args->donefun = fl_refresh_scanned;
+  args->emptydirs = var_get_bool(0, VAR_share_emptydirs);
   args->inc_hidden = var_get_bool(0, VAR_share_hidden);
   args->symlink = var_get_bool(0, VAR_share_symlinks);
 

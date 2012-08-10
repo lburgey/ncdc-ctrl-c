@@ -960,6 +960,7 @@ struct var_t {
   V(pid,              0,0, NULL,           NULL,            NULL,          NULL,         NULL,            i_cid_pid())\
   V(reconnect_timeout,1,1, f_interval,     p_interval,      su_old,        NULL,         NULL,            "30")\
   V(sendfile,         1,0, f_sendfile,     p_sendfile,      su_bool,       NULL,         NULL,            "true")\
+  V(share_emptydirs,  1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(share_exclude,    1,0, f_id,           p_regex,         su_old,        NULL,         NULL,            NULL)\
   V(share_hidden,     1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(share_symlinks,   1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\

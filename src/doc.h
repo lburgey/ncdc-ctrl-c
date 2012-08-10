@@ -506,6 +506,12 @@ static const doc_set_t doc_sets[] = {
   " supported. Using sendfile() allows less resource usage while uploading, but"
   " may not work well on all systems."
 },
+{ "share_emptydirs", 0, "<boolean>",
+  "Share empty directories. When disabled (the default), empty directories in"
+  " your share will not be visible to others. This also affects empty"
+  " directories containing only empty directories, etc. A file list refresh is"
+  " required for this setting to be effective."
+},
 { "share_exclude", 0, "<regex>",
   "Any file or directory with a name that matches this regular expression will"
   " not be shared. A file list refresh is required for this setting to be"
