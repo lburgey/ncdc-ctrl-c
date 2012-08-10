@@ -95,7 +95,7 @@ static void sayme(char *args, gboolean me) {
     if(!u)
       ui_m(NULL, 0, "User is not online.");
     else
-      hub_msg(tab->hub, u, args, me, uit_msg_replyto(tab));
+      hub_msg(tab->hub, u, args, me);
   }
 }
 
@@ -132,7 +132,7 @@ static void c_msg(char *args) {
       uit_msg_open(u->uid, tab);
       // if we need to send something, do so
       if(sep && *sep)
-        hub_msg(tab->hub, u, sep, FALSE, 0);
+        hub_msg(tab->hub, u, sep, FALSE);
     }
   }
 }

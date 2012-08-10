@@ -202,13 +202,6 @@ void uit_hub_disconnect(ui_tab_t *tab) {
 }
 
 
-// Called when we've received a PM via the hub. This is just passed to the msg
-// tab.
-void uit_hub_msg(ui_tab_t *tab, hub_user_t *user, const char *msg, int replyto) {
-  uit_msg_msg(user, msg, replyto);
-}
-
-
 // Called by hub.c when hub->nick is set or changed (Not called when hub->nick
 // is reset to NULL).  A local hub_nick field is kept in the hub tab struct to
 // still provide highlighting for it after disconnecting from the hub.

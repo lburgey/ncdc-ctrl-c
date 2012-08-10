@@ -785,12 +785,12 @@ void hub_say(hub_t *hub, const char *str, gboolean me) {
 }
 
 
-void hub_msg(hub_t *hub, hub_user_t *user, const char *str, gboolean me, int dest) {
+void hub_msg(hub_t *hub, hub_user_t *user, const char *str, gboolean me) {
   if(hub->adc) {
-    GString *c = adc_generate('E', ADCC_MSG, hub->sid, dest ? dest : user->sid);
+    GString *c = adc_generate('E', ADCC_MSG, hub->sid, user->sid);
     adc_append(c, NULL, str);
     char enc[5] = {};
-    ADC_EFCC(dest ? dest : hub->sid, enc);
+    ADC_EFCC(hub->sid, enc);
     g_string_append_printf(c, " PM%s", enc);
     if(me)
       g_string_append(c, " ME1");
@@ -804,7 +804,7 @@ void hub_msg(hub_t *hub, hub_user_t *user, const char *str, gboolean me, int des
     g_free(msg);
     // emulate protocol echo
     msg = g_strdup_printf(me ? "<%s> /me %s" : "<%s> %s", hub->nick, str);
-    uit_hub_msg(hub->tab, user, msg, dest);
+    uit_msg_msg(user, msg);
     g_free(msg);
   }
 }
@@ -1207,10 +1207,13 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         g_message("Message from someone not on this hub. (%s: %s)", net_remoteaddr(hub->net), msg);
       else {
         char *m = g_strdup_printf(me ? "** %s %s" : "<%s> %s", cmd.type == 'I' ? "hub" : u->name, cmd.argv[0]);
-        if(cmd.type == 'E' || cmd.type == 'D' || cmd.type == 'F')
-          uit_hub_msg(hub->tab, cmd.source == hub->sid ? d : u, m,
-            pm && strlen(pm) == 4 && ADC_DFCC(pm) != cmd.source ? ADC_DFCC(pm) : 0);
-        else
+        if(cmd.type == 'E' || cmd.type == 'D' || cmd.type == 'F') { // PM
+          hub_user_t *pmu = pm && strlen(pm) == 4 && ADC_DFCC(pm) ? g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(ADC_DFCC(pm))) : NULL;
+          if(!pmu)
+            g_message("Invalid PM param in MSG from %s: %s", net_remoteaddr(hub->net), msg);
+          else
+            uit_msg_msg(cmd.source == hub->sid ? d : pmu, m);
+        } else // hub chat
           ui_m(hub->tab, UIM_CHAT|UIP_MED, m);
         g_free(m);
       }
@@ -1543,7 +1546,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       g_message("[hub: %s] Got a $To from `%s', who is not on this hub!", hub->tab->name, from);
     else {
       char *msge = nmdc_unescape_and_decode(hub, msg);
-      uit_hub_msg(hub->tab, u, msge, 0);
+      uit_msg_msg(u, msge);
       g_free(msge);
     }
     g_free(from);
