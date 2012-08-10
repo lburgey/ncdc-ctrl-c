@@ -49,7 +49,8 @@ typedef struct tab_t {
 #endif
 
 
-static int log_checkchat(void *dat, char *nick, char *msg) {
+// Also used for the MSG tab
+int uit_hub_log_checkchat(void *dat, char *nick, char *msg) {
   tab_t *t = dat;
   if(!t->nick)
     return 0;
@@ -71,7 +72,7 @@ ui_tab_t *uit_hub_create(const char *name, gboolean conn) {
   t->tab.hub = hub_create((ui_tab_t *)t);
   t->tab.log = ui_logwindow_create(t->tab.name, var_get_int(t->tab.hub->id, VAR_backlog));
   t->tab.log->handle = t;
-  t->tab.log->checkchat = log_checkchat;
+  t->tab.log->checkchat = uit_hub_log_checkchat;
 
   // already used this name before? open connection again
   if(conn && var_get(t->tab.hub->id, VAR_hubaddr))

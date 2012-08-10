@@ -44,12 +44,6 @@ static GHashTable *msg_tabs = NULL;
 #define inittable() if(!msg_tabs) msg_tabs = g_hash_table_new(g_int64_hash, g_int64_equal);
 
 
-static int log_checkchat(void *dat, char *nick, char *msg) {
-  ui_tab_t *tab = dat;
-  return strcmp(nick, tab->name+1) == 0 ? 0 : 2;
-}
-
-
 ui_tab_t *uit_msg_create(hub_t *hub, hub_user_t *user) {
   inittable();
   g_return_val_if_fail(!g_hash_table_lookup(msg_tabs, &user->uid), NULL);
@@ -60,8 +54,8 @@ ui_tab_t *uit_msg_create(hub_t *hub, hub_user_t *user) {
   t->uid = user->uid;
   t->tab.name = g_strdup_printf("~%s", user->name);
   t->tab.log = ui_logwindow_create(t->tab.name, var_get_int(0, VAR_backlog));
-  t->tab.log->handle = t;
-  t->tab.log->checkchat = log_checkchat;
+  t->tab.log->handle = hub->tab;
+  t->tab.log->checkchat = uit_hub_log_checkchat;
 
   ui_mf((ui_tab_t *)t, 0, "Chatting with %s on %s.", user->name, hub->tab->name);
   g_hash_table_insert(msg_tabs, &t->uid, t);
