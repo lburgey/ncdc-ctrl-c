@@ -149,13 +149,13 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
 
 
 // Write the top-level XML
-static int at(ctx_t *x, fl_list_t *fl, int level) {
+static int at(ctx_t *x, fl_list_t *fl, const char *cid, int level) {
   as("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
   as("<FileListing Version=\"1\" Generator=\"");
   if(al(x, PACKAGE_STRING))
     return -1;
   as("\" CID=\"");
-  as(var_get(0, VAR_cid)); // No need to escape this, it's base32
+  as(cid); // No need to escape this, it's base32
   as("\" Base=\"");
   if(fl) {
     char *path = fl_list_path(fl);
@@ -250,12 +250,12 @@ static int ctx_close(ctx_t *x) {
 }
 
 
-gboolean fl_save(fl_list_t *fl, const char *file, GString *buf, int level, GError **err) {
+gboolean fl_save(fl_list_t *fl, const char *file, GString *buf, const char *cid, int level, GError **err) {
   g_return_val_if_fail(err == NULL || *err == NULL, FALSE);
 
   ctx_t x;
   if(!ctx_open(&x, file, buf))
-    at(&x, fl, level);
+    at(&x, fl, cid, level);
   ctx_close(&x);
   if(x.err)
     g_propagate_error(err, x.err);
