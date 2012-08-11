@@ -33,7 +33,8 @@
 #include <bzlib.h>
 
 
-#define BUFSIZE (32*1024)
+// This isn't a strict maximum, may be exceeded by a single <File> or <Directory> entry.
+#define BUFSIZE (64*1024 - 1024)
 
 
 typedef struct ctx_t {
@@ -71,29 +72,18 @@ static int doflush(ctx_t *x) {
 }
 
 
-#define checkflush if(x->buf->len >= BUFSIZE && doflush(x)) return -1
-
-// Append a single character, returns the calling function on error.
-#define ac(c) do {\
-    g_string_append_c(x->buf, c);\
-    checkflush;\
-  } while(0)
+// Append a single character
+#define ac(c) g_string_append_c(x->buf, c)
 
 // Append a string
-#define as(s) do {\
-    g_string_append(x->buf, s);\
-    checkflush;\
-  } while(0)
+#define as(s) g_string_append(x->buf, s)
 
 // Append an unsigned 64-bit integer
-#define a64(i) do {\
-    g_string_append_printf(x->buf, "%"G_GUINT64_FORMAT, i);\
-    checkflush;\
-  } while(0)
+#define a64(i) g_string_append_printf(x->buf, "%"G_GUINT64_FORMAT, i)
 
 
 // XML-escape and write a string literal
-static int al(ctx_t *x, const char *str) {
+static void al(ctx_t *x, const char *str) {
   while(*str) {
     switch(*str) {
     case '&': as("&amp;"); break;
@@ -104,7 +94,6 @@ static int al(ctx_t *x, const char *str) {
     }
     str++;
   }
-  return 0;
 }
 
 
@@ -118,8 +107,7 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
       char tth[40] = {};
       base32_encode(cur->tth, tth);
       as("<File Name=\"");
-      if(al(x, cur->name))
-        return -1;
+      al(x, cur->name);
       as("\" Size=\"");
       a64(cur->size);
       as("\" TTH=\"");
@@ -129,8 +117,7 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
 
     if(!cur->isfile) {
       as("<Directory Name=\"");
-      if(al(x, cur->name))
-        return -1;
+      al(x, cur->name);
       ac('"');
       if(level < 1 && !fl_list_isempty(cur))
         as(" Incomplete=\"1\"");
@@ -143,6 +130,9 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
       } else
         as("/>\n");
     }
+
+    if(x->buf->len >= BUFSIZE && doflush(x))
+      return -1;
   }
   return 0;
 }
@@ -152,17 +142,13 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
 static int at(ctx_t *x, fl_list_t *fl, const char *cid, int level) {
   as("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
   as("<FileListing Version=\"1\" Generator=\"");
-  if(al(x, PACKAGE_STRING))
-    return -1;
+  al(x, PACKAGE_STRING);
   as("\" CID=\"");
   as(cid); // No need to escape this, it's base32
   as("\" Base=\"");
   if(fl) {
     char *path = fl_list_path(fl);
-    if(al(x, path)) {
-      g_free(path);
-      return -1;
-    }
+    al(x, path);
     // Make sure the base path always ends with a slash, some clients will fail otherwise.
     if(path[strlen(path)-1] != '/')
       ac('/');
