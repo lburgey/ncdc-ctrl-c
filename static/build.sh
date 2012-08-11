@@ -181,7 +181,7 @@ getgnutls() {
     echo "#define rpl_fprintf fprintf" >> "$srcdir/config.h.in"
     touch "$srcdir/patched"
   fi
-  $srcdir/configure --prefix=$PREFIX --disable-gtk-doc-html --disable-shared\
+  $srcdir/configure --prefix=$PREFIX --disable-gtk-doc-html --disable-shared --disable-silent-rules\
     --enable-static --disable-cxx --disable-srp-authentication --disable-openssl-compatibility\
     --disable-guile --disable-crywrap --with-included-libtasn1 --without-p11-kit\
     --host=$HOST CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" || exit
@@ -223,7 +223,7 @@ getglib() {
   esac
   $srcdir/configure --prefix=$PREFIX --enable-static --disable-shared\
     --disable-gtk-doc-html --disable-xattr --disable-fam --disable-dtrace\
-    --disable-gcov --with-pcre=internal\
+    --disable-gcov --with-pcre=internal --disable-silent-rules\
     --host=$HOST CPPFLAGS=-D_GNU_SOURCE || exit
   perl -pi -e 's{(#define GLIB_LOCALE_DIR).+}{$1 "/usr/share/locale"}' config.h
   make -C glib install || exit
@@ -235,7 +235,7 @@ getglib() {
 getncdc() {
   prebuild ncdc || return
   srcdir=../../..
-  $srcdir/configure --host=$HOST\
+  $srcdir/configure --host=$HOST --disable-silent-rules\
     CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -lz -lbz2"\
     SQLITE_LIBS=-lsqlite3 GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp"\
     GLIB_LIBS="-pthread -lglib-2.0 -lgthread-2.0"\
@@ -245,7 +245,7 @@ getncdc() {
   touch deps/.dirstamp deps/.deps/.dirstamp deps/makeheaders.o doc/.dirstamp doc/.deps/.dirstamp doc/gendoc.o 
   gcc $srcdir/deps/makeheaders.c -o makeheaders || exit
   gcc -I. -I$srcdir $srcdir/doc/gendoc.c -o gendoc || exit
-  make V=1 || exit
+  make || exit
 
   VER=`cd '../../..' && git describe --abbrev=5 --dirty= | sed s/^v//`
   tar -czf ../../ncdc-linux-$TARGET-$VER-unstripped.tar.gz ncdc
