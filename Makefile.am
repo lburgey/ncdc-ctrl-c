@@ -72,7 +72,7 @@ auto_headers=$(ncdc_SOURCES:.c=.h)
 noinst_HEADERS=src/doc.h src/ncdc.h
 ncdc_CPPFLAGS=-I$(top_builddir)/src
 ncdc_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
-ncdc_LDADD=-lm $(NCURSES_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(SQLITE_LIBS)
+ncdc_LDADD=-lm $(NCURSES_LIBS) $(Z_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(SQLITE_LIBS)
 MOSTLYCLEANFILES=$(auto_headers) mkhdr.done
 
 mkhdr.done: $(mkhdr_dep) ${ncdc_SOURCES}

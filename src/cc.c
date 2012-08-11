@@ -731,7 +731,7 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
     // We don't support recursive lists (yet), as these may be somewhat expensive.
     GString *buf = g_string_new("");
     GError *e = NULL;
-    if(!fl_save(f, NULL, buf, var_get(0, VAR_cid), 1, &e)) {
+    if(!fl_save(f, var_get(0, VAR_cid), 1, FALSE, buf, NULL, &e)) {
       g_set_error(err, 1, 50, "Creating partial XML list: %s", e->message);
       g_error_free(e);
       g_string_free(buf, TRUE);

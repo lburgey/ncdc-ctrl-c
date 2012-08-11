@@ -31,26 +31,39 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <bzlib.h>
+#include <zlib.h>
 
 
 // This isn't a strict maximum, may be exceeded by a single <File> or <Directory> entry.
 #define BUFSIZE (64*1024 - 1024)
+// Minimum output buffer size to give to zlib's deflate() function.
+#define ZLIBBUFSIZE (16*1024)
+
+
+// Output configurations
+#define FO_FU 0 // Write to file (uncompressed)
+#define FO_FB 1 // Write to file (bzip2)
+#define FO_MU 2 // Write to memory (uncompressed)
+#define FO_MZ 3 // Write to memory (zlib)
 
 
 typedef struct ctx_t {
-  GString *buf;     // we're always writing to a (temporary) buffer
-  BZFILE *fh_bz;    // if BZ2 compression is enabled (implies fh_h!=NULL)
-  FILE *fh_f;       // if we're writing to a file
-  const char *file; // Filename
-  char *tmpfile;    // Temp filename
-  gboolean freebuf; // Whether we should free the buffer on close (otherwise it's passed back to the application)
+  int conf;         // FO_*
+  GString *buf;     // Write buffer (final in F0_MU, temporary otherwise)
+  GString *dest;    // F0_MZ - Destination buffer
+  z_stream *zlib;   // F0_MZ
+  BZFILE *fh_bz;    // F0_FB
+  FILE *fh_f;       // F0_F*
+  const char *file; // F0_F* - Filename (ownership is of the caller)
+  char *tmpfile;    // F0_F* - Temp filename (ownership is ours)
   GError *err;
 } ctx_t;
 
 
-// Flushes the write buffer to the underlying bzip2/file object (if any).
-static int doflush(ctx_t *x) {
-  if(x->fh_bz) {
+// Flushes the write buffer to the underlying bzip2/zlib/file object (if any).
+static int doflush(ctx_t *x, gboolean force) {
+  switch(x->conf) {
+  case FO_FB: {
     int bzerr;
     BZ2_bzWrite(&bzerr, x->fh_bz, x->buf->str, x->buf->len);
     if(bzerr != BZ_OK) {
@@ -58,14 +71,44 @@ static int doflush(ctx_t *x) {
       return -1;
     }
     x->buf->len = 0;
+    break;
+  }
 
-  } else if(x->fh_f) {
+  case FO_FU: {
     int r = fwrite(x->buf->str, 1, x->buf->len, x->fh_f);
     if(r != x->buf->len) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
     x->buf->len = 0;
+    break;
+  }
+
+  case FO_MZ: {
+    int r;
+    x->zlib->next_in = (Bytef *)x->buf->str;
+    x->zlib->avail_in = x->buf->len;
+    do {
+      if(x->zlib->avail_out < ZLIBBUFSIZE) {
+        g_string_set_size(x->dest, x->dest->len+ZLIBBUFSIZE);
+        x->dest->len -= ZLIBBUFSIZE;
+        x->zlib->avail_out += ZLIBBUFSIZE;
+        x->zlib->next_out = (Bytef *)(x->dest->str + x->zlib->total_out);
+      }
+      r = deflate(x->zlib, force ? Z_FINISH : Z_NO_FLUSH);
+      x->dest->len = x->zlib->total_out;
+    } while(x->buf->len > 0 && r == Z_OK);
+    if(force ? (r != Z_STREAM_END) : (r != Z_OK && r != Z_BUF_ERROR)) {
+      g_set_error(&x->err, 1, 0, "Zlib compression error (%d)", r);
+      return -1;
+    }
+    g_string_erase(x->buf, 0, ((char *)x->zlib->next_in)-x->buf->str);
+    break;
+  }
+
+  case FO_MU:
+    // Nothing to do here, x->buf is already our destiniation.
+    break;
   }
 
   return 0;
@@ -131,7 +174,7 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
         as("/>\n");
     }
 
-    if(x->buf->len >= BUFSIZE && doflush(x))
+    if(x->buf->len >= BUFSIZE && doflush(x, FALSE))
       return -1;
   }
   return 0;
@@ -167,25 +210,35 @@ static int at(ctx_t *x, fl_list_t *fl, const char *cid, int level) {
 }
 
 
-static int ctx_open(ctx_t *x, const char *file, GString *buf) {
+static int ctx_open(ctx_t *x, int conf, const char *file, GString *buf) {
   memset(x, 0, sizeof(ctx_t));
-  x->buf = buf;
   x->file = file;
+  x->conf = conf;
 
-  // Always make sure we have a buffer
-  if(!x->buf) {
+  // Set buf/dest
+  if(x->conf == FO_MU)
+    x->buf = buf;
+  else
     x->buf = g_string_new("");
-    x->freebuf = TRUE;
+  if(x->conf == FO_MZ)
+    x->dest = buf;
+
+  // zlib compressor
+  if(x->conf == FO_MZ) {
+    x->zlib = g_slice_new0(z_stream);
+    x->zlib->zalloc = Z_NULL;
+    x->zlib->zfree = Z_NULL;
+    x->zlib->opaque = NULL;
+    int r = deflateInit(x->zlib, Z_DEFAULT_COMPRESSION);
+    if(r != Z_OK) {
+      g_set_error(&x->err, 1, 0, "Unable to initialize zlib compression (%d: %s)", r, x->zlib->msg);
+      return -1;
+    }
   }
 
-  gboolean isbz2 = FALSE;
-  if(file) {
-    isbz2 = strlen(file) > 4 && strcmp(file+(strlen(file)-4), ".bz2") == 0;
+  // open file
+  if(x->conf == FO_FB || x->conf == FO_FU) {
     x->tmpfile = g_strdup_printf("%s.tmp-%d", file, rand());
-  }
-
-  // open temp file
-  if(x->tmpfile) {
     x->fh_f = fopen(x->tmpfile, "w");
     if(!x->fh_f) {
       g_set_error_literal(&x->err, 1, 0, g_strerror(errno));
@@ -193,8 +246,8 @@ static int ctx_open(ctx_t *x, const char *file, GString *buf) {
     }
   }
 
-  // open compressor (if needed)
-  if(isbz2 && x->fh_f) {
+  // bzip2 compressor
+  if(x->conf == FO_FB) {
     int bzerr;
     x->fh_bz = BZ2_bzWriteOpen(&bzerr, x->fh_f, 7, 0, 0);
     if(bzerr != BZ_OK) {
@@ -209,38 +262,51 @@ static int ctx_open(ctx_t *x, const char *file, GString *buf) {
 
 // Flushes the buffer, closes/renames the file and frees some memory. Does not
 // free x->file (not our property) and x->err (still used).
-static int ctx_close(ctx_t *x) {
+static void ctx_close(ctx_t *x) {
   if(!x->err)
-    doflush(x);
+    doflush(x, TRUE);
 
-  if(x->freebuf)
+  if(x->conf != FO_MU && x->buf)
     g_string_free(x->buf, TRUE);
 
-  if(x->fh_bz) {
+  if(x->conf == FO_MZ && x->zlib) {
+    deflateEnd(x->zlib);
+    g_slice_free(z_stream, x->zlib);
+  }
+
+  if(x->conf == FO_FB && x->fh_bz) {
     int bzerr;
     BZ2_bzWriteClose(&bzerr, x->fh_bz, 0, NULL, NULL);
     if(bzerr != BZ_OK && !x->err)
       g_set_error(&x->err, 1, 0, "Error closing bzip2 stream (%d): %s", bzerr, g_strerror(errno));
   }
 
-  if(x->fh_f && fclose(x->fh_f) && !x->err)
-    g_set_error(&x->err, 1, 0, "Error closing file: %s", g_strerror(errno));
+  if(x->conf == FO_FB || x->conf == FO_FU) {
+    if(x->fh_f && fclose(x->fh_f) && !x->err)
+      g_set_error(&x->err, 1, 0, "Error closing file: %s", g_strerror(errno));
 
-  if(x->tmpfile && !x->err && rename(x->tmpfile, x->file) < 0)
-    g_set_error(&x->err, 1, 0, "Error moving file: %s", g_strerror(errno));
+    if(!x->err && rename(x->tmpfile, x->file) < 0)
+      g_set_error(&x->err, 1, 0, "Error moving file: %s", g_strerror(errno));
 
-  if(x->tmpfile && x->err)
-    unlink(x->tmpfile);
-  g_free(x->tmpfile);
-  return x->err ? -1 : 0;
+    if(x->tmpfile && x->err)
+      unlink(x->tmpfile);
+    g_free(x->tmpfile);
+  }
 }
 
 
-gboolean fl_save(fl_list_t *fl, const char *file, GString *buf, const char *cid, int level, GError **err) {
+// Serialize a file list to a string. Config is chosen from the arguments:
+// FU: buf == NULL, file doesn't end with .bz2
+// FB: buf == NULL, file ends with .bz2
+// MU: buf != NULL, !zlib
+// MZ: buf == NULL, zlib
+gboolean fl_save(fl_list_t *fl, const char *cid, int level, gboolean zlib, GString *buf, const char *file, GError **err) {
   g_return_val_if_fail(err == NULL || *err == NULL, FALSE);
 
   ctx_t x;
-  if(!ctx_open(&x, file, buf))
+  int conf = buf && zlib ? FO_MZ : buf ? FO_MU :
+    strlen(file) > 4 && strcmp(file+(strlen(file)-4), ".bz2") == 0 ? FO_FB : FO_FU;
+  if(ctx_open(&x, conf, file, buf) == 0)
     at(&x, fl, cid, level);
   ctx_close(&x);
   if(x.err)

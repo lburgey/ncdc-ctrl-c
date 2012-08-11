@@ -33,7 +33,7 @@ AM_CONDITIONAL([HAVE_MH], [test "x$have_mh" = "xyes"])
 
 # Check for header files.
 AC_CHECK_HEADERS(
-  [wchar.h locale.h signal.h unistd.h fcntl.h bzlib.h\
+  [wchar.h locale.h signal.h unistd.h fcntl.h zlib.h bzlib.h\
    sys/types.h sys/stat.h sys/socket.h\
    arpa/inet.h netdb.h netinet/in.h netinet/tcp.h],[],
   AC_MSG_ERROR([Required header file not found]))
@@ -124,6 +124,12 @@ AC_CHECK_LIB([ncursesw], [get_wch], [
                  [AC_MSG_ERROR(ncursesw library is required)])
   ]
 )
+
+# Check for zlib
+AC_CHECK_LIB([z],
+             [deflate],
+             [AC_SUBST([Z_LIBS],[-lz])],
+             [AC_MSG_ERROR(zlib library is required)])
 
 # Check for libbz2
 AC_CHECK_LIB([bz2],
