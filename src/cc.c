@@ -288,6 +288,7 @@ struct cc_t {
   gboolean slot_mini : 1;
   gboolean slot_granted : 1;
   gboolean dl : 1;
+  gboolean zlig : 1; // Only used for partial file lists, and only used on ADC because I don't know how NMDC clients handle that
   guint16 port;
   guint16 state;
   guint16 active_type; // listen.c:LBT_*
@@ -695,7 +696,7 @@ static void send_file(cc_t *cc, const char *path, guint64 start, guint64 len, gb
 //  51: File not available
 //  53: No slots
 // Handles both ADC GET and the NMDC $ADCGET.
-static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 bytes, GError **err) {
+static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 bytes, gboolean zlib, GError **err) {
   // tthl
   if(strcmp(type, "tthl") == 0) {
     if(strncmp(id, "TTH/", 4) != 0 || !istth(id+4) || start != 0 || bytes != -1) {
@@ -731,14 +732,15 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
     // We don't support recursive lists (yet), as these may be somewhat expensive.
     GString *buf = g_string_new("");
     GError *e = NULL;
-    if(!fl_save(f, var_get(0, VAR_cid), 1, FALSE, buf, NULL, &e)) {
+    int len = fl_save(f, var_get(0, VAR_cid), 1, zlib, buf, NULL, &e);
+    if(!len) {
       g_set_error(err, 1, 50, "Creating partial XML list: %s", e->message);
       g_error_free(e);
       g_string_free(buf, TRUE);
       return;
     }
     char *eid = adc_escape(id, !cc->adc);
-    net_writef(cc->net, cc->adc ? "CSND list %s 0 %d\n" : "$ADCSND list %s 0 %d|", eid, buf->len);
+    net_writef(cc->net, cc->adc ? "CSND list %s 0 %d%s\n" : "$ADCSND list %s 0 %d%s|", eid, len, zlib ? " ZL1" : "");
     net_write(cc->net, buf->str, buf->len);
     g_free(eid);
     g_string_free(buf, TRUE);
@@ -909,9 +911,13 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
       cc_disconnect(cc, TRUE);
     } else {
-      // TODO: actually do something with the arguments.
+      int i;
+      for(i=0; i<cmd.argc; i++)
+        if(strcmp(cmd.argv[i], "ADZLIG") == 0)
+          cc->zlig = TRUE;
+
       if(cc->active)
-        net_writestr(cc->net, "CSUP ADBASE ADTIGR ADBZIP\n");
+        net_writestr(cc->net, "CSUP ADBASE ADTIGR ADBZIP ADZLIG\n");
 
       GString *r = adc_generate('C', ADCC_INF, 0, 0);
       adc_append(r, "ID", var_get(0, VAR_cid));
@@ -986,7 +992,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       guint64 start = g_ascii_strtoull(cmd.argv[2], NULL, 0);
       gint64 len = g_ascii_strtoll(cmd.argv[3], NULL, 0);
       GError *err = NULL;
-      handle_adcget(cc, cmd.argv[0], cmd.argv[1], start, len, &err);
+      handle_adcget(cc, cmd.argv[0], cmd.argv[1], start, len, cc->zlig&&adc_getparam(cmd.argv, "ZL", NULL)?TRUE:FALSE, &err);
       if(err) {
         GString *r = adc_generate('C', ADCC_STA, 0, 0);
         g_string_append_printf(r, " 1%02d", err->code);
@@ -1005,6 +1011,14 @@ static void adc_handle(net_t *net, char *msg, int _len) {
     } else if(!cc->dl || cc->state != CCS_TRANSFER) {
       g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
       g_message("CC:%s: Received message in wrong state: %s", net_remoteaddr(cc->net), msg);
+      cc_disconnect(cc, TRUE);
+    } else if(adc_getparam(cmd.argv, "ZL", NULL)) {
+      // Even though we indicate support for ZLIG, we don't actually support
+      // *receiving* zlib compressed transfers. So this is an error.
+      // TODO: This is in violation with the ADC spec, to probably want to fix
+      // this at some point.
+      g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
+      g_message("CC:%s: Received zlib-compressed data when we didn't request it: %s", net_remoteaddr(cc->net), msg);
       cc_disconnect(cc, TRUE);
     } else
       handle_adcsnd(cc, strcmp(cmd.argv[0], "tthl") == 0, g_ascii_strtoull(cmd.argv[2], NULL, 0), g_ascii_strtoll(cmd.argv[3], NULL, 0));
@@ -1286,7 +1300,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       cc_disconnect(cc, TRUE);
     } else if(un_id && g_utf8_validate(un_id, -1, NULL)) {
       GError *err = NULL;
-      handle_adcget(cc, type, un_id, st, by, &err);
+      handle_adcget(cc, type, un_id, st, by, FALSE, &err);
       if(err) {
         if(err->code != 53)
           net_writef(cc->net, "$Error %s|", err->message);
@@ -1411,7 +1425,7 @@ static void handle_connect(net_t *n, const char *addr) {
     return;
 
   if(cc->adc) {
-    net_writestr(n, "CSUP ADBASE ADTIGR ADBZIP\n");
+    net_writestr(n, "CSUP ADBASE ADTIGR ADBZIP ADZLIG\n");
     // Note that while http://www.adcportal.com/wiki/REF says we should send
     // the hostname used to connect to the hub, the actual IP is easier to get
     // in our case. I personally don't see how having a hostname is better than
