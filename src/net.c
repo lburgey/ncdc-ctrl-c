@@ -742,6 +742,7 @@ static gboolean asy_write(net_t *n) {
       return dis_shutdown(n);
   }
 
+  n->wantwrite = !!n->wbuf->len;
   return TRUE;
 }
 
