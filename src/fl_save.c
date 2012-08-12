@@ -49,6 +49,7 @@
 
 typedef struct ctx_t {
   int conf;         // FO_*
+  int size;
   GString *buf;     // Write buffer (final in F0_MU, temporary otherwise)
   GString *dest;    // F0_MZ - Destination buffer
   z_stream *zlib;   // F0_MZ
@@ -70,6 +71,7 @@ static int doflush(ctx_t *x, gboolean force) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
+    x->size += x->buf->len;
     x->buf->len = 0;
     break;
   }
@@ -80,6 +82,7 @@ static int doflush(ctx_t *x, gboolean force) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
+    x->size += x->buf->len;
     x->buf->len = 0;
     break;
   }
@@ -102,11 +105,14 @@ static int doflush(ctx_t *x, gboolean force) {
       g_set_error(&x->err, 1, 0, "Zlib compression error (%d)", r);
       return -1;
     }
-    g_string_erase(x->buf, 0, ((char *)x->zlib->next_in)-x->buf->str);
+    int read = ((char *)x->zlib->next_in)-x->buf->str;
+    x->size += read;
+    g_string_erase(x->buf, 0, read);
     break;
   }
 
   case FO_MU:
+    x->size = x->buf->len;
     // Nothing to do here, x->buf is already our destiniation.
     break;
   }
@@ -300,7 +306,8 @@ static void ctx_close(ctx_t *x) {
 // FB: buf == NULL, file ends with .bz2
 // MU: buf != NULL, !zlib
 // MZ: buf == NULL, zlib
-gboolean fl_save(fl_list_t *fl, const char *cid, int level, gboolean zlib, GString *buf, const char *file, GError **err) {
+// Returns the uncompressed size of the list or 0 on error.
+int fl_save(fl_list_t *fl, const char *cid, int level, gboolean zlib, GString *buf, const char *file, GError **err) {
   g_return_val_if_fail(err == NULL || *err == NULL, FALSE);
 
   ctx_t x;
@@ -312,6 +319,6 @@ gboolean fl_save(fl_list_t *fl, const char *cid, int level, gboolean zlib, GStri
   if(x.err)
     g_propagate_error(err, x.err);
 
-  return x.err ? FALSE : TRUE;
+  return x.err ? 0 : x.size;
 }
 
