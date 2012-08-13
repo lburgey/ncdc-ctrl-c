@@ -696,7 +696,7 @@ static void send_file(cc_t *cc, const char *path, guint64 start, guint64 len, gb
 //  51: File not available
 //  53: No slots
 // Handles both ADC GET and the NMDC $ADCGET.
-static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 bytes, gboolean zlib, GError **err) {
+static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 bytes, gboolean zlib, gboolean re1, GError **err) {
   // tthl
   if(strcmp(type, "tthl") == 0) {
     if(strncmp(id, "TTH/", 4) != 0 || !istth(id+4) || start != 0 || bytes != -1) {
@@ -729,10 +729,13 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
       g_set_error_literal(err, 1, 51, "File Not Available");
       return;
     }
-    // We don't support recursive lists (yet), as these may be somewhat expensive.
+    // Use a targetsize of 16k for non-recursive lists and 256k for recursive
+    // ones. This should give useful results in most cases. The only exception
+    // here is Jucy, which does not handle "Incomplete" entries in a recursive
+    // list, but... yeah, that's Jucy's problem. :-)
     GString *buf = g_string_new("");
     GError *e = NULL;
-    int len = fl_save(f, var_get(0, VAR_cid), 1, zlib, buf, NULL, &e);
+    int len = fl_save(f, var_get(0, VAR_cid), re1 ? 256*1024 : 16*1024, zlib, buf, NULL, &e);
     if(!len) {
       g_set_error(err, 1, 50, "Creating partial XML list: %s", e->message);
       g_error_free(e);
@@ -992,7 +995,8 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       guint64 start = g_ascii_strtoull(cmd.argv[2], NULL, 0);
       gint64 len = g_ascii_strtoll(cmd.argv[3], NULL, 0);
       GError *err = NULL;
-      handle_adcget(cc, cmd.argv[0], cmd.argv[1], start, len, cc->zlig&&adc_getparam(cmd.argv, "ZL", NULL)?TRUE:FALSE, &err);
+      handle_adcget(cc, cmd.argv[0], cmd.argv[1], start, len,
+        cc->zlig&&adc_getparam(cmd.argv, "ZL", NULL)?TRUE:FALSE, adc_getparam(cmd.argv, "RE", NULL)?TRUE:FALSE, &err);
       if(err) {
         GString *r = adc_generate('C', ADCC_STA, 0, 0);
         g_string_append_printf(r, " 1%02d", err->code);
@@ -1300,7 +1304,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       cc_disconnect(cc, TRUE);
     } else if(un_id && g_utf8_validate(un_id, -1, NULL)) {
       GError *err = NULL;
-      handle_adcget(cc, type, un_id, st, by, FALSE, &err);
+      handle_adcget(cc, type, un_id, st, by, FALSE, FALSE, &err);
       if(err) {
         if(err->code != 53)
           net_writef(cc->net, "$Error %s|", err->message);

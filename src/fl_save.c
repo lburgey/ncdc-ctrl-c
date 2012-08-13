@@ -33,11 +33,53 @@
 #include <bzlib.h>
 #include <zlib.h>
 
+/* The "targetsize algorithm" (I thought of that name myself, googling won't help you. Probably):
+ *
+ * If enabled, the targetsize algorithm determines which directories should be
+ * included in the serialization or not. The goal of this algorithm is to:
+ * - Assign a roughly equal number of serialization bytes to each directory in
+ *   the same level.
+ * - Try to keep the total serialized data below or around the target size.
+ *
+ * It works as follows:
+ *   serialize_full(dir, targetsize):
+ *     files_left = files_in_dir(dir)
+ *     dirs_left = dirs_in_dir(dir)
+ *     for each item in dir:
+ *       if item is file:
+ *         serialize_file(file)
+ *         files_left--;
+ *       if item is dir:
+ *         newtargetsize = (((targetsize - size_serialized) - (files_left*AVGFILELEN)) / dirs_left) - size_of_this_dir_entry
+ *         if newtargetsize > items_in_dir(item)*AVGENTRYLEN:
+ *           serialize_full(item, newtargetsize)
+ *         else
+ *           serialize_incompete(item)
+ *         dirs_left--;
+ *
+ * Some notes:
+ * - The performance impact of this algorithm is quite minimal. :-)
+ * - This algorithm is based on heuristics, it's not optimal for anything.
+ * - All entries of the top level requested directory are included.
+ * - This algorithm is stupid: It may exceed the target size quite a bit in
+ *   some situations, but may also include way too little information in
+ *   others. This kinda sucks.
+ * - On conservative guesses, this algorithm will favour directories at the end
+ *   of the list. As directory entries are ordered alphabetically in our data
+ *   structures, the notion of "end of the list" here is usually equivalent to
+ *   the "end of the list" as the user on the other side will see it. This
+ *   kinda sucks as well.
+ */
+
 
 // This isn't a strict maximum, may be exceeded by a single <File> or <Directory> entry.
 #define BUFSIZE (64*1024 - 1024)
 // Minimum output buffer size to give to zlib's deflate() function.
 #define ZLIBBUFSIZE (16*1024)
+
+// Some estimate stats for determining what to include in a file list.
+#define AVGFILELEN 105 // Average size of a <File /> entry
+#define AVGENTRYLEN 80 // Average size of any entry in a directory. (Excluding recursive dirs)
 
 
 // Output configurations
@@ -71,7 +113,6 @@ static int doflush(ctx_t *x, gboolean force) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
-    x->size += x->buf->len;
     x->buf->len = 0;
     break;
   }
@@ -82,7 +123,6 @@ static int doflush(ctx_t *x, gboolean force) {
       g_set_error(&x->err, 1, 0, "Write error: %s", g_strerror(errno));
       return -1;
     }
-    x->size += x->buf->len;
     x->buf->len = 0;
     break;
   }
@@ -105,14 +145,11 @@ static int doflush(ctx_t *x, gboolean force) {
       g_set_error(&x->err, 1, 0, "Zlib compression error (%d)", r);
       return -1;
     }
-    int read = ((char *)x->zlib->next_in)-x->buf->str;
-    x->size += read;
-    g_string_erase(x->buf, 0, read);
+    g_string_erase(x->buf, 0, ((char *)x->zlib->next_in)-x->buf->str);
     break;
   }
 
   case FO_MU:
-    x->size = x->buf->len;
     // Nothing to do here, x->buf is already our destiniation.
     break;
   }
@@ -122,13 +159,23 @@ static int doflush(ctx_t *x, gboolean force) {
 
 
 // Append a single character
-#define ac(c) g_string_append_c(x->buf, c)
+#define ac(c) do {\
+    g_string_append_c(x->buf, c);\
+    x->size++;\
+  } while(0)
 
 // Append a string
-#define as(s) g_string_append(x->buf, s)
+#define as(s) do {\
+    g_string_append(x->buf, s);\
+    x->size += strlen(s);\
+  } while(0)
 
 // Append an unsigned 64-bit integer
-#define a64(i) g_string_append_printf(x->buf, "%"G_GUINT64_FORMAT, i)
+#define a64(i) do {\
+    int _oldlen = x->buf->len;\
+    g_string_append_printf(x->buf, "%"G_GUINT64_FORMAT, i);\
+    x->size += x->buf->len - _oldlen;\
+  } while(0)
 
 
 // XML-escape and write a string literal
@@ -147,11 +194,26 @@ static void al(ctx_t *x, const char *str) {
 
 
 // Recursively write the child nodes of an fl_list item.
-static int af(ctx_t *x, fl_list_t *fl, int level) {
+static int af(ctx_t *x, fl_list_t *fl, int targetsize) {
+  // First, do a pass through the list to find out how many dir and file entries we have.
   int i;
+  int sizemax = x->size + targetsize;
+  int numdirs = 0, numfiles = 0;
+  if(targetsize) {
+    for(i=0; i<fl->sub->len; i++) {
+      fl_list_t *cur = g_ptr_array_index(fl->sub, i);
+      if(cur->isfile && cur->hastth)
+        numfiles++;
+      else if(!cur->isfile)
+        numdirs++;
+    }
+  }
+
+  // Now walk through the list again and serialize stuff.
   for(i=0; i<fl->sub->len; i++) {
     fl_list_t *cur = g_ptr_array_index(fl->sub, i);
 
+    // Always serialize files.
     if(cur->isfile && cur->hastth) {
       char tth[40] = {};
       base32_encode(cur->tth, tth);
@@ -162,22 +224,31 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
       as("\" TTH=\"");
       as(tth); // No need to escape this, it's base32
       as("\"/>\n");
+      numfiles--;
     }
 
+    // For directories:
+    //   new_targetsize = ((size_left - (files_left*AVGFILELEN)) / dirs_left) - size_of_this_dir_entry
+    // (That's a moving average)
     if(!cur->isfile) {
+      gboolean isempty = fl_list_isempty(cur);
+      int size = targetsize ? (((sizemax - x->size) - (numfiles*AVGFILELEN)) / numdirs) - (30 + strlen(cur->name)) : 0;
+      gboolean include = isempty ? FALSE : !targetsize ? TRUE : size > (int)(cur->sub->len*AVGENTRYLEN);
+
       as("<Directory Name=\"");
       al(x, cur->name);
       ac('"');
-      if(level < 1 && !fl_list_isempty(cur))
+      if(!include && !isempty)
         as(" Incomplete=\"1\"");
 
-      if(level > 0) {
+      if(include) {
         as(">\n");
-        if(af(x, cur, level-1))
+        if(af(x, cur, size))
           return 0;
         as("</Directory>\n");
       } else
         as("/>\n");
+      numdirs--;
     }
 
     if(x->buf->len >= BUFSIZE && doflush(x, FALSE))
@@ -188,7 +259,7 @@ static int af(ctx_t *x, fl_list_t *fl, int level) {
 
 
 // Write the top-level XML
-static int at(ctx_t *x, fl_list_t *fl, const char *cid, int level) {
+static int at(ctx_t *x, fl_list_t *fl, const char *cid, int targetsize) {
   as("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
   as("<FileListing Version=\"1\" Generator=\"");
   al(x, PACKAGE_STRING);
@@ -208,7 +279,7 @@ static int at(ctx_t *x, fl_list_t *fl, const char *cid, int level) {
 
   // all <Directory ..> elements
   if(fl && fl->sub)
-    if(af(x, fl, level-1))
+    if(af(x, fl, targetsize ? MAX(targetsize-300, 1) : 0))
       return -1;
 
   as("</FileListing>\n");
@@ -302,19 +373,19 @@ static void ctx_close(ctx_t *x) {
 
 
 // Serialize a file list to a string. Config is chosen from the arguments:
-// FU: buf == NULL, file doesn't end with .bz2
-// FB: buf == NULL, file ends with .bz2
-// MU: buf != NULL, !zlib
-// MZ: buf == NULL, zlib
+//   FU: buf == NULL, file doesn't end with .bz2
+//   FB: buf == NULL, file ends with .bz2
+//   MU: buf != NULL, !zlib
+//   MZ: buf == NULL, zlib
 // Returns the uncompressed size of the list or 0 on error.
-int fl_save(fl_list_t *fl, const char *cid, int level, gboolean zlib, GString *buf, const char *file, GError **err) {
+int fl_save(fl_list_t *fl, const char *cid, int targetsize, gboolean zlib, GString *buf, const char *file, GError **err) {
   g_return_val_if_fail(err == NULL || *err == NULL, FALSE);
 
   ctx_t x;
   int conf = buf && zlib ? FO_MZ : buf ? FO_MU :
     strlen(file) > 4 && strcmp(file+(strlen(file)-4), ".bz2") == 0 ? FO_FB : FO_FU;
   if(ctx_open(&x, conf, file, buf) == 0)
-    at(&x, fl, cid, level);
+    at(&x, fl, cid, targetsize);
   ctx_close(&x);
   if(x.err)
     g_propagate_error(err, x.err);
