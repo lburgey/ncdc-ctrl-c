@@ -1,3 +1,19 @@
+1.13 - 2012-08-16
+	- zlib library added as a required dependency
+	- Purge empty directories from share by default
+	- Added "share_emptydirs" setting
+	- Disable tls_policy by default when using an old GnuTLS version
+	- Improved support for group chat
+	- Honor G_FILENAME_ENCODING for path autocomplete, /share and queued files
+	- Use a default connection string on NMDC if no 'connection' has been set
+	- Support ZLIG for partial file list transfers on ADC
+	- Send more subdirectories in partial file list transfers
+	- Removed use of system-provided realpath()
+	- Don't allow /search with an empty string
+	- Fix segfault on /search command without query
+	- Fix display of 'sudp_policy' setting if SUDP is not supported
+	- Fix --enable-git-version when cross-compiling
+
 1.12 - 2012-07-10
 	- Don't follow symlinks in share by default
 	- Added 'share_symlink' option
