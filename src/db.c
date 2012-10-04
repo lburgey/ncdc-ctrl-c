@@ -660,7 +660,7 @@ void db_fl_purgedata() {
 // Fetches everything (except the raw TTHL data) from the dl table in no
 // particular order, calls the callback for each row.
 void db_dl_getdls(
-  void (*callback)(const char *tth, guint64 size, const char *dest, char prio, char error, const char *error_msg, int tthllen)
+  void (*callback)(const char *tth, guint64 size, const char *dest, signed char prio, char error, const char *error_msg, int tthllen)
 ) {
   GAsyncQueue *a = g_async_queue_new_full(g_free);
   db_queue_push(DBF_NOCACHE, "SELECT tth, size, dest, priority, error, COALESCE(error_msg, ''), length(tthl) FROM dl",
@@ -674,7 +674,7 @@ void db_dl_getdls(
     base32_decode(darray_get_string(r), hash);
     guint64 size = darray_get_int64(r);
     char *dest = darray_get_string(r);
-    char prio = darray_get_int32(r);
+    signed char prio = darray_get_int32(r);
     char err = darray_get_int32(r);
     char *errmsg = darray_get_string(r);
     int tthllen = darray_get_int32(r);
@@ -723,7 +723,7 @@ void db_dl_rm(const char *tth) {
 
 
 // Set the priority, error and error_msg columns of a dl row
-void db_dl_setstatus(const char *tth, char priority, char error, const char *error_msg) {
+void db_dl_setstatus(const char *tth, signed char priority, char error, const char *error_msg) {
   char hash[40] = {};
   base32_encode(tth, hash);
   db_queue_push(0, "UPDATE dl SET priority = ?, error = ?, error_msg = ? WHERE tth = ?",
@@ -798,7 +798,7 @@ void db_dl_settthl(const char *tth, const char *tthl, int len) {
 
 
 // Adds a new row to the dl table.
-void db_dl_insert(const char *tth, guint64 size, const char *dest, char priority, char error, const char *error_msg) {
+void db_dl_insert(const char *tth, guint64 size, const char *dest, signed char priority, char error, const char *error_msg) {
   char hash[40] = {};
   base32_encode(tth, hash);
   db_queue_push(0, "INSERT OR REPLACE INTO dl (tth, size, dest, priority, error, error_msg) VALUES (?, ?, ?, ?, ?, ?)",

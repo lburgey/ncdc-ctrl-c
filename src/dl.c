@@ -109,7 +109,7 @@ struct dl_t {
   gboolean flmatch : 1;  // For lists: Whether to match queue after completed download
   gboolean dlthread : 1; // Whether a dl thread is active
   gboolean delete : 1;   // Pending delection
-  char prio;             // DLP_*
+  signed char prio;      // DLP_*
   char error;            // DLE_*
   int incfd;             // file descriptor for this file in <incoming_dir>
   char *error_msg;       // if error != DLE_NONE
@@ -772,7 +772,7 @@ static void dl_queue_checkrm(dl_t *dl, gboolean justfin) {
 }
 
 
-void dl_queue_setprio(dl_t *dl, char prio) {
+void dl_queue_setprio(dl_t *dl, signed char prio) {
   gboolean enabled = dl->prio <= DLP_OFF && prio > DLP_OFF;
   dl->prio = prio;
   db_dl_setstatus(dl->hash, dl->prio, dl->error, dl->error_msg);
@@ -1236,7 +1236,7 @@ void dl_load_partial(dl_t *dl) {
 
 
 // Creates and inserts a dl_t item from the database in the queue
-void dl_load_dl(const char *tth, guint64 size, const char *dest, char prio, char error, const char *error_msg, int tthllen) {
+void dl_load_dl(const char *tth, guint64 size, const char *dest, signed char prio, char error, const char *error_msg, int tthllen) {
   g_return_if_fail(dest);
 
   dl_t *dl = g_slice_new0(dl_t);

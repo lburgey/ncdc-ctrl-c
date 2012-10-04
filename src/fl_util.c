@@ -315,7 +315,7 @@ void fl_list_suggest(fl_list_t *root, char *opath, char **sug) {
 #if INTERFACE
 
 struct fl_search_t {
-  char sizem;   // -2 any, -1 <=, 0 ==, 1 >=
+  signed char sizem;   // -2 any, -1 <=, 0 ==, 1 >=
   char filedir; // 1 = file, 2 = dir, 3 = any
   guint64 size;
   char **ext;   // extension list
