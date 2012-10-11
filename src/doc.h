@@ -296,6 +296,12 @@ static const doc_set_t doc_sets[] = {
   "The listen port for incoming UDP connections in active mode. Defaults to the"
   " `active_port' setting, or to a random number of `active_port' is not set."
 },
+{ "adc_blom", 1, "<boolean>",
+  "Whether to support the BLOM extension on ADC hubs. This may decrease the"
+  " bandwidth usage on the hub connection, in exchange for a bit of"
+  " computational overhead. Some hubs require this setting to be enabled. This"
+  " setting requires a reconnect with the hub to be active."
+},
 { "autoconnect", 1, "<boolean>",
   "Set to true to automatically connect to the current hub when ncdc starts up."
 },

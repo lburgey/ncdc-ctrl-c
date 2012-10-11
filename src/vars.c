@@ -925,6 +925,7 @@ struct var_t {
   V(active_port,      1,1, f_int,          p_active_port,   NULL,          NULL,         s_active_conf,   NULL)\
   V(active_tls_port,  1,1, f_int,          p_active_port,   NULL,          g_active_nontcp, s_active_conf,NULL)\
   V(active_udp_port,  1,1, f_int,          p_active_port,   NULL,          g_active_nontcp, s_active_conf,NULL)\
+  V(adc_blom,         1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(autoconnect,      0,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(autorefresh,      1,0, f_autorefresh,  p_autorefresh,   NULL,          NULL,         NULL,            "3600")\
   V(backlog,          1,1, f_backlog,      p_backlog,       NULL,          NULL,         NULL,            "0")\

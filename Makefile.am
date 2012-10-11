@@ -38,6 +38,7 @@ makeheaders_SOURCES=deps/makeheaders.c
 
 bin_PROGRAMS=ncdc
 ncdc_SOURCES=\
+	src/bloom.c\
 	src/cc.c\
 	src/commands.c\
 	src/db.c\

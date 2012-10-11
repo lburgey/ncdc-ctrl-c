@@ -1247,6 +1247,30 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     break;
 
+  case ADCC_GET:
+    if(cmd.type != 'I' || cmd.argc < 4 || strcmp(cmd.argv[0], "blom") != 0 || strcmp(cmd.argv[1], "/") != 0 || strcmp(cmd.argv[2], "0") != 0)
+      g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
+    else {
+      char *bk = adc_getparam(cmd.argv+4, "BK", NULL);
+      char *bh = adc_getparam(cmd.argv+4, "BH", NULL);
+      long m = strtol(cmd.argv[3], NULL, 10);
+      long k = bk ? strtol(bk, NULL, 10) : 0;
+      long h = bh ? strtol(bh, NULL, 10) : 0;
+      bloom_t b;
+      if(bloom_init(&b, m, k, h) < 0)
+        g_message("Invalid bloom filter parameters from %s: %s", net_remoteaddr(hub->net), msg);
+      else {
+        fl_local_bloom(&b);
+        GString *r = adc_generate('H', ADCC_SND, 0, 0);
+        g_string_append_printf(r, " blom / 0 %d\n", b.m);
+        net_writestr(hub->net, r->str);
+        g_string_free(r, TRUE);
+        net_write(hub->net, (char *)b.d, b.m);
+        bloom_free(&b);
+      }
+    }
+    break;
+
   default:
     g_message("Unknown command from %s: %s", net_remoteaddr(hub->net), msg);
   }
@@ -1782,7 +1806,7 @@ static void handle_connect(net_t *n, const char *addr) {
     return;
 
   if(hub->adc)
-    net_writestr(hub->net, "HSUP ADBASE ADTIGR\n");
+    net_writef(hub->net, "HSUP ADBASE ADTIGR%s\n", var_get_bool(hub->id, VAR_adc_blom) ? " ADBLO0 ADBLOM" : "");
 
   // In the case that the joincomplete detection fails, consider the join to be
   // complete anyway after a 2-minute timeout.

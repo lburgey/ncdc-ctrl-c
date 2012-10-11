@@ -113,6 +113,16 @@ GSList *fl_local_from_tth(const char *root) {
 }
 
 
+// Fill a bloom filter with all local hashes
+void fl_local_bloom(bloom_t *b) {
+  GHashTableIter iter;
+  const char *tth;
+  g_hash_table_iter_init(&iter, fl_hash_index);
+  while(g_hash_table_iter_next(&iter, (gpointer *)&tth, NULL))
+    bloom_add(b, tth);
+}
+
+
 // should be run from a timer. periodically flushes all unsaved data to disk.
 gboolean fl_flush(gpointer dat) {
   if(fl_needflush) {
