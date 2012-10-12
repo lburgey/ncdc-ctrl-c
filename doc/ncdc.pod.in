@@ -33,7 +33,6 @@ to setup some basic information and settings:
 And if you have a direct connection to the internet or if your router allows
 port forwarding, you may also want to enable active mode:
 
-  /set active_ip 13.33.33.7
   /set active_port 34194
   /set active true
 
@@ -87,6 +86,56 @@ Don't automatically connect to hubs with the C<autoconnect> option set.
 Display ncdc version.
 
 =back
+
+
+=head1 GETTING CONNECTED
+
+As with most file sharing clients, ncdc supports two modes of being connected:
+I<active> and I<passive>. In passive mode (the default), you can connect to the
+outside world but nobody can connect (directly) to you. When passive, you will
+only be able to transfer files with people who are in active mode. In active
+mode, however, you will have some port open to the rest of the network to which
+other clients can connect. When active, you will be able to transfer files with
+everyone and you may get more and faster search results. Configuring active
+mode is therefore recommended.
+
+In many setups, all you need to do to switch to active mode is to set a TCP/UDP
+port and enable the C<active> setting:
+
+  /set active_port 34194
+  /set active true
+
+When you connect to a hub, the status bar will tell you whether you are active
+or passive on that particular hub, and what IP address is being used to allow
+others to connect to you. For most hubs, your IP address will be detected
+automatically, but in the event that this fails, you can also set it yourself:
+
+  /set active_ip 13.33.33.7
+
+If you are behind a NAT or firewall, you have to ensure that the port you
+configured is somehow allowed and/or forwarded. You have a lot of freedom in
+configuring ports within ncdc: The C<active_udp_port> setting is used for
+incoming UDP messages, the C<active_tls_port> setting is used for incoming
+encrypted TCP connections, and the C<active_port> setting is used as a default
+for the other two and for all incoming and unencrypted connections. Unlike
+other currently available Direct Connect clients, ncdc allows the TLS and TCP
+port to be the same, which tends to ease NAT configuration.
+
+The C</listen> command can tell you which ports it expects to be forwarded, and
+for which hubs these ports will be used. It only lists hubs on which you are
+currently active, so the output will change when you open or close a hub
+connection.
+
+If you have multiple network interfaces, you can force ncdc to use only a
+single interface by setting the C<local_address> setting to the address of that
+interface. This affects both outgoing connections (they will be forced to go
+through the configured interface) and incoming connections (the ports will be
+bound to the configured interface).
+
+All of the previously mentioned settings can be set globally (with C</set>) and
+on a per-hub basis (with C</hset>). This allows you to be active on an internet
+hub and a LAN-only hub at the same time. It also allows you to be active in one
+hub while passive in another, or to use different ports for each hub.
 
 
 =head1 INTERACTIVE COMMANDS
