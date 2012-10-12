@@ -409,7 +409,7 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
       return;
     } else {
       if(errno != EPIPE && errno != ECONNRESET)
-        g_critical("sendfile() returned an unknown error: %d (%s)", errno, g_strerror(errno));
+        g_message("sendfile() returned an unknown error: %d (%s)", errno, g_strerror(errno));
       s->err = g_strdup(g_strerror(errno));
       return;
     }
