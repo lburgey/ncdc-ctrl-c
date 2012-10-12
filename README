@@ -23,11 +23,6 @@ REQUIREMENTS
 
   Support for UDP encryption requires gnutls >= 2.12.0, this is detected
   automatically.
-  To build the ncdc-db-upgrade utility (disabled by default), the following
-  libraries are also required:
-
-  gdbm
-  libxml2
 
 
 
@@ -47,9 +42,6 @@ BUILDING FROM A RELEASE TARBALL
     ./configure --prefix=/usr
     make
     (sudo) make install
-
-  To build the ncdc-db-upgrade utility, append --enable-db-upgrade to the
-  configure script.
 
 
 

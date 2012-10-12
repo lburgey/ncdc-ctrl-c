@@ -2,9 +2,6 @@ EXTRA_DIST=ChangeLog doc/ncdc-db-upgrade.pod doc/ncdc.pod.in
 CLEANFILES=doc/ncdc.1 doc/ncdc-db-upgrade.1 doc/ncdc.pod
 
 man_MANS=doc/ncdc.1
-if ENABLE_DB_UPGRADE
-man_MANS+=doc/ncdc-db-upgrade.1
-endif
 
 noinst_PROGRAMS=gendoc
 gendoc_SOURCES=doc/gendoc.c
@@ -88,16 +85,3 @@ if USE_GIT_VERSION
 GIT_VERSION := `cd '$(srcdir)' && git describe --abbrev=4 --dirty=-d | sed s/^v//`
 ncdc_CFLAGS += -DGIT_VERSION="\"$(GIT_VERSION)\""
 endif
-
-
-
-
-
-if ENABLE_DB_UPGRADE
-bin_PROGRAMS+=ncdc-db-upgrade
-endif
-
-ncdc_db_upgrade_SOURCES=util/ncdc-db-upgrade.c
-ncdc_db_upgrade_CFLAGS=$(SQLITE_CFLAGS) $(GLIB_CFLAGS) $(LIBXML_CFLAGS)
-ncdc_db_upgrade_LDADD=$(SQLITE_LIBS) $(GDBM_LIBS) $(GLIB_LIBS) $(LIBXML_LIBS) $(BZ2_LIBS)
-

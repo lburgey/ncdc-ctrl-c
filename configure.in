@@ -17,11 +17,6 @@ AC_SYS_LARGEFILE
 # Use silent building
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
-# Ask whether we want to compile ncdc-db-upgrade
-AC_ARG_ENABLE([db-upgrade],
-  AS_HELP_STRING([--enable-db-upgrade], [Compile and install the ncdc-db-upgrade utility]))
-AM_CONDITIONAL([ENABLE_DB_UPGRADE], [test "x$enable_db_upgrade" = "xyes"])
-
 # Check for pod2man
 AC_CHECK_PROG([have_pod2man],[pod2man],[yes],[no])
 AM_CONDITIONAL([USE_POD2MAN], [test "x$have_pod2man" = "xyes"])
@@ -159,24 +154,6 @@ PKG_CHECK_EXISTS([gnutls >= 2.12], [have_sudp=yes])
 
 
 
-# Check for extra dependencies for ncdc-db-upgrade
-if test "x$enable_db_upgrade" = "xyes"; then
-  # GDBM
-  have_gdbm=no
-  AC_CHECK_LIB([gdbm],
-               [gdbm_open],
-               [AC_CHECK_HEADERS([gdbm.h], [have_gdbm=yes])])
-  if test "x$have_gdbm" != "xyes"; then
-    AC_MSG_ERROR([--enable-db-upgrade set, but GDBM is not available])
-  fi
-  AC_SUBST([GDBM_LIBS],[-lgdbm])
-
-  # libxml2
-  PKG_CHECK_MODULES([LIBXML], [libxml-2.0])
-fi
-
-
-
 # Check whether we should use the version string from AC_INIT(), or use
 # git-describe to create one. This trick is copied from the pacman source.
 
@@ -198,19 +175,12 @@ AM_CONDITIONAL(USE_GIT_VERSION, test "x$usegitver" = "xyes")
 AC_OUTPUT([Makefile])
 
 
-# Information about SUDP or GDBM support
+# Information about SUDP support
 echo ""
 if test "x$have_sudp" = "xyes"; then
   echo "encrypted UDP : enabled."
 else
   echo "encrypted UDP : disabled. (Requires gnutls >= 2.12.0)"
-fi
-
-if test "x$enable_db_upgrade" = "xyes"; then
-  echo "db-upgrade    : enabled."
-else
-  echo "db-upgrade    : disabled."
-  echo "  The ncdc-db-upgrade utility will not be built."
 fi
 echo ""
 
