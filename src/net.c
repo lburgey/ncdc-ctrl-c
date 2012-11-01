@@ -610,6 +610,7 @@ static gboolean asy_handlerbuf(gpointer dat) {
       syn_start(n);
     else {
       s->cb_downdone(n, s->ctx);
+      s->cb_downdone = NULL;
       syn_cancel(n);
       syn_free(s);
     }
