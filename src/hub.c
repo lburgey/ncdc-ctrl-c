@@ -659,12 +659,6 @@ void hub_send_nfo(hub_t *hub) {
     else
       h_norm++;
   }
-  if(!hub->nick_valid) {
-    if(hub->isreg || var_get(hub->id, VAR_password))
-      h_reg++;
-    else
-      h_norm++;
-  }
   slots = var_get_int(0, VAR_slots);
   ip4 = listen_hub_active(hub->id) ? hub_ip4(hub) : 0;
   udp_port = listen_hub_udp(hub->id);
@@ -1745,7 +1739,7 @@ hub_t *hub_create(ui_tab_t *tab) {
   hub->tab = tab;
   hub->users = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, user_free);
   hub->sessions = g_hash_table_new(g_direct_hash, g_direct_equal);
-  hub->nfo_timer = g_timeout_add_seconds(5*60, check_nfo, hub);
+  hub->nfo_timer = g_timeout_add_seconds(60, check_nfo, hub);
 
   g_hash_table_insert(hubs, &hub->id, hub);
   return hub;
