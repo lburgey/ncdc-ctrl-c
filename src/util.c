@@ -145,7 +145,7 @@ char *localtime_fmt(const char *fmt) {
       len *= 2;
       ts = g_realloc(ts, len);
     }
-    return s;
+    return ts;
 #endif
 }
 
