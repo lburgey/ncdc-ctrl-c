@@ -244,10 +244,9 @@ void ui_logwindow_addline(ui_logwindow_t *lw, const char *msg, gboolean raw, gbo
   lw->lastlog++;
   lw->updated = TRUE;
 
-  time_t tm = time(NULL);
-  char ts[50];
-  strftime(ts, 10, "%H:%M:%S ", localtime(&tm));
+  char *ts = localtime_fmt("%H:%M:%S ");
   lw->buf[lw->lastlog & LOGWIN_BUF] = raw ? g_strdup(msg) : g_strconcat(ts, msg, NULL);
+  g_free(ts);
 
   if(!nolog && lw->logfile)
     logfile_add(lw->logfile, msg);

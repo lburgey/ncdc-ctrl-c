@@ -126,6 +126,30 @@ void certificate_sha256(gnutls_datum_t cert, char *digest) {
 }
 
 
+// strftime()-like formatting for localtime. The returned string should be
+// g_free()'d. This function assumes that the resulting string always contains
+// at least one character.
+char *localtime_fmt(const char *fmt) {
+#if GLIB_CHECK_VERSION(2,26,0)
+    GDateTime *tm = g_date_time_new_now_local();
+    char *ts = g_date_time_format(tm, fmt);
+    g_date_time_unref(tm);
+    return ts;
+#else
+    int n, len = 128;
+    char *ts = g_malloc(128); // Usually more than enough
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    while((n = strftime(ts, len, fmt, tm)) == 0 || n >= len) {
+      g_return_val_if_fail(len < 102400, NULL); // sanity check
+      len *= 2;
+      ts = g_realloc(ts, len);
+    }
+    return s;
+#endif
+}
+
+
 // Turns any path into an absolute path. Doesn't do any canonicalization.
 static char *path_absolute(const char *path) {
   char *p = NULL;
@@ -915,10 +939,9 @@ void logfile_add(logfile_t *l, const char *msg) {
   if(l->file < 0)
     return;
 
-  time_t tm = time(NULL);
-  char ts[50];
-  strftime(ts, 49, "[%F %H:%M:%S %Z]", localtime(&tm));
+  char *ts = localtime_fmt("[%F %H:%M:%S %Z]");
   char *line = g_strdup_printf("%s %s\n", ts, msg);
+  g_free(ts);
 
   int len = strlen(line);
   int wr = 0;

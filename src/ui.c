@@ -422,22 +422,10 @@ void ui_draw() {
   int xoffset = 0;
   char *tfmt = var_get(0, VAR_ui_time_format);
   if(strcmp(tfmt, "-") != 0) {
-#if GLIB_CHECK_VERSION(2,26,0)
-    GDateTime *tm = g_date_time_new_now_local();
-    char *ts = g_date_time_format(tm, tfmt);
+    char *ts = localtime_fmt(tfmt);
     mvaddstr(winrows-2, 1, ts);
     xoffset = 2 + str_columns(ts);
     g_free(ts);
-    g_date_time_unref(tm);
-#else
-    // Pre-2.26 users will have a possible buffer overflow and a slightly
-    // different formatting function. Just fucking update your system already!
-    time_t tm = time(NULL);
-    char ts[250];
-    strftime(ts, 11, tfmt, localtime(&tm));
-    mvaddstr(winrows-2, 1, ts);
-    xoffset = 2 + str_columns(ts);
-#endif
   }
   // tabs
   ui_draw_tablist(xoffset);

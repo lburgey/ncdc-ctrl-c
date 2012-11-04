@@ -157,15 +157,14 @@ static gboolean one_second_timer(gpointer dat) {
 
   // Detect day change
   static char pday[11] = ""; // YYYY-MM-DD
-  char cday[11];
-  time_t tm = time(NULL);
-  strftime(cday, 11, "%F", localtime(&tm));
+  char *cday = localtime_fmt("%F");
   if(!pday[0])
     strcpy(pday, cday);
   if(strcmp(cday, pday) != 0) {
     ui_daychange(cday);
     strcpy(pday, cday);
   }
+  g_free(cday);
 
   // Disconnect offline users
   cc_global_onlinecheck();
@@ -240,9 +239,9 @@ static gboolean stderr_redir = FALSE;
 static void log_redirect(const gchar *dom, GLogLevelFlags level, const gchar *msg, gpointer dat) {
   if(!(level & (G_LOG_LEVEL_INFO|G_LOG_LEVEL_DEBUG)) || (stderr_redir && var_log_debug)) {
     time_t tm = time(NULL);
-    char ts[50];
-    strftime(ts, 49, "[%F %H:%M:%S %Z]", localtime(&tm));
+    char ts = localtime_fmt("[%F %H:%M:%S %Z]");
     fprintf(stderr, "%s *%s* %s\n", ts, loglevel_to_str(level), msg);
+    g_free(ts);
     fflush(stderr);
   }
 }
