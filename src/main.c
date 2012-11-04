@@ -238,8 +238,7 @@ static gboolean stderr_redir = FALSE;
 // redirect all non-fatal errors to stderr (NOT stdout!)
 static void log_redirect(const gchar *dom, GLogLevelFlags level, const gchar *msg, gpointer dat) {
   if(!(level & (G_LOG_LEVEL_INFO|G_LOG_LEVEL_DEBUG)) || (stderr_redir && var_log_debug)) {
-    time_t tm = time(NULL);
-    char ts = localtime_fmt("[%F %H:%M:%S %Z]");
+    char *ts = localtime_fmt("[%F %H:%M:%S %Z]");
     fprintf(stderr, "%s *%s* %s\n", ts, loglevel_to_str(level), msg);
     g_free(ts);
     fflush(stderr);
