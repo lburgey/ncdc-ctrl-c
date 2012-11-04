@@ -1,3 +1,12 @@
+1.14 - 2012-11-04
+	- Added BLOM support for ADC ('/hset adc_blom true' to enable it)
+	- Added section on connection settings to man page
+	- Fix incorrect char signedness assumption on ARM
+	- Fix possible crash when downloading small files
+	- Fix hub counts reported to the hub on login on ADC
+	- Fix local time display issue when built against musl (0.9.6)
+	- Removed legacy ncdc-db-upgrade utility
+
 1.13 - 2012-08-16
 	- zlib library added as a required dependency
 	- Purge empty directories from share by default
