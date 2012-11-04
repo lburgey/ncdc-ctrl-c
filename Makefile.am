@@ -1,5 +1,5 @@
-EXTRA_DIST=ChangeLog doc/ncdc-db-upgrade.pod doc/ncdc.pod.in
-CLEANFILES=doc/ncdc.1 doc/ncdc-db-upgrade.1 doc/ncdc.pod
+EXTRA_DIST=ChangeLog doc/ncdc.pod.in
+CLEANFILES=doc/ncdc.1 doc/ncdc.pod
 
 man_MANS=doc/ncdc.1
 
@@ -13,12 +13,6 @@ doc/ncdc.1: doc/ncdc.pod Makefile
 if USE_POD2MAN
 	$(AM_V_GEN)pod2man --center "ncdc manual" --release "@PACKAGE@-@VERSION@" doc/ncdc.pod >doc/ncdc.1
 endif
-
-doc/ncdc-db-upgrade.1: $(srcdir)/doc/ncdc-db-upgrade.pod Makefile
-if USE_POD2MAN
-	$(AM_V_GEN)pod2man --center "ncdc manual" --release "@PACKAGE@-@VERSION@" "$(srcdir)/doc/ncdc-db-upgrade.pod" >doc/ncdc-db-upgrade.1
-endif
-
 
 
 if HAVE_MH
