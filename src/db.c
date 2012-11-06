@@ -1432,7 +1432,7 @@ void db_init() {
   int ver = db_dir_init();
 
   if(ver>>8 < 2)
-    g_error("Database version too old. Please run the ncdc-db-upgrade utility.");
+    g_error("Database version too old. Please delete the directory to start from scratch, or run the ncdc-db-upgrade utility available with ncdc 1.13 and earlier.");
   if(ver>>8 > 2)
     g_error("Incompatible database version. You may want to upgrade ncdc.");
 
