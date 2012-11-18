@@ -405,8 +405,10 @@ char *str_portsplit(const char *addr, int defport, int *port) {
 gboolean str_is_valid_hubname(const char *name) {
   const char *tmp;
   int len = 0;
+  if(*name == '-' || *name == '_')
+    return FALSE;
   for(tmp=name; *tmp; tmp = g_utf8_next_char(tmp))
-    if(++len && !g_unichar_isalnum(g_utf8_get_char(tmp)))
+    if(++len && !g_unichar_isalnum(g_utf8_get_char(tmp)) && *tmp != '_' && *tmp != '-' && *tmp != '.')
       break;
   return !*tmp && len && len <= 25;
 }
