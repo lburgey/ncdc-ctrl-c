@@ -19,23 +19,19 @@
 #   ./build.sh $arch
 #   Where $arch = 'arm', 'mipsel', 'i486' or 'x86_64'
 #
-# Note: The mipsel version compiles, but is currently broken. The mips port of
-# musl is currently a bit too experimental for ncdc.
-# (Current issue: http://www.openwall.com/lists/musl/2012/08/08/11)
-#
 # TODO:
 # - Cross-compile to platforms other than Linux?
 
 
-MUSL_VERSION=0.9.6
+MUSL_VERSION=0.9.8
 ZLIB_VERSION=1.2.7
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3071400
+SQLITE_VERSION=3071500
 GMP_VERSION=5.0.5
 NETTLE_VERSION=2.5
-GNUTLS_VERSION=3.1.3
+GNUTLS_VERSION=3.1.5
 NCURSES_VERSION=5.9
-GLIB_VERSION=2.34.1
+GLIB_VERSION=2.34.3
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
