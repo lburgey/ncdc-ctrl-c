@@ -244,9 +244,26 @@ void ui_logwindow_addline(ui_logwindow_t *lw, const char *msg, gboolean raw, gbo
   lw->lastlog++;
   lw->updated = TRUE;
 
+  /* Replace \t with four spaces, because the log drawing code can't handle tabs. */
+  GString *msgbuf = NULL;
+  const char *msgl = msg;
+  if(strchr(msg, '\t')) {
+    msgbuf = g_string_sized_new(strlen(msg)+20);
+    for(; *msgl; msgl++) {
+      if(*msgl == '\t')
+        g_string_append(msgbuf, "    ");
+      else
+        g_string_append_c(msgbuf, *msgl);
+    }
+    msgl = msgbuf->str;
+  }
+
   char *ts = localtime_fmt("%H:%M:%S ");
-  lw->buf[lw->lastlog & LOGWIN_BUF] = raw ? g_strdup(msg) : g_strconcat(ts, msg, NULL);
+  lw->buf[lw->lastlog & LOGWIN_BUF] = raw ? g_strdup(msgl) : g_strconcat(ts, msgl, NULL);
   g_free(ts);
+
+  if(msgbuf)
+    g_string_free(msgbuf, TRUE);
 
   if(!nolog && lw->logfile)
     logfile_add(lw->logfile, msg);
