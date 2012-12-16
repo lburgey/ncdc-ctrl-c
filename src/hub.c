@@ -273,6 +273,8 @@ static void user_nmdc_nfo(hub_t *hub, hub_user_t *u, char *str) {
 
   if(!(next = strchr(str, '$')) || strlen(next) < 3 || next[2] != '$')
     return;
+  if(next[1] == 'A')
+    active = TRUE;
   *next = 0; next += 3;
 
   // tag
