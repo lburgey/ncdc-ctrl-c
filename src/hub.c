@@ -1559,14 +1559,16 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     char *to = g_match_info_fetch(nfo, 1);
     char *from = g_match_info_fetch(nfo, 2);
     char *msg = g_match_info_fetch(nfo, 3);
+    char *msge = nmdc_unescape_and_decode(hub, msg);
     hub_user_t *u = g_hash_table_lookup(hub->users, from);
-    if(!u)
+    if(!u) {
       g_message("[hub: %s] Got a $To from `%s', who is not on this hub!", hub->tab->name, from);
-    else {
-      char *msge = nmdc_unescape_and_decode(hub, msg);
+      char *user = charset_convert(hub, TRUE, from);
+      ui_m(hub->tab, UIM_PASS|UIM_CHAT|UIP_MED, g_strdup_printf("<hub> PM from unknown user: <%s> %s", user, msge));
+      free(user);
+    } else
       uit_msg_msg(u, msge);
-      g_free(msge);
-    }
+    g_free(msge);
     g_free(from);
     g_free(to);
     g_free(msg);
