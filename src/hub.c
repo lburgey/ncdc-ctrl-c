@@ -514,9 +514,12 @@ void hub_kick(hub_t *hub, hub_user_t *u) {
 
 // Initiate a C-C connection with a user
 void hub_opencc(hub_t *hub, hub_user_t *u) {
-  char token[20];
-  if(hub->adc)
-    g_snprintf(token, 19, "%"G_GUINT32_FORMAT, g_random_int());
+  char token[14] = {};
+  if(hub->adc) {
+    char nonce[8];
+    crypt_nonce(nonce, 8);
+    base32_encode_dat(nonce, token, 8);
+  }
 
   guint16 wanttls = var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER;
   guint16 tcpport = listen_hub_tcp(hub->id);
