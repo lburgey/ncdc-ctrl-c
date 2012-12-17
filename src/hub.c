@@ -27,9 +27,6 @@
 #include "ncdc.h"
 #include "hub.h"
 #include <stdlib.h>
-#if SUDP_SUPPORT
-# include <gnutls/crypto.h>
-#endif
 
 
 #if INTERFACE
@@ -584,13 +581,11 @@ void hub_search(hub_t *hub, search_q_t *q) {
       for(; *s; s++)
         g_string_append_printf(cmd, " AN%s", *s);
     }
-#if SUDP_SUPPORT
     if(hub->tls && var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_PREFER) {
       char key[27] = {};
       base32_encode_dat(q->key, key, 16);
       g_string_append_printf(cmd, " KY%s", key);
     }
-#endif
     g_string_append_c(cmd, '\n');
     net_writestr(hub->net, cmd->str);
     g_string_free(cmd, TRUE);
@@ -666,7 +661,7 @@ void hub_send_nfo(hub_t *hub) {
   udp_port = listen_hub_udp(hub->id);
   share = fl_local_list_size;
   sup_tls = var_get_int(hub->id, VAR_tls_policy) > VAR_TLSP_DISABLE ? TRUE : FALSE;
-  sup_sudp = SUDP_SUPPORT && hub->tls && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE ? TRUE : FALSE;
+  sup_sudp = hub->tls && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE ? TRUE : FALSE;
 
   // check whether we need to make any further effort
   if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots)
@@ -829,7 +824,6 @@ static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, const c
     return;
   }
 
-#if SUDP_SUPPORT
   // net_udp_* can't log this since it will be encrypted, so log it here.
   char end = r->len > 0 ? r->str[r->len-1] : 0;
   if(end == '\n')
@@ -838,13 +832,10 @@ static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, const c
   if(end == '\n')
     r->str[r->len-1] = end;
 
-  char iv[16];
-  gnutls_datum_t ivd = { (unsigned char *)iv, 16 };
-  gnutls_datum_t keyd = { (unsigned char *)key, 16 };
-
   // prepend 16 random bytes to message
-  g_warn_if_fail(gnutls_rnd(GNUTLS_RND_NONCE, iv, 16) == 0);
-  g_string_prepend_len(r, iv, 16);
+  char nonce[16];
+  crypt_nonce(nonce, 16);
+  g_string_prepend_len(r, nonce, 16);
 
   // use PKCS#5 padding to align the message length to the cypher block size (16)
   int pad = 16 - (r->len & 15);
@@ -853,22 +844,13 @@ static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, const c
     g_string_append_c(r, pad);
 
   // Now encrypt & send
-  gnutls_cipher_hd_t ciph;
-  memset(iv, 0, 16);
-  gnutls_cipher_init(&ciph, GNUTLS_CIPHER_AES_128_CBC, &keyd, &ivd);
-  g_warn_if_fail(gnutls_cipher_encrypt(ciph, r->str, r->len) == 0);
-  gnutls_cipher_deinit(ciph);
+  crypt_aes128cbc(TRUE, key, 16, r->str, r->len);
   net_udp_send_raw(dest, r->str, r->len);
-#endif
 }
 
 
 static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t **res, int len) {
-#if SUDP_SUPPORT
   char *ky = adc_getparam(cmd->argv, "KY", NULL); // SUDP key
-#else
-  char *ky = NULL;
-#endif
   char *to = adc_getparam(cmd->argv, "TO", NULL); // token
 
   char sudpkey[16];
@@ -1735,7 +1717,7 @@ hub_t *hub_create(ui_tab_t *tab) {
   // Get or create the hub id
   hub->id = db_vars_hubid(tab->name);
   if(!hub->id) {
-    hub->id = rand_64();
+    crypt_rnd(&hub->id, 8);
     var_set(hub->id, VAR_hubname, tab->name, NULL);
   }
 

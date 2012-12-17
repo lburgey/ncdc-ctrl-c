@@ -149,8 +149,20 @@ PKG_CHECK_EXISTS([sqlite3],[
 PKG_CHECK_MODULES([GLIB],   [glib-2.0 >= 2.24 gthread-2.0])
 PKG_CHECK_MODULES([GNUTLS], [gnutls >= 2.4])
 
-have_sudp=no
-PKG_CHECK_EXISTS([gnutls >= 2.12], [have_sudp=yes])
+
+# Note that GnuTLS 2.12 also supports the nettle backend, and already provides
+# an API to the low-level crypto functions. However, if GnuTLS uses the gcrypt
+# backend, we still need to initialize gcrypt for threading. Since we have no
+# reliable way to detect which backend is used, let's just assume gcrypt. And
+# while we're linking against gcrypt anyway, we might as well use it for
+# crypto, too.
+PKG_CHECK_EXISTS([gnutls >= 3.0], [], [
+  AC_CHECK_LIB([gcrypt],
+               [gcry_control],
+               [AC_SUBST([GCRYPT_LIBS], [-lgcrypt])],
+               [AC_MSG_ERROR([GnuTLS version is older than 3.0, but no libgcrypt found])])
+  AC_DEFINE(USE_GCRYPT, 1, [Define to use libgcrypt for crypto])
+])
 
 
 
@@ -169,18 +181,4 @@ fi
 AM_CONDITIONAL(USE_GIT_VERSION, test "x$usegitver" = "xyes")
 
 
-
-
-
 AC_OUTPUT([Makefile])
-
-
-# Information about SUDP support
-echo ""
-if test "x$have_sudp" = "xyes"; then
-  echo "encrypted UDP : enabled."
-else
-  echo "encrypted UDP : disabled. (Requires gnutls >= 2.12.0)"
-fi
-echo ""
-

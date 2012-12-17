@@ -28,9 +28,6 @@
 #include "search.h"
 #include <stdlib.h>
 #include <string.h>
-#if SUDP_SUPPORT
-# include <gnutls/crypto.h>
-#endif
 
 
 #if INTERFACE
@@ -45,13 +42,10 @@ struct search_q_t {
   guint64 size; // 0 = disabled.
   char **query; // list of patterns to include
   char tth[24]; // only used when type = 9
+  char key[16]; // SUDP key that we sent along with the SCH
 
   search_cb cb;
   void *cb_dat;
-
-#if SUDP_SUPPORT
-  char key[16]; // SUDP key that we sent along with the SCH
-#endif
 };
 
 // Represents a search result, coming from either NMDC $SR or ADC RES.
@@ -176,10 +170,8 @@ gboolean search_add(hub_t *hub, search_q_t *q, GError **err) {
     return FALSE;
   }
 
-#if SUDP_SUPPORT
   if(var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_PREFER)
-    g_warn_if_fail(gnutls_rnd(GNUTLS_RND_NONCE, q->key, 16) == 0);
-#endif
+    crypt_nonce(q->key, 16);
 
   // Search a single hub
   if(hub) {
@@ -489,28 +481,20 @@ gboolean search_handle_nmdc(hub_t *hub, char *msg) {
 }
 
 
-#if SUDP_SUPPORT
-
 // length(out) >= inlen.
 static char *try_decrypt(const char *key, const char *in, int inlen, char *out) {
   if(inlen < 32 || inlen & 15)
     return NULL;
 
   // Decrypt
-  char iv[16] = {};
-  gnutls_datum_t ivd = { (unsigned char *)iv, 16 };
-  gnutls_datum_t keyd = { (unsigned char *)key, 16 };
-  gnutls_cipher_hd_t ciph;
-  gnutls_cipher_init(&ciph, GNUTLS_CIPHER_AES_128_CBC, &keyd, &ivd);
-  int r = gnutls_cipher_decrypt2(ciph, in, inlen, out, inlen);
-  gnutls_cipher_deinit(ciph);
-  if(r)
-    return NULL;
+  memcpy(out, in, inlen);
+  crypt_aes128cbc(FALSE, key, 16, out, inlen);
 
   // Validate padding and replace with 0-bytes.
   int padlen = out[inlen-1];
   if(padlen < 1 || padlen > 16)
     return NULL;
+  int r;
   for(r=0; r<padlen; r++) {
     if(out[inlen-padlen+r] != padlen)
       return NULL;
@@ -520,8 +504,6 @@ static char *try_decrypt(const char *key, const char *in, int inlen, char *out) 
 
   return out+16;
 }
-
-#endif
 
 
 gboolean search_handle_udp(const char *addr, char *pack, int len) {
@@ -538,7 +520,6 @@ gboolean search_handle_udp(const char *addr, char *pack, int len) {
     adc = FALSE;
   else if(strncmp(msg, "URES ", 5) == 0)
     adc = TRUE;
-#if SUDP_SUPPORT
   else if(!(len & 15) && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE) {
     char *buf = g_malloc(len);
     GHashTableIter i;
@@ -559,9 +540,7 @@ gboolean search_handle_udp(const char *addr, char *pack, int len) {
       g_free(buf);
       return FALSE;
     }
-  }
-#endif
-  else {
+  } else {
     g_free(pack);
     return FALSE;
   }

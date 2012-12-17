@@ -48,8 +48,6 @@ ui_tab_t *uit_main_create() {
     "Make sure you always run the latest version available from http://dev.yorhel.nl/ncdc\n");
   ui_mf(tab, 0, "Using working directory: %s", db_dir);
 
-  var_tls_policy_warn_threadsafe(var_get_int(0, VAR_tls_policy));
-
   return tab;
 }
 

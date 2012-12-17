@@ -28,6 +28,11 @@
 #include <glib/gprintf.h>
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
+#ifdef USE_GCRYPT
+#include <gcrypt.h>
+#else
+#include <gnutls/crypto.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -48,28 +53,37 @@
 # define VERSION GIT_VERSION
 #endif
 
-#define TIMEOUT_SUPPORT GLIB_CHECK_VERSION(2, 26, 0)
 
-// SUDP requires gnutls_rnd(), added in 2.12.0
-#define SUDP_SUPPORT (GNUTLS_VERSION_MAJOR > 2 || (GNUTLS_VERSION_MAJOR == 2 && GNUTLS_VERSION_MINOR >= 12))
-
-/* GnuTLS before 2.x may require manual linking against gcrypt to initialize
- * thread-safe operation. For 2.12.x (and perhaps 2.10, not entirely sure),
- * GnuTLS may also use libnettle, in which case this is not needed. There's no
- * reliable way to know which library is being used - neither at compile time
- * nor at run time. Curl does attempt to get around this issue "properly", but
- * in many cases pointlessly links in gcrypt when it's not needed. GnuTLS 3.0
- * always uses nettle and does not require any manual initialization of the
- * library.
- * I'm not fond of participating in the autodetect or overlinking nightmare, so
- * I'll take another approach: If you're not using GnuTLS 3.0+, TLS-enabled
- * file transfers will be disabled by default, and you'll get a big fat warning
- * if you try to change that setting. :-)
- * Note #1: Connecting to TLS-enabled hubs is no problem either way, since
- * those remain in the main thread and as such have no threading issues.
- * Note #2: This is a compile-time check. It's possible that someone built
- * against 2.x but links with 3.x at run-time. I doubt that happens often in
- * practice, though, especially considering that 2.x and 3.x are not completely
- * ABI compatible. */
-#define THREADSAFE_TLS (GNUTLS_VERSION_MAJOR >= 3)
-
+// GnuTLS / libgcrypt functions
+// crypt_aes128cbc() uses a 16-byte zero'd IV. Data is encrypted or decrypted in-place.
+#ifdef USE_GCRYPT
+#define crypt_rnd(buf, len) gcry_randomize(buf, len, GCRY_STRONG_RANDOM)
+#define crypt_nonce(buf, len) gcry_create_nonce(buf, len)
+static inline void crypt_aes128cbc(gboolean encrypt, const char *key, size_t keylen, char *data, size_t len) {
+  gcry_cipher_hd_t ciph;
+  char iv[16] = {};
+  gcry_cipher_open(&ciph, GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_CBC, 0);
+  gcry_cipher_setkey(ciph, key, keylen);
+  gcry_cipher_setiv(ciph, iv, 16);
+  if(encrypt)
+    g_warn_if_fail(gcry_cipher_encrypt(ciph, data, len, NULL, 0) == 0);
+  else
+    g_warn_if_fail(gcry_cipher_decrypt(ciph, data, len, NULL, 0) == 0);
+  gcry_cipher_close(ciph);
+}
+#else
+#define crypt_rnd(buf, len) g_warn_if_fail(gnutls_rnd(GNUTLS_RND_RANDOM, buf, len) == 0)
+#define crypt_nonce(buf, len) g_warn_if_fail(gnutls_rnd(GNUTLS_RND_NONCE, buf, len) == 0)
+static inline void crypt_aes128cbc(gboolean encrypt, const char *key, size_t keylen, char *data, size_t len) {
+  gnutls_cipher_hd_t ciph;
+  char iv[16] = {};
+  gnutls_datum_t ivd = { (unsigned char *)iv, 16 };
+  gnutls_datum_t keyd = { (unsigned char *)key, keylen };
+  gnutls_cipher_init(&ciph, GNUTLS_CIPHER_AES_128_CBC, &keyd, &ivd);
+  if(encrypt)
+    g_warn_if_fail(gnutls_cipher_encrypt(ciph, data, len) == 0);
+  else
+    g_warn_if_fail(gnutls_cipher_decrypt(ciph, data, len) == 0);
+  gnutls_cipher_deinit(ciph);
+}
+#endif
