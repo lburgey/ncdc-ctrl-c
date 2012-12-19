@@ -436,18 +436,16 @@ static gboolean s_dl_inc_dir(guint64 hub, const char *key, const char *val, GErr
   // test whether they are on the same filesystem
   struct stat a, b;
   char *bd = var_get(0, dl ? VAR_incoming_dir : VAR_download_dir);
-  if(stat(bd, &b) < 0) {
-    g_set_error(err, 1, 0, "Error stat'ing %s: %s", bd, g_strerror(errno));
-    return FALSE;
-  }
-  if(stat(nval, &a) < 0) {
-    g_set_error(err, 1, 0, "Error stat'ing %s: %s", nval, g_strerror(errno));
-    return FALSE;
+  if(stat(bd, &b) == 0) {
+    if(stat(nval, &a) < 0) {
+      g_set_error(err, 1, 0, "Error stat'ing %s: %s", nval, g_strerror(errno));
+      return FALSE;
+    }
+    if(a.st_dev != b.st_dev)
+      ui_m(NULL, 0, "WARNING: The download directory is not on the same filesystem as the incoming"
+                    " directory. This may cause the program to hang when downloading large files.");
   }
 
-  if(a.st_dev != b.st_dev)
-    ui_m(NULL, 0, "WARNING: The download directory is not on the same filesystem as the incoming"
-                  " directory. This may cause the program to hang when downloading large files.");
   db_vars_set(hub, key, val);
   return TRUE;
 }
