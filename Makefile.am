@@ -70,7 +70,7 @@ ncdc_SOURCES=\
 
 auto_headers=$(ncdc_SOURCES:.c=.h)
 noinst_HEADERS=src/doc.h src/ncdc.h
-ncdc_LDADD=-lm $(NCURSES_LIBS) $(Z_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(SQLITE_LIBS)
+ncdc_LDADD=-lm $(NCURSES_LIBS) $(Z_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(GCRYPT_LIBS) $(SQLITE_LIBS)
 MOSTLYCLEANFILES=$(auto_headers) mkhdr.done
 
 $(auto_headers): mkhdr.done
