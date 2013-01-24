@@ -986,7 +986,8 @@ void net_connected(net_t *n, int sock, const char *addr) {
   g_debug("%s: Connected.", addr);
   n->state = NETST_ASY;
   n->sock = sock;
-  strncpy(n->addr, addr, sizeof(n->addr));
+  if(addr != n->addr)
+    strncpy(n->addr, addr, sizeof(n->addr));
   n->wbuf = g_string_sized_new(1024);
   n->rbuf = g_string_sized_new(1024);
 
@@ -1011,7 +1012,7 @@ void net_connected(net_t *n, int sock, const char *addr) {
 struct dnscon_t {
   net_t *net;
   char *addr;
-  int port;
+  unsigned short port;
   struct addrinfo *nfo;
   struct addrinfo *next;
   struct sockaddr_in laddr;
@@ -1036,10 +1037,7 @@ static void dnscon_tryconn(net_t *n);
 static void dnsconn_handleconn(net_t *n, int err) {
   // Successful.
   if(err == 0) {
-    char a[100];
-    struct sockaddr_in *sa = (struct sockaddr_in *)n->dnscon->next->ai_addr;
-    g_snprintf(a, 100, "%s:%d", inet_ntoa(sa->sin_addr), ntohs(sa->sin_port));
-    net_connected(n, n->sock, a);
+    net_connected(n, n->sock, n->addr);
 
     if(n->dnscon->cb)
       n->dnscon->cb(n, NULL);
@@ -1079,22 +1077,26 @@ static gboolean dnscon_conresult(gpointer dat) {
 
 static void dnscon_tryconn(net_t *n) {
   struct addrinfo *c = n->dnscon->next;
-  // We can't handle IPv6 yet.
-  g_return_if_fail(c->ai_family == AF_INET && c->ai_addrlen == sizeof(struct sockaddr_in));
 
   time(&n->timeout_last);
-  if(n->dnscon->cb) {
-    struct sockaddr_in *sa = (struct sockaddr_in *)c->ai_addr;
-    char a[100];
-    g_snprintf(a, 100, "%s:%d", inet_ntoa(sa->sin_addr), ntohs(sa->sin_port));
-    n->dnscon->cb(n, a);
+  // Set n->addr
+  if(c->ai_family == AF_INET)
+    g_snprintf(n->addr, sizeof(n->addr), "%s:%d", inet_ntoa(((struct sockaddr_in *)c->ai_addr)->sin_addr), (int)ntohs(((struct sockaddr_in *)c->ai_addr)->sin_port));
+  else {
+    n->addr[0] = '[';
+    inet_ntop(AF_INET6, &((struct sockaddr_in6 *)c->ai_addr)->sin6_addr, n->addr+1, sizeof(n->addr)-1);
+    snprintf(n->addr+strlen(n->addr), sizeof(n->addr)-strlen(n->addr), "]:%d", (int)ntohs(((struct sockaddr_in6 *)c->ai_addr)->sin6_port));
   }
 
+  if(n->dnscon->cb)
+    n->dnscon->cb(n, n->addr);
+
   // Create new socket and connect.
-  n->sock = socket(AF_INET, SOCK_STREAM, 0);
+  n->sock = socket(c->ai_family, SOCK_STREAM, 0);
   fcntl(n->sock, F_SETFL, fcntl(n->sock, F_GETFL, 0)|O_NONBLOCK);
 
-  if(bind(n->sock, (struct sockaddr *)&n->dnscon->laddr, sizeof(n->dnscon->laddr)) < 0) {
+  // TODO: IPv6
+  if(c->ai_family == AF_INET && bind(n->sock, (struct sockaddr *)&n->dnscon->laddr, sizeof(n->dnscon->laddr)) < 0) {
     char *e = g_strdup_printf("Can't bind to local address: %s", g_strerror(errno));
     g_debug("%s: %s", net_remoteaddr(n), e);
     n->cb_err(n, NETERR_CONN, e);
@@ -1149,12 +1151,12 @@ static gboolean dnscon_gotdns(gpointer dat) {
 static void dnscon_thread(gpointer dat, gpointer udat) {
   dnscon_t *r = dat;
   struct addrinfo hint = {};
-  hint.ai_family = AF_INET;
+  hint.ai_family = AF_UNSPEC;
   hint.ai_socktype = SOCK_STREAM;
   hint.ai_protocol = 0;
   hint.ai_flags = 0;
   char port[20];
-  g_snprintf(port, sizeof(port), "%d", r->port);
+  g_snprintf(port, sizeof(port), "%d", (int)r->port);
   int n = getaddrinfo(r->addr, port, &hint, &r->nfo);
   if(n)
     r->err = g_strdup(n == EAI_SYSTEM ? g_strerror(errno) : gai_strerror(n));
