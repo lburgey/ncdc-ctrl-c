@@ -16,7 +16,7 @@ stamp-h1
 mkhdr.done
 *~
 *.o
-*.h
+src/*.h
 !src/ncdc.h
 !src/doc.h
 ncdc

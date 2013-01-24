@@ -1,7 +1,7 @@
 EXTRA_DIST=ChangeLog doc/ncdc.pod.in
 CLEANFILES=doc/ncdc.1 doc/ncdc.pod
 AM_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
-AM_CPPFLAGS=-I$(builddir)/src
+AM_CPPFLAGS=-I$(builddir)/src -I$(srcdir)/deps/ylib
 
 # append -DGIT_VERSION, when enabled
 if USE_GIT_VERSION
@@ -33,6 +33,10 @@ noinst_PROGRAMS+=makeheaders
 endif
 makeheaders_SOURCES=deps/makeheaders.c
 
+
+noinst_LIBRARIES=libdeps.a
+libdeps_a_SOURCES=deps/ylib/yuri.c
+EXTRA_DIST+=deps/ylib/yuri.h
 
 
 bin_PROGRAMS=ncdc
@@ -70,7 +74,7 @@ ncdc_SOURCES=\
 
 auto_headers=$(ncdc_SOURCES:.c=.h)
 noinst_HEADERS=src/doc.h src/ncdc.h
-ncdc_LDADD=-lm $(NCURSES_LIBS) $(Z_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(GCRYPT_LIBS) $(SQLITE_LIBS)
+ncdc_LDADD=libdeps.a -lm $(NCURSES_LIBS) $(Z_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(GCRYPT_LIBS) $(SQLITE_LIBS)
 MOSTLYCLEANFILES=$(auto_headers) mkhdr.done
 
 $(auto_headers): mkhdr.done
