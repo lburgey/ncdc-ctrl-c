@@ -26,7 +26,6 @@
 
 #include "ncdc.h"
 #include "fl_util.h"
-#include <string.h>
 
 
 #if INTERFACE

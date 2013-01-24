@@ -26,9 +26,6 @@
 
 #include "ncdc.h"
 #include "strutil.h"
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
 
 
 /* A best-effort character conversion function.

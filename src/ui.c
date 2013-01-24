@@ -26,7 +26,6 @@
 
 #include "ncdc.h"
 #include "ui.h"
-#include <math.h>
 
 
 #if INTERFACE

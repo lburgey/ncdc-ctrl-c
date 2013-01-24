@@ -26,12 +26,6 @@
 
 #include "ncdc.h"
 #include "cc.h"
-#include <stdlib.h>
-#include <errno.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 
 // List (well, table) of users who are granted a slot. Key = UID (g_memdup'ed),

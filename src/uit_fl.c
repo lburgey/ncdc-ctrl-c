@@ -26,7 +26,6 @@
 
 #include "ncdc.h"
 #include "uit_fl.h"
-#include <unistd.h>
 
 
 ui_tab_type_t uit_fl[1];

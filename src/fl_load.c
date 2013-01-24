@@ -26,11 +26,6 @@
 
 #include "ncdc.h"
 #include "fl_load.h"
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <bzlib.h>
 
 
 #define S_START    0 // waiting for <FileListing>

@@ -26,22 +26,6 @@
 
 #include "ncdc.h"
 #include "net.h"
-#include <stdlib.h>
-#include <errno.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#ifdef HAVE_LINUX_SENDFILE
-# include <sys/sendfile.h>
-#elif HAVE_BSD_SENDFILE
-# include <sys/socket.h>
-# include <sys/uio.h>
-#endif
 
 
 // global network stats

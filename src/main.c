@@ -26,14 +26,6 @@
 
 #include "ncdc.h"
 #include "main.h"
-#include <stdlib.h>
-#include <locale.h>
-#include <signal.h>
-#include <wchar.h>
-#include <errno.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <sqlite3.h>
 
 
 

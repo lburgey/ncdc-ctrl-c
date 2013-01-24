@@ -26,12 +26,6 @@
 
 #include "ncdc.h"
 #include "fl_save.h"
-#include <errno.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <bzlib.h>
-#include <zlib.h>
 
 /* The "targetsize algorithm" (I thought of that name myself, googling won't help you. Probably):
  *

@@ -27,14 +27,6 @@
 #include "ncdc.h"
 #include "vars.h"
 
-#include <string.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-
 
 
 // Internal (low-level) utility functions

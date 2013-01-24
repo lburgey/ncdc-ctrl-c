@@ -26,7 +26,6 @@
 
 #include "ncdc.h"
 #include "hub.h"
-#include <stdlib.h>
 
 
 #if INTERFACE

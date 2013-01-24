@@ -26,14 +26,6 @@
 #include "ncdc.h"
 #include "listen.h"
 
-#include <errno.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-
 
 #if INTERFACE
 

@@ -27,10 +27,6 @@
 #include "ncdc.h"
 #include "commands.h"
 
-#include <limits.h>
-#include <stdlib.h>
-#include <errno.h>
-
 #define DOC_CMD
 #define DOC_KEY
 #define DOC_SET

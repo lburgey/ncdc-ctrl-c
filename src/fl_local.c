@@ -26,10 +26,6 @@
 
 #include "ncdc.h"
 #include "fl_local.h"
-#include <errno.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
 
 
 char           *fl_local_list_file;

@@ -26,7 +26,6 @@
 
 #include "ncdc.h"
 #include "proto.h"
-#include <stdlib.h>
 
 
 // NMDC support

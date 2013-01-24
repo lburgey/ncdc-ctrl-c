@@ -24,8 +24,42 @@
 */
 
 #include "config.h"
+
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <limits.h>
+#include <time.h>
+#include <math.h>
+#include <setjmp.h>
+
+#include <wchar.h>
+#include <locale.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#ifdef HAVE_LINUX_SENDFILE
+# include <sys/sendfile.h>
+#elif HAVE_BSD_SENDFILE
+# include <sys/socket.h>
+# include <sys/uio.h>
+#endif
+
+#include <zlib.h>
+#include <bzlib.h>
+#include <sqlite3.h>
 #include <glib.h>
 #include <glib/gprintf.h>
+#include <glib/gstdio.h>
 #include <gnutls/gnutls.h>
 #include <gnutls/x509.h>
 #ifdef USE_GCRYPT
@@ -33,10 +67,6 @@
 #else
 #include <gnutls/crypto.h>
 #endif
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <time.h>
-#include <string.h>
 
 #define _XOPEN_SOURCE_EXTENDED
 #ifdef HAVE_NCURSESW_NCURSES_H

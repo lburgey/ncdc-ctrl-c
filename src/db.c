@@ -26,14 +26,6 @@
 
 #include "ncdc.h"
 #include "db.h"
-#include <stdarg.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-
-#include <sqlite3.h>
-#include <glib/gstdio.h>
 
 // Most of the db_* functions can be used from multiple threads. The database
 // is only accessed from within the database thread (db_thread_func()). All

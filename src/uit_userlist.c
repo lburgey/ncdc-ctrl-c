@@ -26,7 +26,6 @@
 
 #include "ncdc.h"
 #include "uit_userlist.h"
-#include <math.h>
 
 
 ui_tab_type_t uit_userlist[1];
