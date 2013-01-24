@@ -817,12 +817,12 @@ static void setownip(hub_t *hub, guint32 ip) {
 }
 
 
-static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, const char *key) {
-  if(!dest) {
+static void adc_sch_reply_send(hub_t *hub, const char *host, unsigned short port, GString *r, const char *key) {
+  if(!host) {
     net_writestr(hub->net, r->str);
     return;
   } else if(!key || var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_DISABLE) {
-    net_udp_send(dest, r->str);
+    net_udp_send(host, port, r->str);
     return;
   }
 
@@ -830,7 +830,7 @@ static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, const c
   char end = r->len > 0 ? r->str[r->len-1] : 0;
   if(end == '\n')
     r->str[r->len-1] = 0;
-  g_debug("SUDP:%s: %s", dest, r->str);
+  g_debug("SUDP:%s:%d: %s", host, (int)port, r->str);
   if(end == '\n')
     r->str[r->len-1] = end;
 
@@ -847,7 +847,7 @@ static void adc_sch_reply_send(hub_t *hub, const char *dest, GString *r, const c
 
   // Now encrypt & send
   crypt_aes128cbc(TRUE, key, 16, r->str, r->len);
-  net_udp_send_raw(dest, r->str, r->len);
+  net_udp_send_raw(host, port, r->str, r->len);
 }
 
 
@@ -866,16 +866,16 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
 
   char tth[40] = {};
   char *cid = NULL;
-  char *dest = NULL;
+  char *host = NULL;
   if(u->hasudp4 && u->udp4) {
     cid = var_get(0, VAR_cid);
-    dest = g_strdup_printf("%s:%d", ip4_unpack(u->ip4), u->udp4);
+    host = g_strdup(ip4_unpack(u->ip4));
   }
 
   int i;
   for(i=0; i<len; i++) {
-    GString *r = dest ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
-    if(dest)
+    GString *r = host ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
+    if(host)
       g_string_append_printf(r, " %s", cid);
     if(to)
       adc_append(r, "TO", to);
@@ -890,11 +890,11 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
       g_string_append_c(r, '/'); // make sure a directory path ends with a slash
     g_string_append_c(r, '\n');
 
-    adc_sch_reply_send(hub, dest, r, ky ? sudpkey : NULL);
+    adc_sch_reply_send(hub, host, u->udp4, r, ky ? sudpkey : NULL);
     g_string_free(r, TRUE);
   }
 
-  g_free(dest);
+  g_free(host);
 }
 
 
@@ -1263,8 +1263,9 @@ static void adc_handle(net_t *net, char *msg, int _len) {
 #undef is_valid_proto
 
 
-static void nmdc_search(hub_t *hub, char *from, int size_m, guint64 size, int type, char *query) {
-  int max = from[0] == 'H' ? 5 : 10;
+// If port = 0, 'from' is interpreted as a nick. Otherwise, from should be an IP address.
+static void nmdc_search(hub_t *hub, char *from, unsigned short port, int size_m, guint64 size, int type, char *query) {
+  int max = port ? 10 : 5;
   fl_list_t *res[max];
   fl_search_t s = {};
   s.filedir = type == 1 ? 3 : type == 8 ? 2 : 1;
@@ -1331,10 +1332,10 @@ static void nmdc_search(hub_t *hub, char *from, int size_m, guint64 size, int ty
     }
     char *msg = g_strdup_printf("$SR %s %s%s %d/%d\05%s (%s)",
       hub->nick_hub, tmp, size ? size : "", slots_free, slots, res[i]->isfile ? tth : hub->hubname_hub, hubaddr);
-    if(from[0] == 'H')
-      net_writef(hub->net, "%s\05%s|", msg, from+4);
+    if(!port)
+      net_writef(hub->net, "%s\05%s|", msg, from);
     else
-      net_udp_sendf(from, "%s|", msg);
+      net_udp_sendf(from, port, "%s|", msg);
     g_free(fl);
     g_free(msg);
     g_free(size);
@@ -1370,9 +1371,9 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
   CMDREGEX(hubname, "HubName (.+)");
   CMDREGEX(to, "To: ([^ $]+) From: ([^ $]+) \\$(.+)");
   CMDREGEX(forcemove, "ForceMove (.+)");
-  CMDREGEX(connecttome, "ConnectToMe ([^ $]+) ([0-9]{1,3}(?:\\.[0-9]{1,3}){3}:[0-9]+)(S|)"); // TODO: IPv6
+  CMDREGEX(connecttome, "ConnectToMe ([^ $]+) ([a-fA-F0-9:\\[\\]\\.]+)(S|)");
   CMDREGEX(revconnecttome, "RevConnectToMe ([^ $]+) ([^ $]+)");
-  CMDREGEX(search, "Search (Hub:(?:[^ $]+)|(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}:[0-9]+)) ([TF])\\?([TF])\\?([0-9]+)\\?([1-9])\\?(.+)");
+  CMDREGEX(search, "Search (Hub:(?:[^ $]+)|(?:[a-fA-F0-9:\\[\\]\\.]+)) ([TF])\\?([TF])\\?([0-9]+)\\?([1-9])\\?(.+)");
 
   // $Lock
   if(g_regex_match(lock, cmd, 0, &nfo)) { // 1 = lock
@@ -1579,8 +1580,13 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     char *tls = g_match_info_fetch(nfo, 3);
     if(strcmp(me, hub->nick_hub) != 0)
       g_message("Received a $ConnectToMe for someone else (to %s from %s)", me, addr);
-    else
-      cc_nmdc_connect(cc_create(hub), addr, var_get(hub->id, VAR_local_address), *tls ? TRUE : FALSE);
+    else {
+      yuri_t uri;
+      if(yuri_parse(addr, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 || yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0)
+        g_message("Invalid host:port in $ConnectToMe (%s)", addr);
+      else
+        cc_nmdc_connect(cc_create(hub), uri.host, uri.port, var_get(hub->id, VAR_local_address), *tls ? TRUE : FALSE);
+    }
     g_free(me);
     g_free(addr);
     g_free(tls);
@@ -1621,11 +1627,21 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     char *size = g_match_info_fetch(nfo, 4);
     char *type = g_match_info_fetch(nfo, 5);
     char *query = g_match_info_fetch(nfo, 6);
-    char test[40] = {};
-    if(listen_hub_active(hub->id))
-      g_snprintf(test, 40, "%s:%d", ip4_unpack(hub_ip4(hub)), listen_hub_udp(hub->id));
-    if(strncmp(from, "Hub:", 4) == 0 ? strcmp(from+4, hub->nick_hub) != 0 : strcmp(from, test) != 0)
-      nmdc_search(hub, from, sizerestrict[0] == 'F' ? -2 : ismax[0] == 'T' ? -1 : 1, g_ascii_strtoull(size, NULL, 10), type[0]-'0', query);
+    unsigned short port = 0;
+    char *nfrom = NULL;
+    yuri_t uri;
+    if(strncmp(from, "Hub:", 4) == 0) {
+      if(strcmp(from+4, hub->nick_hub) != 0) /* Not our nick */
+        nfrom = from+4;
+    } else {
+      if(yuri_parse(from, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 || yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0)
+        g_message("Invalid host:port in $Search (%s)", from);
+      else if(!listen_hub_active(hub->id) || strcmp(uri.host, ip4_unpack(hub_ip4(hub))) != 0 || uri.port != listen_hub_udp(hub->id))
+        /* This search is not for our IP:port */
+        nfrom = uri.host;
+    }
+    if(nfrom)
+      nmdc_search(hub, from, port, sizerestrict[0] == 'F' ? -2 : ismax[0] == 'T' ? -1 : 1, g_ascii_strtoull(size, NULL, 10), type[0]-'0', query);
     g_free(from);
     g_free(sizerestrict);
     g_free(ismax);
@@ -1801,32 +1817,12 @@ static void handle_connect(net_t *n, const char *addr) {
 
 void hub_connect(hub_t *hub) {
   char *oaddr = var_get(hub->id, VAR_hubaddr);
-  char *addr = oaddr;
-  g_return_if_fail(addr);
-  // The address should be in the form of "dchub://hostname:port/", but older
-  // ncdc versions saved it simply as "hostname:port" or even "hostname", so we
-  // need to handle both. No protocol indicator is assumed to be NMDC. No port
-  // is assumed to indicate 411.
-  hub->adc = FALSE;
-  hub->tls = FALSE;
-
-  if(strncmp(addr, "dchub://", 8) == 0)
-    addr += 8;
-  else if(strncmp(addr, "nmdc://", 7) == 0)
-    addr += 7;
-  else if(strncmp(addr, "nmdcs://", 8) == 0) {
-    addr += 8;
-    hub->tls = TRUE;
-  } else if(strncmp(addr, "adc://", 6) == 0) {
-    addr += 6;
-    hub->adc = TRUE;
-  } else if(strncmp(addr, "adcs://", 7) == 0) {
-    addr += 7;
-    hub->adc = hub->tls = TRUE;
-  }
-
-  if(addr[strlen(addr)-1] == '/')
-    addr[strlen(addr)-1] = 0;
+  yuri_t addr;
+  yuri_parse(oaddr, &addr);
+  if(!addr.port)
+    addr.port = 411;
+  hub->adc = strncmp(addr.scheme, "adc", 3) == 0;
+  hub->tls = strcmp(addr.scheme, "adcs") == 0 || strcmp(addr.scheme, "nmdcs") == 0;
 
   if(hub->reconnect_timer) {
     g_source_remove(hub->reconnect_timer);
@@ -1837,8 +1833,8 @@ void hub_connect(hub_t *hub) {
     hub->joincomplete_timer = 0;
   }
 
-  ui_mf(hub->tab, 0, "Connecting to %s...", addr);
-  net_connect(hub->net, addr, 411, var_get(hub->id, VAR_local_address), handle_connect);
+  ui_mf(hub->tab, 0, "Connecting to %s...", oaddr);
+  net_connect(hub->net, addr.host, addr.port, var_get(hub->id, VAR_local_address), handle_connect);
 }
 
 

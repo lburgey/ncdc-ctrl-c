@@ -1241,15 +1241,16 @@ net_t *net_new(void *handle, void(*err)(net_t *, int, const char *)) {
 }
 
 
-// *addr must be a string in the form of 'host:port', where ':port' is
-// optional. The callback is called with an address each time a connection
-// attempt is made. It is called with NULL when the connection was successful
-// (at which point net_remoteaddr() should work).
-void net_connect(net_t *n, const char *addr, int defport, const char *laddr, void(*cb)(net_t *, const char *)) {
+// 'host' can be either a hostname or IP address. The callback is called with
+// an address each time a connection attempt is made. It is called with NULL
+// when the connection was successful (at which point net_remoteaddr() should
+// work).
+void net_connect(net_t *n, const char *host, unsigned short port, const char *laddr, void(*cb)(net_t *, const char *)) {
   g_return_if_fail(n->state == NETST_IDL);
 
   dnscon_t *r = g_slice_new0(dnscon_t);
-  r->addr = str_portsplit(addr, defport, &r->port);
+  r->addr = g_strdup(host);
+  r->port = port;
   r->net = n;
   r->cb = cb;
 
@@ -1395,22 +1396,17 @@ static gboolean udp_handle_out(gpointer dat) {
 }
 
 
-// dest is assumed to be a valid IPv4 address with an optional port ("x.x.x.x" or "x.x.x.x:p")
-void net_udp_send_raw(const char *dest, const char *msg, int len) {
-  int port;
-  char *ip = str_portsplit(dest, 412, &port);
-
+// host is assumed to be a valid IPv4 address.
+void net_udp_send_raw(const char *host, unsigned short port, const char *msg, int len) {
   net_udp_t *m = g_slice_new0(net_udp_t);
   m->msg = g_memdup(msg, len);
   m->msglen = len;
   m->addr.sin_family = AF_INET;
   m->addr.sin_port = htons(port);
-  if(inet_pton(AF_INET, ip, &m->addr.sin_addr) != 1) {
-    g_debug("UDP: Invalid IP: %s", ip);
-    g_free(ip);
+  if(inet_pton(AF_INET, host, &m->addr.sin_addr) != 1) {
+    g_debug("UDP: Invalid IP: %s", host);
     return;
   }
-  g_free(ip);
 
   g_queue_push_tail(net_udp_queue, m);
   if(net_udp_queue->head == net_udp_queue->tail) {
@@ -1435,18 +1431,18 @@ static void net_udp_debug() {
 }
 
 
-void net_udp_send(const char *dest, const char *msg) {
-  net_udp_send_raw(dest, msg, strlen(msg));
+void net_udp_send(const char *host, unsigned short port, const char *msg) {
+  net_udp_send_raw(host, port, msg, strlen(msg));
   net_udp_debug();
 }
 
 
-void net_udp_sendf(const char *dest, const char *fmt, ...) {
+void net_udp_sendf(const char *host, unsigned short port, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
   char *str = g_strdup_vprintf(fmt, va);
   va_end(va);
-  net_udp_send_raw(dest, str, strlen(str));
+  net_udp_send_raw(host, port, str, strlen(str));
   g_free(str);
   net_udp_debug();
 }

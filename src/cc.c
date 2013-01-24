@@ -1440,11 +1440,11 @@ static void handle_connect(net_t *n, const char *addr) {
 }
 
 
-void cc_nmdc_connect(cc_t *cc, const char *addr, const char *laddr, gboolean tls) {
+void cc_nmdc_connect(cc_t *cc, const char *host, unsigned short port, const char *laddr, gboolean tls) {
   g_return_if_fail(cc->state == CCS_CONN);
-  strncpy(cc->remoteaddr, addr, sizeof(cc->remoteaddr));
+  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), "%s:%d", host, (int)port);
   cc->tls = tls;
-  net_connect(cc->net, addr, 0, laddr, handle_connect);
+  net_connect(cc->net, host, port, laddr, handle_connect);
   g_clear_error(&cc->err);
 }
 
@@ -1457,12 +1457,8 @@ void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short p
   cc->adc = TRUE;
   cc->token = g_strdup(token);
   memcpy(cc->cid, u->cid, 8);
-  // build address
-  strncpy(cc->remoteaddr, ip4_unpack(u->ip4), sizeof(cc->remoteaddr));
-  char tmp[10];
-  g_snprintf(tmp, 10, "%d", port);
-  strncat(cc->remoteaddr, ":", sizeof(cc->remoteaddr)-strlen(cc->remoteaddr));
-  strncat(cc->remoteaddr, tmp, sizeof(cc->remoteaddr)-strlen(cc->remoteaddr));
+  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), "%s:%d", ip4_unpack(u->ip4), (int)port);
+
   // check whether this was as a reply to a RCM from us
   cc_expect_adc_rm(cc);
   if(!cc->kp_user && u->kp) {
@@ -1476,8 +1472,9 @@ void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short p
   // attempt.
   if(!cc->token)
     return;
+
   // connect
-  net_connect(cc->net, cc->remoteaddr, 0, laddr, handle_connect);
+  net_connect(cc->net, ip4_unpack(u->ip4), port, laddr, handle_connect);
   g_clear_error(&cc->err);
 }
 

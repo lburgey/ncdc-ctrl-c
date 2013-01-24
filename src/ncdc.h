@@ -54,6 +54,7 @@
 # include <sys/uio.h>
 #endif
 
+#include <yuri.h>
 #include <zlib.h>
 #include <bzlib.h>
 #include <sqlite3.h>
