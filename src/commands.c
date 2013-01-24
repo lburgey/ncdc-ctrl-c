@@ -237,53 +237,53 @@ static void c_help_sug(char *args, char **sug) {
 
 static gboolean c_connect_set_hubaddr(char *addr) {
   // Validate and parse
-  GRegex *reg = g_regex_new(
-    //   1 - proto                2 - host             3 - port                       4 - kp
-    "^(?:(dchub|nmdcs?|adcs?)://)?([^ :/<>\\(\\)]+)(?::([0-9]+))?(?:/|/\\?kp=SHA256\\/([a-zA-Z2-7]{52}))?$",
-    0, 0, NULL);
-  g_assert(reg);
-  GMatchInfo *nfo;
-  if(!g_regex_match(reg, addr, 0, &nfo)) {
-    ui_m(NULL, 0, "Invalid URL format."); // not very specific
-    g_regex_unref(reg);
+  yuri_t uri;
+  if(yuri_parse(addr, &uri) != 0) {
+    ui_m(NULL, 0, "Invalid URL format.");
     return FALSE;
   }
-  g_regex_unref(reg);
-  char *proto = g_match_info_fetch(nfo, 1);
-  char *kp = g_match_info_fetch(nfo, 4);
-
-  if(kp && *kp && strcmp(proto, "adcs") != 0 && strcmp(proto, "nmdcs") != 0) {
-    ui_m(NULL, 0, "Keyprint is only valid for adcs:// or nmdcs:// URLs.");
-    g_match_info_free(nfo);
-    g_free(proto);
-    g_free(kp);
+  if(!uri.scheme[0])
+    strcpy(uri.scheme, "dchub");
+  if(!uri.port)
+    uri.port = 411;
+  if(strcmp(uri.scheme, "dchub") != 0 && strcmp(uri.scheme, "nmdc") != 0 && strcmp(uri.scheme, "nmdcs") != 0
+      && strcmp(uri.scheme, "adc") != 0 && strcmp(uri.scheme, "adcs") != 0) {
+    ui_m(NULL, 0, "Unrecognized scheme.");
     return FALSE;
   }
 
-  char *host = g_match_info_fetch(nfo, 2);
-  char *port = g_match_info_fetch(nfo, 3);
-  g_match_info_free(nfo);
+  // yuri doesn't do query string parsing (yet), so look for the kp argument manually.
+  char *kp = NULL;
+  if(uri.rest && (kp = strstr(uri.rest, "kp=SHA256/")) != NULL) {
+    kp = g_strndup(kp + 10, 52);
+    if(strlen(kp) != 52 || !isbase32(kp)) {
+      ui_m(NULL, 0, "Invalid keyprint.");
+      free(kp);
+      return FALSE;
+    }
+    if(strcmp(uri.scheme, "nmdcs") != 0 && strcmp(uri.scheme, "adcs") != 0) {
+      ui_m(NULL, 0, "Keyprint is only valid for adcs:// or nmdcs:// URLs.");
+      free(kp);
+      return FALSE;
+    }
+  }
 
   ui_tab_t *tab = ui_tab_cur->data;
   char *old = g_strdup(var_get(tab->hub->id, VAR_hubaddr));
 
   // Reconstruct (without the kp) and save
-  GString *a = g_string_new("");
-  g_string_printf(a, "%s://%s:%s/", !proto || !*proto ? "dchub" : proto, host, !port || !*port ? "411" : port);
-  var_set(tab->hub->id, VAR_hubaddr, a->str, NULL);
+  char *new = g_strdup_printf("%s://%s:%d/", uri.scheme, uri.host, (int)uri.port);
+  var_set(tab->hub->id, VAR_hubaddr, new, NULL);
 
   // Save kp if specified, or throw it away if the URL changed
-  if(kp && *kp)
+  if(kp)
     var_set(tab->hub->id, VAR_hubkp, kp, NULL);
-  else if(old && strcmp(old, a->str) != 0)
+  else if(old && strcmp(old, new) != 0)
     var_set(tab->hub->id, VAR_hubkp, NULL, NULL);
 
-  g_string_free(a, TRUE);
   g_free(old);
-  g_free(proto);
+  g_free(new);
   g_free(kp);
-  g_free(host);
-  g_free(port);
   return TRUE;
 }
 
