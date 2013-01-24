@@ -78,12 +78,6 @@
 #include <ncurses.h>
 #endif
 
-// Use GIT_VERSION, if available
-#ifdef GIT_VERSION
-# undef VERSION
-# define VERSION GIT_VERSION
-#endif
-
 
 // GnuTLS / libgcrypt functions
 // crypt_aes128cbc() uses a 16-byte zero'd IV. Data is encrypted or decrypted in-place.

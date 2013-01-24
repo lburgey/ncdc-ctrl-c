@@ -28,8 +28,12 @@
 #include "main.h"
 
 
-
 // global variables
+
+const char *main_version =
+#include "version.h"
+;
+
 GMainLoop *main_loop;
 
 
@@ -207,7 +211,7 @@ char *ncdc_version() {
   if(ver)
     return ver->str;
   ver = g_string_new("");
-  g_string_printf(ver, msg, PACKAGE_NAME, VERSION,
+  g_string_printf(ver, msg, PACKAGE_NAME, main_version,
     __DATE__, __TIME__,
 #ifdef HAVE_LINUX_SENDFILE
     "Linux",

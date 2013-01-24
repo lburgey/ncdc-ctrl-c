@@ -1140,7 +1140,7 @@ static void nmdc_mynick(cc_t *cc, const char *nick) {
 
   if(cc->active) {
     net_writef(cc->net, "$MyNick %s|", cc->hub->nick_hub);
-    net_writef(cc->net, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s|", PACKAGE_NAME, VERSION);
+    net_writef(cc->net, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s|", PACKAGE_NAME, main_version);
   }
 }
 
@@ -1433,7 +1433,7 @@ static void handle_connect(net_t *n, const char *addr) {
     net_writef(n, "CSTA 000 referrer RFadc%s://%s\n", cc->hub->tls ? "s" : "", net_remoteaddr(cc->hub->net));
   } else {
     net_writef(n, "$MyNick %s|", cc->hub->nick_hub);
-    net_writef(n, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s,Ref=%s|", PACKAGE_NAME, VERSION, net_remoteaddr(cc->hub->net));
+    net_writef(n, "$Lock EXTENDEDPROTOCOL/wut? Pk=%s-%s,Ref=%s|", PACKAGE_NAME, main_version, net_remoteaddr(cc->hub->net));
   }
   cc->state = CCS_HANDSHAKE;
   net_readmsg(cc->net, cc->adc ? '\n' : '|', cc->adc ? adc_handle : nmdc_handle);

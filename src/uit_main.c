@@ -42,7 +42,7 @@ ui_tab_t *uit_main_create() {
   tab->log = ui_logwindow_create("main", 0);
   tab->type = uit_main;
 
-  ui_mf(tab, 0, "Welcome to ncdc %s!", VERSION);
+  ui_mf(tab, 0, "Welcome to ncdc %s!", main_version);
   ui_m(tab, 0,
     "Check out the manual page for a general introduction to ncdc.\n"
     "Make sure you always run the latest version available from http://dev.yorhel.nl/ncdc\n");
@@ -66,7 +66,7 @@ static void t_draw(ui_tab_t *t) {
 
 
 static char *t_title(ui_tab_t *t) {
-  return g_strdup_printf("Welcome to ncdc %s!", VERSION);
+  return g_strdup_printf("Welcome to ncdc %s!", main_version);
 }
 
 

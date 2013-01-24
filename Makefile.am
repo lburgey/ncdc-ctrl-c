@@ -3,12 +3,6 @@ CLEANFILES=doc/ncdc.1 doc/ncdc.pod
 AM_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
 AM_CPPFLAGS=-I$(builddir)/src -I$(srcdir)/deps/ylib
 
-# append -DGIT_VERSION, when enabled
-if USE_GIT_VERSION
-GIT_VERSION := `cd '$(srcdir)' && git describe --abbrev=4 --dirty=-d | sed s/^v//`
-AM_CPPFLAGS += -DGIT_VERSION="\"$(GIT_VERSION)\""
-endif
-
 man_MANS=doc/ncdc.1
 
 noinst_PROGRAMS=gendoc
@@ -75,7 +69,20 @@ ncdc_SOURCES=\
 auto_headers=$(ncdc_SOURCES:.c=.h)
 noinst_HEADERS=src/doc.h src/ncdc.h
 ncdc_LDADD=libdeps.a -lm $(NCURSES_LIBS) $(Z_LIBS) $(BZ2_LIBS) $(GLIB_LIBS) $(GNUTLS_LIBS) $(GCRYPT_LIBS) $(SQLITE_LIBS)
-MOSTLYCLEANFILES=$(auto_headers) mkhdr.done
+MOSTLYCLEANFILES=$(auto_headers) src/version.h mkhdr.done
+
+
+# Create a separate version.h and make sure only main.c depends on it. This
+# avoids the need to recompile everything on each commit.
+if USE_GIT_VERSION
+src/version.h: $(srcdir)/.git/logs/HEAD
+	$(AM_V_GEN)echo '"'"`git describe --abbrev=4 --dirty=-d | sed s/^v//`"'"' >src/version.h
+else
+src/version.h: Makefile
+	$(AM_V_GEN)echo '"'"@VERSION@"'"' >src/version.h
+endif
+src/main.$(OBJEXT): src/version.h
+
 
 $(auto_headers): mkhdr.done
 mkhdr.done: $(mkhdr_dep) $(ncdc_SOURCES)
