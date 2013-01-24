@@ -272,7 +272,9 @@ static gboolean c_connect_set_hubaddr(char *addr) {
   char *old = g_strdup(var_get(tab->hub->id, VAR_hubaddr));
 
   // Reconstruct (without the kp) and save
-  char *new = g_strdup_printf("%s://%s:%d/", uri.scheme, uri.host, (int)uri.port);
+  char *new = g_strdup_printf(
+    yuri_validate_ipv6(uri.host, strlen(uri.host)) == 0 ? "%s://[%s]:%d" : "%s://%s:%d/",
+    uri.scheme, uri.host, (int)uri.port);
   var_set(tab->hub->id, VAR_hubaddr, new, NULL);
 
   // Save kp if specified, or throw it away if the URL changed
