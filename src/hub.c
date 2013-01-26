@@ -44,7 +44,7 @@ struct hub_user_t {
   unsigned char slots;
   unsigned short udp4;
   unsigned int as;       // auto-open slot if upload is below n bytes/s
-  guint32 ip4;
+  struct in_addr ip4;
   int sid;        // for ADC
   hub_t *hub;
   char *name;     // UTF-8
@@ -77,7 +77,7 @@ struct hub_t {
   char *nick_hub;          // (NMDC) in hub encoding
   char *nick;              // UTF-8
   int sid;                 // (ADC) session ID
-  guint32 ip4;             // Our IP, as received from the hub
+  struct in_addr ip4;      // Our IP, as received from the hub
   gboolean nick_valid : 1; // TRUE is the above nick has also been validated (and we're properly logged in)
   gboolean isreg : 1;      // whether we used a password to login
   gboolean isop : 1;       // whether we're an OP or not
@@ -106,7 +106,7 @@ struct hub_t {
   char *nfo_desc, *nfo_conn, *nfo_mail;
   unsigned char nfo_slots, nfo_h_norm, nfo_h_reg, nfo_h_op;
   guint64 nfo_share;
-  guint32 nfo_ip4;
+  struct in_addr nfo_ip4;
   guint16 nfo_udp_port;
   gboolean nfo_sup_tls, nfo_sup_sudp;
 
@@ -472,9 +472,9 @@ void hub_global_nfochange() {
 
 
 // Get the current active IP used for this hub. (If we're active)
-guint32 hub_ip4(hub_t *hub) {
-  guint32 conf = ip4_pack(var_get((hub)->id, VAR_active_ip));
-  return conf ? conf : hub->ip4;
+struct in_addr hub_ip4(hub_t *hub) {
+  struct in_addr conf = ip4_pack(var_get((hub)->id, VAR_active_ip));
+  return !ip4_isany(conf) ? conf : hub->ip4;
 }
 
 
@@ -620,6 +620,7 @@ void hub_search(hub_t *hub, search_q_t *q) {
 
 #define streq(a) ((!a && !hub->nfo_##a) || (a && hub->nfo_##a && strcmp(a, hub->nfo_##a) == 0))
 #define eq(a) (a == hub->nfo_##a)
+#define ip4eq(a) (ip4_cmp(a, hub->nfo_##a) == 0)
 #define beq(a) (!!a == !!hub->nfo_##a)
 
 void hub_send_nfo(hub_t *hub) {
@@ -630,7 +631,7 @@ void hub_send_nfo(hub_t *hub) {
   char *desc, *conn = NULL, *mail;
   unsigned char slots, h_norm, h_reg, h_op;
   guint64 share;
-  guint32 ip4;
+  struct in_addr ip4;
   guint16 udp_port;
   gboolean sup_tls, sup_sudp;
 
@@ -659,15 +660,15 @@ void hub_send_nfo(hub_t *hub) {
       h_norm++;
   }
   slots = var_get_int(0, VAR_slots);
-  ip4 = listen_hub_active(hub->id) ? hub_ip4(hub) : 0;
+  ip4 = listen_hub_active(hub->id) ? hub_ip4(hub) : ip4_any;
   udp_port = listen_hub_udp(hub->id);
   share = fl_local_list_size;
   sup_tls = var_get_int(hub->id, VAR_tls_policy) > VAR_TLSP_DISABLE ? TRUE : FALSE;
   sup_sudp = hub->tls && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE ? TRUE : FALSE;
 
   // check whether we need to make any further effort
-  if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots)
-      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(ip4) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp))
+  if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots) && ip4eq(ip4)
+      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp))
     return;
 
   char *nfo;
@@ -683,12 +684,12 @@ void hub_send_nfo(hub_t *hub) {
       // validate our certificate even when we are the one connecting.
       g_string_append_printf(cmd, " KPSHA256/%s", db_certificate_kp);
     }
-    if(f || !eq(ip4))
-      g_string_append_printf(cmd, " I4%s", ip4_unpack(ip4)); // ip4 = 0 == 0.0.0.0, which is exactly what we want
-    if(f || !eq(ip4) || !beq(sup_tls) || !beq(sup_sudp)) {
+    if(f || !ip4eq(ip4))
+      g_string_append_printf(cmd, " I4%s", ip4_unpack(ip4));
+    if(f || !ip4eq(ip4) || !beq(sup_tls) || !beq(sup_sudp)) {
       g_string_append(cmd, " SU");
       int comma = 0;
-      if(ip4)
+      if(!ip4_isany(ip4))
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "TCP4,UDP4");
       if(sup_tls)
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "ADC0,ADCS");
@@ -729,7 +730,7 @@ void hub_send_nfo(hub_t *hub) {
     char *nconn = nmdc_encode_and_escape(hub, conn?conn:"0.005");
     char *nmail = nmdc_encode_and_escape(hub, mail?mail:"");
     nfo = g_strdup_printf("$MyINFO $ALL %s %s<ncdc V:%s,M:%c,H:%d/%d/%d,S:%d>$ $%s%c$%s$%"G_GUINT64_FORMAT"$|",
-      hub->nick_hub, ndesc, main_version, ip4 ? 'A' : 'P', h_norm, h_reg, h_op,
+      hub->nick_hub, ndesc, main_version, ip4_isany(ip4) ? 'P' : 'A', h_norm, h_reg, h_op,
       slots, nconn, 1 | (sup_tls ? 0x10 : 0), nmail, share);
     g_free(ndesc);
     g_free(nconn);
@@ -804,12 +805,12 @@ void hub_msg(hub_t *hub, hub_user_t *user, const char *str, gboolean me) {
 
 
 // Call this when the hub tells us our IP.
-static void setownip(hub_t *hub, guint32 ip) {
-  if(ip != hub->ip4) {
-    guint32 old = hub_ip4(hub);
-    hub->ip4 = ip;
+static void setownip(hub_t *hub, hub_user_t *u) {
+  if(ip4_cmp(u->ip4, hub->ip4) != 0) {
+    struct in_addr old = hub_ip4(hub);
+    hub->ip4 = u->ip4;
     // If we're supposed to be active, but weren't because of a missing IP.
-    if(!old && var_get_bool(hub->id, VAR_active)) {
+    if(ip4_isany(old) && var_get_bool(hub->id, VAR_active)) {
       listen_refresh();
       hub_send_nfo(hub);
     }
@@ -1064,7 +1065,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
           hub->nick_valid = TRUE;
           hub->joincomplete = TRUE;
           // This means we also have an IP, probably
-          setownip(hub, u->ip4);
+          setownip(hub, u);
         }
       }
     }
@@ -1126,7 +1127,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         g_message("CTM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
       else if(port < 1 || port > 65535)
         g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
-      else if(!u->active || !u->ip4) {
+      else if(!u->active || ip4_isany(u->ip4)) {
         g_message("CTM from user who is not active (%s): %s", net_remoteaddr(hub->net), msg);
         GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
         g_string_append(r, " 140 No\\sIP\\sto\\sconnect\\sto.\n");
@@ -1498,14 +1499,14 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
         continue;
       *sep = 0;
       hub_user_t *u = user_add(hub, *cur, NULL);
-      guint32 new = ip4_pack(sep+1);
-      if(new != u->ip4) {
+      struct in_addr new = ip4_pack(sep+1);
+      if(ip4_cmp(new, u->ip4) != 0) {
         u->ip4 = new;
         uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
       }
       // Our own IP, configure active mode
       if(strcmp(*cur, hub->nick_hub) == 0)
-        setownip(hub, new);
+        setownip(hub, u);
     }
     g_strfreev(list);
   }
@@ -1861,8 +1862,9 @@ void hub_disconnect(hub_t *hub, gboolean recon) {
   g_free(hub->hubname_hub);  hub->hubname_hub = NULL;
   hub->nick_valid = hub->isreg = hub->isop = hub->received_first =
     hub->joincomplete =  hub->sharecount = hub->sharesize =
-    hub->supports_nogetinfo = hub->state = hub->ip4 =
+    hub->supports_nogetinfo = hub->state =
     hub->nfo_h_norm = hub->nfo_h_reg = hub->nfo_h_op = 0;
+  hub->ip4 = ip4_any;
   if(!recon)
     ui_m(hub->tab, 0, "Disconnected.");
   else {

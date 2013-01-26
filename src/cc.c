@@ -850,7 +850,7 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
   // known yet. This doesn't matter, however, as the hub already sends IP
   // information with ADC (if it didn't, we won't be able to connect in the
   // first place).
-  if(!u->ip4 && net_is_connected(cc->net)) {
+  if(ip4_isany(u->ip4) && net_is_connected(cc->net)) {
     const char *tmp = net_remoteaddr(cc->net);
     char *sep = strchr(tmp, ':');
     if(sep)
@@ -1452,7 +1452,7 @@ void cc_nmdc_connect(cc_t *cc, const char *host, unsigned short port, const char
 void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short port, gboolean tls, char *token) {
   g_return_if_fail(cc->state == CCS_CONN);
   g_return_if_fail(cc->hub);
-  g_return_if_fail(u && u->active && u->ip4);
+  g_return_if_fail(u && u->active && !ip4_isany(u->ip4));
   cc->tls = tls;
   cc->adc = TRUE;
   cc->token = g_strdup(token);

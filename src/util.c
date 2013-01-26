@@ -550,39 +550,44 @@ void base32_decode(const char *from, char *to) {
 
 
 
-// Handy wrappers to efficiently store an IPv4 address in an integer. This is
-// only used for internal storage, all actual network IO is done by passing the
-// stringified addresses to the right networking functions (inet_pton or
-// getaddrinfo), and thus does not make any assumptions about how these
-// integers are stored.
-// TODO: Might as well get rid of these and use 'struct in_addr' and 'struct
-// in6_addr' everywhere. (when IPv6 will be supported). In that case there is
-// still a need for a _cmp() function, though, and that will probably be a
-// little less efficient than the current one.
+// Handy wrappers for parsing and formatting IP addresses.
 
-guint32 ip4_pack(const char *str) {
+struct in_addr ip4_any = {};
+struct in6_addr ip6_any = {};
+
+struct in_addr ip4_pack(const char *str) {
   struct in_addr a;
-  if(!str || inet_pton(AF_INET, str, &a) != 1)
-    return 0;
-  return g_ntohl(a.s_addr); // convert to host byte order (allows for easy sorting)
+  return !str || inet_pton(AF_INET, str, &a) != 1 ? ip4_any : a;
 }
 
+struct in6_addr ip6_pack(const char *str) {
+  struct in6_addr a;
+  return !str || inet_pton(AF_INET6, str, &a) != 1 ? ip6_any : a;
+}
 
-// Returns a static string buffer.
-const char *ip4_unpack(guint32 ip) {
-  static char buf[INET_ADDRSTRLEN+10];
-  struct in_addr a;
-  a.s_addr = g_htonl(ip);
-  return inet_ntop(AF_INET, &a, buf, sizeof(buf));
+/* Extra level of indirection because makeheaders doesn't like structs as function arguments */
+const char *ip4__unpack(guint32 ip) {
+  static char buf[64];
+  return inet_ntop(AF_INET, &ip, buf, sizeof(buf));
+}
+
+const char *ip6__unpack(unsigned char ip[16]) {
+  static char buf[64];
+  return inet_ntop(AF_INET6, ip, buf, sizeof(buf));
 }
 
 #if INTERFACE
 
-// don't use (a-b) here - the result may not fit in a signed integer
-#define ip4_cmp(a, b) ((a) > (b) ? 1 : -1)
+#define ip4_unpack(ip) ip4__unpack((ip).s_addr)
+#define ip6_unpack(ip) ip6__unpack((ip).s6_addr)
+
+#define ip4_cmp(a, b) memcmp(&(a), &(b), sizeof(struct in_addr))
+#define ip6_cmp(a, b) memcmp(&(a), &(b), sizeof(struct in6_addr))
+
+#define ip4_isany(ip) ((ip).s_addr == INADDR_ANY)
+#define ip6_isany(ip) (ip6_cmp(ip, in6addr_any) == 0)
 
 #endif
-
 
 
 

@@ -165,7 +165,7 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
   DRAW_COL(row, j, t->cw_tag,   tag?tag:"");
   DRAW_COL(row, j, t->cw_mail,  user->mail?user->mail:"");
   DRAW_COL(row, j, t->cw_conn,  conn?conn:"");
-  DRAW_COL(row, j, t->cw_ip,    user->ip4?ip4_unpack(user->ip4):"");
+  DRAW_COL(row, j, t->cw_ip,    ip4_isany(user->ip4)?"":ip4_unpack(user->ip4));
   g_free(conn);
   g_free(tag);
 
@@ -288,7 +288,7 @@ static void t_draw(ui_tab_t *tab) {
     mvaddstr(bottom+2, 14, conn?conn:"-");
     g_free(conn);
     mvaddstr(bottom+2, 48, u->mail?u->mail:"-");
-    mvaddstr(bottom+3, 14, u->ip4?ip4_unpack(u->ip4):"-");
+    mvaddstr(bottom+3, 14, ip4_isany(u->ip4)?"-":ip4_unpack(u->ip4));
     char *tag = hub_user_tag(u);
     mvaddstr(bottom+3, 48, tag?tag:"-");
     g_free(tag);
