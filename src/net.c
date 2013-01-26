@@ -1370,13 +1370,28 @@ void net_unref(net_t *n) {
 // Some global stuff for sending UDP packets
 
 typedef struct net_udp_t {
-  struct sockaddr_in addr;
+  char host[62];
+  unsigned short port;
+  int sock; /* net_udp4_sock or net_udp6_sock */
   char *msg;
   int msglen;
 } net_udp_t;
 
-static int net_udp_sock;
+static int net_udp4_sock, net_udp6_sock;
 static GQueue *net_udp_queue;
+
+
+static gboolean udp_handle_out(gpointer);
+
+static void udp_setwatcher() {
+  net_udp_t *m = g_queue_peek_head(net_udp_queue);
+  if(!m)
+    return;
+  GSource *src = fdsrc_new(m->sock, G_IO_OUT);
+  g_source_set_callback(src, udp_handle_out, NULL, NULL);
+  g_source_attach(src, NULL);
+  g_source_unref(src);
+}
 
 
 static gboolean udp_handle_out(gpointer dat) {
@@ -1384,8 +1399,27 @@ static gboolean udp_handle_out(gpointer dat) {
   if(!m)
     return FALSE;
 
-  int n = sendto(net_udp_sock, m->msg, m->msglen, 0, (struct sockaddr *)&m->addr, sizeof(m->addr));
-  // TODO: handle EWOULDBLOCK / EAGAIN / EINTR here?
+  int n;
+  if(yuri_validate_ipv4(m->host, strlen(m->host)) == 0) {
+    struct sockaddr_in s = {
+      .sin_family = AF_INET,
+      .sin_port = htons(m->port),
+      .sin_addr = ip4_pack(m->host)
+    };
+    n = sendto(net_udp4_sock, m->msg, m->msglen, 0, (struct sockaddr *)&s, sizeof(s));
+  } else {
+    struct sockaddr_in6 s = {
+      .sin6_family = AF_INET6,
+      .sin6_port = htons(m->port),
+      .sin6_addr = ip6_pack(m->host)
+    };
+    n = sendto(net_udp6_sock, m->msg, m->msglen, 0, (struct sockaddr *)&s, sizeof(s));
+  }
+
+  if(n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)) {
+    g_queue_push_head(net_udp_queue, m);
+    return TRUE;
+  }
 
   if(n != m->msglen)
     g_message("Error sending UDP message: %s.", g_strerror(errno));
@@ -1394,29 +1428,23 @@ static gboolean udp_handle_out(gpointer dat) {
   }
   g_free(m->msg);
   g_slice_free(net_udp_t, m);
-  return net_udp_queue->head ? TRUE : FALSE;
+  udp_setwatcher();
+  return FALSE;
 }
 
 
-// host is assumed to be a valid IPv4 address.
+// host is assumed to be a valid IPv4 or IPv6 address.
 void net_udp_send_raw(const char *host, unsigned short port, const char *msg, int len) {
   net_udp_t *m = g_slice_new0(net_udp_t);
   m->msg = g_memdup(msg, len);
   m->msglen = len;
-  m->addr.sin_family = AF_INET;
-  m->addr.sin_port = htons(port);
-  if(inet_pton(AF_INET, host, &m->addr.sin_addr) != 1) {
-    g_debug("UDP: Invalid IP: %s", host);
-    return;
-  }
+  m->port = port;
+  strncpy(m->host, host, sizeof(m->host));
+  m->sock = yuri_validate_ipv4(host, strlen(host)) == 0 ? net_udp4_sock : net_udp6_sock;
 
   g_queue_push_tail(net_udp_queue, m);
-  if(net_udp_queue->head == net_udp_queue->tail) {
-    GSource *src = fdsrc_new(net_udp_sock, G_IO_OUT);
-    g_source_set_callback(src, udp_handle_out, NULL, NULL);
-    g_source_attach(src, NULL);
-    g_source_unref(src);
-  }
+  if(net_udp_queue->head == net_udp_queue->tail)
+    udp_setwatcher();
 }
 
 
@@ -1426,7 +1454,7 @@ static void net_udp_debug() {
     char end = m->msglen > 0 ? m->msg[m->msglen-1] : 0;
     if(end == '\n')
       m->msg[m->msglen-1] = 0;
-    g_debug("UDP:%s:%d> %s", inet_ntoa(m->addr.sin_addr), ntohs(m->addr.sin_port), m->msg);
+    g_debug("UDP:%s:%d> %s", m->host, (int)m->port, m->msg);
     if(end == '\n')
       m->msg[m->msglen-1] = end;
   }
@@ -1466,9 +1494,10 @@ void net_init_global() {
   dns_pool = g_thread_pool_new(dnscon_thread, NULL, -1, FALSE, NULL);
   syn_pool = g_thread_pool_new(syn_thread, NULL, -1, FALSE, NULL);
 
-  // TODO: IPv6?
-  net_udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
-  fcntl(net_udp_sock, F_SETFL, fcntl(net_udp_sock, F_GETFL, 0)|O_NONBLOCK);
+  net_udp4_sock = socket(AF_INET, SOCK_DGRAM, 0);
+  net_udp6_sock = socket(AF_INET6, SOCK_DGRAM, 0);
+  fcntl(net_udp4_sock, F_SETFL, fcntl(net_udp4_sock, F_GETFL, 0)|O_NONBLOCK);
+  fcntl(net_udp6_sock, F_SETFL, fcntl(net_udp6_sock, F_GETFL, 0)|O_NONBLOCK);
   net_udp_queue = g_queue_new();
 }
 
