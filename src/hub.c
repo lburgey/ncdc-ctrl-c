@@ -36,6 +36,7 @@ struct hub_user_t {
   gboolean isjoined : 1; // managed by uit_hub_userchange()
   gboolean active : 1;
   gboolean hasudp4 : 1;
+  gboolean hasudp6 : 1;
   gboolean hastls : 1;   // NMDC: 0x10 flag in $MyINFO; ADC: SU has ADCS or ADC0
   gboolean hasadc0 : 1;  // (ADC) Whether the SU flag was ADC0 (otherwise it was ADCS)
   unsigned char h_norm;
@@ -43,6 +44,7 @@ struct hub_user_t {
   unsigned char h_op;
   unsigned char slots;
   unsigned short udp4;
+  unsigned short udp6;
   unsigned int as;       // auto-open slot if upload is below n bytes/s
   int sid;        // for ADC
   struct in_addr ip4;
@@ -422,9 +424,13 @@ static void user_adc_nfo(hub_t *hub, hub_user_t *u, adc_cmd_t *cmd) {
     case P('U','4'): // UDP4 port
       u->udp4 = strtol(p, NULL, 10);
       break;
+    case P('U','6'): // UDP6 port
+      u->udp6 = strtol(p, NULL, 10);
+      break;
     case P('S','U'): // supports
       u->active = !!strstr(p, "TCP4") || !!strstr(p, "TCP6");
       u->hasudp4 = !!strstr(p, "UDP4");
+      u->hasudp6 = !!strstr(p, "UDP6");
       u->hasadc0 = !!strstr(p, "ADC0");
       u->hastls  = u->hasadc0 || strstr(p, "ADCS");
       break;
@@ -874,9 +880,13 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
   char tth[40] = {};
   char *cid = NULL;
   char *host = NULL;
-  if(u->hasudp4 && u->udp4) {
+  unsigned short port = 0;
+  if((u->hasudp4 && u->udp4) || (u->hasudp6 && u->udp6)) {
     cid = var_get(0, VAR_cid);
-    host = g_strdup(ip4_unpack(u->ip4));
+    /* TODO: If the user has both UDP4 and UDP6, we should prefer the AF used
+     * to connect to the hub, rather than IPv4. */
+    host = g_strdup(u->hasudp4 && u->udp4 ? ip4_unpack(u->ip4) : ip6_unpack(u->ip6));
+    port = u->hasudp4 && u->udp4 ? u->udp4 : u->udp6;
   }
 
   int i;
@@ -897,7 +907,7 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
       g_string_append_c(r, '/'); // make sure a directory path ends with a slash
     g_string_append_c(r, '\n');
 
-    adc_sch_reply_send(hub, host, u->udp4, r, ky ? sudpkey : NULL);
+    adc_sch_reply_send(hub, host, port, r, ky ? sudpkey : NULL);
     g_string_free(r, TRUE);
   }
 
@@ -953,7 +963,7 @@ static void adc_sch(hub_t *hub, adc_cmd_t *cmd) {
   s.ext = adc_getparams(cmd->argv, "EX");
 
   int i = 0;
-  int max = u->hasudp4 && u->udp4 ? 10 : 5;
+  int max = (u->hasudp4 && u->udp4) || (u->hasudp6 && u->udp6) ? 10 : 5;
   fl_list_t *res[max];
 
   // TTH lookup
@@ -1649,7 +1659,8 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       if(strcmp(from+4, hub->nick_hub) != 0) /* Not our nick */
         nfrom = from+4;
     } else {
-      if(yuri_parse(from, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 || yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0)
+      if(yuri_parse(from, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
+          (yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0 && yuri_validate_ipv6(uri.host, strlen(uri.host)) != 0))
         g_message("Invalid host:port in $Search (%s)", from);
       else if(!listen_hub_active(hub->id) || strcmp(uri.host, ip4_unpack(hub_ip4(hub))) != 0 || uri.port != listen_hub_udp(hub->id))
         /* This search is not for our IP:port */
