@@ -44,8 +44,9 @@ struct hub_user_t {
   unsigned char slots;
   unsigned short udp4;
   unsigned int as;       // auto-open slot if upload is below n bytes/s
-  struct in_addr ip4;
   int sid;        // for ADC
+  struct in_addr ip4;
+  struct in6_addr ip6;
   hub_t *hub;
   char *name;     // UTF-8
   char *name_hub; // hub-encoded (NMDC)
@@ -227,6 +228,8 @@ void hub_user_suggest(hub_t *hub, char *str, char **sug) {
 
 #define hub_user_conn(u) (!(u)->conn ? NULL :\
   (u)->hub->adc ? g_strdup_printf("%d KiB/s", GPOINTER_TO_UINT((u)->conn)/1024) : g_strdup((u)->conn))
+
+#define hub_user_ip(u, def) (!ip4_isany((u)->ip4) ? ip4_unpack((u)->ip4) : !ip6_isany((u)->ip6) ? ip6_unpack((u)->ip6) : def)
 
 #endif
 
@@ -412,6 +415,9 @@ static void user_adc_nfo(hub_t *hub, hub_user_t *u, adc_cmd_t *cmd) {
       break;
     case P('I','4'): // IPv4 address
       u->ip4 = ip4_pack(p);
+      break;
+    case P('I','6'): // IPv6 address
+      u->ip6 = ip6_pack(p);
       break;
     case P('U','4'): // UDP4 port
       u->udp4 = strtol(p, NULL, 10);
@@ -1499,10 +1505,18 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
         continue;
       *sep = 0;
       hub_user_t *u = user_add(hub, *cur, NULL);
-      struct in_addr new = ip4_pack(sep+1);
-      if(ip4_cmp(new, u->ip4) != 0) {
-        u->ip4 = new;
-        uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
+      if(yuri_validate_ipv4(sep+1, strlen(sep+1)) == 0) {
+        struct in_addr new = ip4_pack(sep+1);
+        if(ip4_cmp(new, u->ip4) != 0) {
+          u->ip4 = new;
+          uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
+        }
+      } else {
+        struct in6_addr new = ip6_pack(sep+1);
+        if(ip6_cmp(new, u->ip6) != 0) {
+          u->ip6 = new;
+          uit_hub_userchange(hub->tab, UIHUB_UC_NFO, u);
+        }
       }
       // Our own IP, configure active mode
       if(strcmp(*cur, hub->nick_hub) == 0)

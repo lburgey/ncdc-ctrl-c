@@ -74,7 +74,7 @@ static gint sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
     p == SORT_DESC   ? g_utf8_collate(a->desc?a->desc:"", b->desc?b->desc:"") :
     p == SORT_MAIL   ? g_utf8_collate(a->mail?a->mail:"", b->mail?b->mail:"") :
     p == SORT_CLIENT ? strcmp(a->client?a->client:"", b->client?b->client:"")
-                     : ip4_cmp(a->ip4, b->ip4);
+                     : (ip4_cmp(a->ip4, b->ip4) != 0 ? ip4_cmp(a->ip4, b->ip4) : ip6_cmp(a->ip6, b->ip6));
 
   // Username sort
   if(!o)
@@ -165,7 +165,7 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
   DRAW_COL(row, j, t->cw_tag,   tag?tag:"");
   DRAW_COL(row, j, t->cw_mail,  user->mail?user->mail:"");
   DRAW_COL(row, j, t->cw_conn,  conn?conn:"");
-  DRAW_COL(row, j, t->cw_ip,    ip4_isany(user->ip4)?"":ip4_unpack(user->ip4));
+  DRAW_COL(row, j, t->cw_ip,    hub_user_ip(user, ""));
   g_free(conn);
   g_free(tag);
 
@@ -196,7 +196,7 @@ static void calc_widths(tab_t *t) {
   w -= 12;
 
   // IP column as well
-  t->cw_ip = t->hide_ip ? 0 : 16;
+  t->cw_ip = t->hide_ip ? 0 : 18;
   w -= t->cw_ip;
 
   // User column has a minimum size (but may grow a bit later on, so will still be counted as a column)
@@ -288,7 +288,7 @@ static void t_draw(ui_tab_t *tab) {
     mvaddstr(bottom+2, 14, conn?conn:"-");
     g_free(conn);
     mvaddstr(bottom+2, 48, u->mail?u->mail:"-");
-    mvaddstr(bottom+3, 14, ip4_isany(u->ip4)?"-":ip4_unpack(u->ip4));
+    mvaddstr(bottom+3, 14, hub_user_ip(u, "-"));
     char *tag = hub_user_tag(u);
     mvaddstr(bottom+3, 48, tag?tag:"-");
     g_free(tag);
