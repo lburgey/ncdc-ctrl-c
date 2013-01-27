@@ -187,7 +187,7 @@ static gboolean cc_expect_nmdc_rm(cc_t *cc) {
 typedef struct throttle_get_t {
   char tth[24];
   guint64 uid;
-  guint64 offset;
+  guint64 offset; // G_MAXUINT64 is for 'GET tthl', which also needs throttling apparently...
   time_t throttle;
 } throttle_get_t;
 
@@ -703,7 +703,10 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
     char *dat = db_fl_gettthl(root, &len);
     if(!dat)
       g_set_error_literal(err, 1, 51, "File Not Available");
-    else {
+    else if(throttle_check(cc, root, G_MAXUINT64)) {
+      g_message("CC:%s: TTHL request throttled: %s", net_remoteaddr(cc->net), id);
+      g_set_error_literal(err, 1, 50, "Action throttled");
+    } else {
       // no need to adc_escape(id) here, since it cannot contain any special characters
       net_writef(cc->net, cc->adc ? "CSND tthl %s 0 %d\n" : "$ADCSND tthl %s 0 %d|", id, len);
       net_write(cc->net, dat, len);
