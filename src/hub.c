@@ -1143,7 +1143,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         g_message("CTM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
       else if(port < 1 || port > 65535)
         g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
-      else if(!u->active || ip4_isany(u->ip4)) {
+      else if(!u->active || (ip4_isany(u->ip4) && ip6_isany(u->ip6))) {
         g_message("CTM from user who is not active (%s): %s", net_remoteaddr(hub->net), msg);
         GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
         g_string_append(r, " 140 No\\sIP\\sto\\sconnect\\sto.\n");
@@ -1607,7 +1607,8 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       g_message("Received a $ConnectToMe for someone else (to %s from %s)", me, addr);
     else {
       yuri_t uri;
-      if(yuri_parse(addr, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 || yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0)
+      if(yuri_parse(addr, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
+          (yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0 && yuri_validate_ipv6(uri.host, strlen(uri.host)) != 0))
         g_message("Invalid host:port in $ConnectToMe (%s)", addr);
       else
         cc_nmdc_connect(cc_create(hub), uri.host, uri.port, var_get(hub->id, VAR_local_address), *tls ? TRUE : FALSE);

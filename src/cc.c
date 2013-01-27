@@ -290,7 +290,7 @@ struct cc_t {
   char cid[24];   // (ADC) only the first 8 bytes are used for checking,
                   // but the full 24 bytes are stored after receiving CINF (for logging)
   int timeout_src;
-  char remoteaddr[24]; // xxx.xxx.xxx.xxx:ppppp
+  char remoteaddr[64]; // xxx.xxx.xxx.xxx:ppppp or [ipv6addr]:ppppp
   char *token;    // (ADC)
   char *last_file;
   guint64 uid;
@@ -501,19 +501,15 @@ static void xfer_log_add(cc_t *cc) {
   char *nick = adc_escape(cc->nick, FALSE);
   char *file = adc_escape(cc->last_file, FALSE);
 
-  char *tmp = strchr(cc->remoteaddr, ':');
-  if(tmp)
-    *tmp = 0;
+  yuri_t uri;
+  g_return_if_fail(yuri_parse(cc->remoteaddr, &uri) == 0);
 
   char *msg = g_strdup_printf("%s %s %s %s %c %c %s %d %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %s",
-    cc->hub ? cc->hub->tab->name : cc->hub_name, cid, nick, cc->remoteaddr, cc->dl ? 'd' : 'u',
+    cc->hub ? cc->hub->tab->name : cc->hub_name, cid, nick, uri.host, cc->dl ? 'd' : 'u',
     transfer_size == cc->last_length ? 'c' : 'i', tth, (int)(time(NULL)-cc->last_start),
     cc->last_size, cc->last_offset, transfer_size, file);
   logfile_add(log, msg);
   g_free(msg);
-
-  if(tmp)
-    *tmp = ':';
   g_free(nick);
   g_free(file);
 }
@@ -847,20 +843,21 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
   if(cc->adc)
     memcpy(cc->cid, u->cid, 8);
 
-  // Set u->ip4 if we didn't get this from the hub yet.
+  // Set u->ip4 or u->ip6 if we didn't get this from the hub yet (NMDC, this
+  // information is only used for display purposes).
   // Note that in the case of ADC, this function is called before the
   // connection has actually been established, so the remote address isn't
   // known yet. This doesn't matter, however, as the hub already sends IP
   // information with ADC (if it didn't, we won't be able to connect in the
   // first place).
-  if(ip4_isany(u->ip4) && net_is_connected(cc->net)) {
-    const char *tmp = net_remoteaddr(cc->net);
-    char *sep = strchr(tmp, ':');
-    if(sep)
-      *sep = 0;
-    u->ip4 = ip4_pack(tmp);
-    if(sep)
-      *sep = ':';
+  if(net_is_connected(cc->net) && (ip4_isany(u->ip4) && ip6_isany(u->ip6))) {
+    yuri_t uri;
+    if(yuri_parse(net_remoteaddr(cc->net), &uri) == 0) {
+      if(yuri_validate_ipv4(uri.host, strlen(uri.host)) == 0)
+        u->ip4 = ip4_pack(uri.host);
+      else
+        u->ip6 = ip6_pack(uri.host);
+    }
   }
 
   // Don't allow multiple connections with the same user for the same purpose
@@ -1445,7 +1442,7 @@ static void handle_connect(net_t *n, const char *addr) {
 
 void cc_nmdc_connect(cc_t *cc, const char *host, unsigned short port, const char *laddr, gboolean tls) {
   g_return_if_fail(cc->state == CCS_CONN);
-  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), "%s:%d", host, (int)port);
+  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), yuri_validate_ipv6(host, strlen(host)) == 0 ? "[%s]:%d" : "%s:%d", host, (int)port);
   cc->tls = tls;
   net_connect(cc->net, host, port, laddr, handle_connect);
   g_clear_error(&cc->err);
@@ -1455,12 +1452,15 @@ void cc_nmdc_connect(cc_t *cc, const char *host, unsigned short port, const char
 void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short port, gboolean tls, char *token) {
   g_return_if_fail(cc->state == CCS_CONN);
   g_return_if_fail(cc->hub);
-  g_return_if_fail(u && u->active && !ip4_isany(u->ip4));
+  g_return_if_fail(u && u->active && !(ip4_isany(u->ip4) && ip6_isany(u->ip6)));
   cc->tls = tls;
   cc->adc = TRUE;
   cc->token = g_strdup(token);
   memcpy(cc->cid, u->cid, 8);
-  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), "%s:%d", ip4_unpack(u->ip4), (int)port);
+  /* TODO: If the user has both ip4 and ip6, we should prefer the AF used to
+   * connect to the hub, rather than ip4. */
+  const char *host = !ip4_isany(u->ip4) ? ip4_unpack(u->ip4) : ip6_unpack(u->ip6);
+  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), ip4_isany(u->ip4) ? "[%s]:%d" : "%s:%d", host, (int)port);
 
   // check whether this was as a reply to a RCM from us
   cc_expect_adc_rm(cc);
@@ -1477,7 +1477,7 @@ void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short p
     return;
 
   // connect
-  net_connect(cc->net, ip4_unpack(u->ip4), port, laddr, handle_connect);
+  net_connect(cc->net, host, port, laddr, handle_connect);
   g_clear_error(&cc->err);
 }
 

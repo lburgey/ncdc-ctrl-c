@@ -171,8 +171,8 @@ static void t_draw_details(tab_t *t, int l) {
   // labels
   attron(A_BOLD);
   mvaddstr(l+1,  3, "Username:");
-  mvaddstr(l+1, 42, "Hub:");
-  mvaddstr(l+2,  4, "IP/port:");
+  mvaddstr(l+1, 43, "IP:");
+  mvaddstr(l+2,  8, "Hub:");
   mvaddstr(l+2, 39, "Status:");
   mvaddstr(l+3,  9, "Up:");
   mvaddstr(l+3, 41, "Down:");
@@ -188,9 +188,9 @@ static void t_draw_details(tab_t *t, int l) {
 
   // line 1
   mvaddstr(l+1, 13, cc->nick ? cc->nick : "Unknown / connecting");
-  mvaddstr(l+1, 47, cc->hub ? cc->hub->tab->name : "-");
+  mvaddstr(l+1, 47, cc->remoteaddr);
   // line 2
-  mvaddstr(l+2, 13, cc->remoteaddr);
+  mvaddstr(l+2, 13, cc->hub ? cc->hub->tab->name : "-");
   mvaddstr(l+2, 47,
     cc->state == CCS_CONN      ? "Connecting" :
     cc->state == CCS_DISCONN   ? "Disconnected" :
