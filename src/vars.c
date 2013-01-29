@@ -115,13 +115,32 @@ static char *p_interval(const char *val, GError **err) {
 }
 
 static char *p_ip(const char *val, GError **err) {
-  // TODO: Also allow IPv6, once that gets supported
-  struct in_addr a;
-  if(inet_pton(AF_INET, val, &a) != 1) {
+  struct in_addr i4 = ip4_any;
+  struct in6_addr i6 = ip6_any;
+  char *sep = strchr(val, ',');
+  if(sep) *sep = 0;
+  if(yuri_validate_ipv4(val, strlen(val)) == 0)
+    i4 = ip4_pack(val);
+  else if(yuri_validate_ipv6(val, strlen(val)) == 0)
+    i6 = ip6_pack(val);
+  else {
     g_set_error_literal(err, 1, 0, "Invalid IP.");
     return NULL;
   }
-  return g_strdup(val);
+  if(sep) {
+    *(sep++) = ',';
+    while(*sep == ' ')
+      sep++;
+    if(ip4_isany(i4) && yuri_validate_ipv4(sep, strlen(sep)) == 0)
+      i4 = ip4_pack(sep);
+    else if(ip6_isany(i6) && yuri_validate_ipv6(sep, strlen(sep)) == 0)
+      i6 = ip6_pack(sep);
+    else {
+      g_set_error_literal(err, 1, 0, "Invalid IP.");
+      return NULL;
+    }
+  }
+  return g_strdup_printf("%s,%s", ip4_unpack(i4), ip6_unpack(i6));
 }
 
 static char *p_regex(const char *val, GError **err) {
@@ -1013,6 +1032,38 @@ gboolean var_get_bool(guint64 h, var_type n) {
 int var_get_int(guint64 h, var_type n) {
   char *r = var_get(h, n);
   return int_raw(r);
+}
+
+// Extract the IPv4 address from a p_ip()-formatted config option.
+struct in_addr var_parse_ip4(char *r) {
+  char *sep = strchr(r, ',');
+  struct in_addr a = ip4_any;
+  if(sep) *sep = 0;
+  a = ip4_pack(r);
+  if(sep) *sep = ',';
+  if(sep && ip4_isany(a)) {
+    sep++;
+    while(*sep == ' ')
+      sep++;
+    a = ip4_pack(sep);
+  }
+  return a;
+}
+
+// Likewise, for IPv6
+struct in6_addr var_parse_ip6(char *r) {
+  char *sep = strchr(r, ',');
+  struct in6_addr a = ip6_any;
+  if(sep) *sep = 0;
+  a = ip6_pack(r);
+  if(sep) *sep = ',';
+  if(sep && ip6_isany(a)) {
+    sep++;
+    while(*sep == ' ')
+      sep++;
+    a = ip6_pack(sep);
+  }
+  return a;
 }
 
 

@@ -272,12 +272,18 @@ static const doc_set_t doc_sets[] = {
   " settings for more information."
 },
 { "active_ip", 1, "<string>",
-  "Your public IP address for use in active mode. If this is not set, ncdc will"
-  " try to automatically get your IP address from the hub. If you do set this"
-  " manually, it is important that other clients can reach you using this IP"
-  " address. If you connect to a hub on the internet, this should be your"
-  " internet (WAN) IP. Likewise, if you connect to a hub on your LAN, this"
-  " should be your LAN IP."
+  "Your public IP address for use in active mode. If this is not set or set to"
+  " '0.0.0.0' for IPv4 or '::' for IPv6, then ncdc will try to automatically"
+  " get your IP address from the hub. If you do set this manually, it is"
+  " important that other clients can reach you using this IP address. If you"
+  " connect to a hub on the internet, this should be your internet (WAN) IP."
+  " Likewise, if you connect to a hub on your LAN, this should be your LAN"
+  " IP.\n\n"
+  "Both an IPv4 and an IPv6 address are set by providing two IP addresses"
+  " separated with a comma. When unset, '0.0.0.0,::' is assumed. Only the IP"
+  " version used to connect to the hub is used. That is, if you connect to an"
+  " IPv6 hub, then the configured IPv6 address is used and the IPv4 address is"
+  " ignored."
 },
 { "active_port", 1, "<integer>",
   "The listen port for incoming connections in active mode. Set to `0' to"
@@ -448,10 +454,16 @@ static const doc_set_t doc_sets[] = {
 },
 { "local_address", 1, "<string>",
   "Specifies the address of the local network interface to use for connecting"
-  " to the outside and for accepting incoming connections in active mode. When"
-  " unset, ncdc will use the default gateway interface to connect to the outside"
-  " world, and will bind to all interfaces (address 0.0.0.0) for incoming"
-  " connections in active mode."
+  " to the outside and for accepting incoming connections in active mode."
+  " Both an IPv4 and an IPv6 address are set by providing two IP addresses"
+  " separated with a comma. When unset, '0.0.0.0,::' is assumed.\n\n"
+  "If no IPv4 address is specified, '0.0.0.0' is added automatically."
+  " Similarly, if no IPv6 address is specified, '::' is added automatically. The"
+  " address that is actually used depends on the IP version actually used. That"
+  " is, if you're on an IPv6 hub, then ncdc will listen on the specified IPv6"
+  " address. Note that, even if the hub you're on is on IPv6, ncdc may still try"
+  " to connect to another client over IPv4, at which point the socket will be"
+  " bound to the configured IPv4 address."
 },
 { "log_debug", 0, "<boolean>",
   "Log debug messages to stderr.log in the session directory. It is highly"
