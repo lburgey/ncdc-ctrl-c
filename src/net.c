@@ -1012,10 +1012,10 @@ void net_connected(net_t *n, int sock, const char *addr) {
 struct dnscon_t {
   net_t *net;
   char *addr;
+  char *laddr;
   unsigned short port;
   struct addrinfo *nfo;
   struct addrinfo *next;
-  struct sockaddr_in laddr;
   char *err;
   void(*cb)(net_t *, const char *);
 };
@@ -1095,15 +1095,23 @@ static void dnscon_tryconn(net_t *n) {
   n->sock = socket(c->ai_family, SOCK_STREAM, 0);
   fcntl(n->sock, F_SETFL, fcntl(n->sock, F_GETFL, 0)|O_NONBLOCK);
 
-  // TODO: IPv6
-  if(c->ai_family == AF_INET && bind(n->sock, (struct sockaddr *)&n->dnscon->laddr, sizeof(n->dnscon->laddr)) < 0) {
+  int r = 0;
+  if(n->dnscon->laddr && c->ai_family == AF_INET) {
+    struct in_addr a = var_parse_ip4(n->dnscon->laddr);
+    r = bind(n->sock, ip4_sockaddr(a, 0), sizeof(struct sockaddr_in));
+  } else if(n->dnscon->laddr && c->ai_family == AF_INET6) {
+    struct in6_addr a = var_parse_ip6(n->dnscon->laddr);
+    r = bind(n->sock, ip6_sockaddr(a, 0), sizeof(struct sockaddr_in6));
+  }
+  if(r < 0) {
     char *e = g_strdup_printf("Can't bind to local address: %s", g_strerror(errno));
     g_debug("%s: %s", net_remoteaddr(n), e);
     n->cb_err(n, NETERR_CONN, e);
     g_free(e);
     return;
   }
-  int r = connect(n->sock, n->dnscon->next->ai_addr, n->dnscon->next->ai_addrlen);
+
+  r = connect(n->sock, n->dnscon->next->ai_addr, n->dnscon->next->ai_addrlen);
 
   // The common case, I guess
   if(r && errno == EINPROGRESS) {
@@ -1252,16 +1260,10 @@ void net_connect(net_t *n, const char *host, unsigned short port, const char *la
 
   dnscon_t *r = g_slice_new0(dnscon_t);
   r->addr = g_strdup(host);
+  r->laddr = g_strdup(laddr);
   r->port = port;
   r->net = n;
   r->cb = cb;
-
-  r->laddr.sin_family = AF_INET;
-  r->laddr.sin_port = 0;
-  if(laddr)
-    inet_pton(AF_INET, laddr, &r->laddr.sin_addr);
-  else
-    r->laddr.sin_addr.s_addr = INADDR_ANY;
 
   if(!n->timeout_src)
     n->timeout_src = g_timeout_add_seconds(5, handle_timer, n);
@@ -1400,20 +1402,12 @@ static gboolean udp_handle_out(gpointer dat) {
     return FALSE;
 
   int n;
-  if(yuri_validate_ipv4(m->host, strlen(m->host)) == 0) {
-    struct sockaddr_in s = {
-      .sin_family = AF_INET,
-      .sin_port = htons(m->port),
-      .sin_addr = ip4_pack(m->host)
-    };
-    n = sendto(net_udp4_sock, m->msg, m->msglen, 0, (struct sockaddr *)&s, sizeof(s));
+  if(yuri_validate_ipv4(m->host, strlen(m->host))) {
+    struct in_addr a = ip4_pack(m->host);
+    n = sendto(net_udp4_sock, m->msg, m->msglen, 0, ip4_sockaddr(a, m->port), sizeof(struct sockaddr_in));
   } else {
-    struct sockaddr_in6 s = {
-      .sin6_family = AF_INET6,
-      .sin6_port = htons(m->port),
-      .sin6_addr = ip6_pack(m->host)
-    };
-    n = sendto(net_udp6_sock, m->msg, m->msglen, 0, (struct sockaddr *)&s, sizeof(s));
+    struct in6_addr a = ip6_pack(m->host);
+    n = sendto(net_udp6_sock, m->msg, m->msglen, 0, ip6_sockaddr(a, m->port), sizeof(struct sockaddr_in6));
   }
 
   if(n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)) {
@@ -1434,6 +1428,7 @@ static gboolean udp_handle_out(gpointer dat) {
 
 
 // host is assumed to be a valid IPv4 or IPv6 address.
+// TODO: Outgoing udp socket should be bound to the local_address config option!
 void net_udp_send_raw(const char *host, unsigned short port, const char *msg, int len) {
   net_udp_t *m = g_slice_new0(net_udp_t);
   m->msg = g_memdup(msg, len);

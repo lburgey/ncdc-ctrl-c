@@ -576,10 +576,27 @@ const char *ip6__unpack(unsigned char ip[16]) {
   return inet_ntop(AF_INET6, ip, buf, sizeof(buf));
 }
 
+struct sockaddr *ip4__sockaddr(guint32 ip, unsigned short port) {
+  static struct sockaddr_in s = { .sin_family = AF_INET };
+  s.sin_port = htons(port);
+  s.sin_addr.s_addr = ip;
+  return (struct sockaddr *)&s;
+}
+
+struct sockaddr *ip6__sockaddr(unsigned char ip[16], unsigned short port) {
+  static struct sockaddr_in6 s = { .sin6_family = AF_INET6 };
+  s.sin6_port = htons(port);
+  memcpy(&s.sin6_addr, ip, 16);
+  return (struct sockaddr *)&s;
+}
+
 #if INTERFACE
 
 #define ip4_unpack(ip) ip4__unpack((ip).s_addr)
 #define ip6_unpack(ip) ip6__unpack((ip).s6_addr)
+
+#define ip4_sockaddr(ip, port) ip4__sockaddr((ip).s_addr, port)
+#define ip6_sockaddr(ip, port) ip6__sockaddr((ip).s6_addr, port)
 
 #define ip4_cmp(a, b) memcmp(&(a), &(b), sizeof(struct in_addr))
 #define ip6_cmp(a, b) memcmp(&(a), &(b), sizeof(struct in6_addr))
