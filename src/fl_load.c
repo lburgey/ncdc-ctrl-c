@@ -89,7 +89,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
 
   // The first token must always be a <FileListing>
   case S_START:
-    if(type == XMLT_OPEN && strcmp(arg1, "FileListing") == 0) {
+    if(type == XMLT_OPEN && g_ascii_strcasecmp(arg1, "FileListing") == 0) {
       x->state = S_FLOPEN;
       return 0;
     }
@@ -107,7 +107,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
 
   // Handling the attributes of a Directory element.
   case S_DIROPEN:
-    if(type == XMLT_ATTR && strcmp(arg1, "Name") == 0 && !x->name) {
+    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
       x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
       return 0;
     }
@@ -135,11 +135,11 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
 
   // In a directory listing.
   case S_INDIR:
-    if(type == XMLT_OPEN && strcmp(arg1, "Directory") == 0) {
+    if(type == XMLT_OPEN && g_ascii_strcasecmp(arg1, "Directory") == 0) {
       x->state = S_DIROPEN;
       return 0;
     }
-    if(type == XMLT_OPEN && strcmp(arg1, "File") == 0) {
+    if(type == XMLT_OPEN && g_ascii_strcasecmp(arg1, "File") == 0) {
       x->state = S_FILEOPEN;
       return 0;
     }
@@ -150,7 +150,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
     }
     if(type == XMLT_CLOSE) {
       char *expect = x->root == x->cur ? "FileListing" : "Directory";
-      if(arg1 && strcmp(arg1, expect) != 0) {
+      if(arg1 && g_ascii_strcasecmp(arg1, expect) != 0) {
         g_set_error(err, 1, 0, "Invalid close tag, expected </%s> but got </%s>", expect, arg1);
         return -1;
       }
@@ -166,11 +166,11 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   // Handling the attributes of a File element. (If there are multiple
   // attributes with the same name, only the first is used.)
   case S_FILEOPEN:
-    if(type == XMLT_ATTR && strcmp(arg1, "Name") == 0 && !x->name) {
+    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
       x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
       return 0;
     }
-    if(type == XMLT_ATTR && strcmp(arg1, "TTH") == 0 && !x->filehastth) {
+    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "TTH") == 0 && !x->filehastth) {
       if(!istth(arg2)) {
         g_set_error(err, 1, 0, "Invalid TTH");
         return -1;
@@ -179,7 +179,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
       x->filehastth = TRUE;
       return 0;
     }
-    if(type == XMLT_ATTR && strcmp(arg1, "Size") == 0 && x->filesize == G_MAXUINT64) {
+    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Size") == 0 && x->filesize == G_MAXUINT64) {
       char *end = NULL;
       x->filesize = g_ascii_strtoull(arg2, &end, 10);
       if(!end || *end) {
@@ -217,7 +217,7 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   // In a File element. Nothing is allowed here exept a close of the File
   // element. (Really?)
   case S_INFILE:
-    if(type == XMLT_CLOSE && (!arg1 || strcmp(arg1, "File") == 0)) {
+    if(type == XMLT_CLOSE && (!arg1 || g_ascii_strcasecmp(arg1, "File") == 0)) {
       x->state = S_INDIR;
       return 0;
     }
