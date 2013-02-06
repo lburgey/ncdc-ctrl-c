@@ -1403,7 +1403,7 @@ static gboolean udp_handle_out(gpointer dat) {
     return FALSE;
 
   int n;
-  if(yuri_validate_ipv4(m->host, strlen(m->host))) {
+  if(yuri_validate_ipv4(m->host, strlen(m->host)) == 0) {
     struct in_addr a = ip4_pack(m->host);
     n = sendto(net_udp4_sock, m->msg, m->msglen, 0, ip4_sockaddr(a, m->port), sizeof(struct sockaddr_in));
   } else {
