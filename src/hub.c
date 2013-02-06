@@ -1663,12 +1663,14 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       if(yuri_parse(from, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
           (yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0 && yuri_validate_ipv6(uri.host, strlen(uri.host)) != 0))
         g_message("Invalid host:port in $Search (%s)", from);
-      else if(!listen_hub_active(hub->id) || strcmp(uri.host, ip4_unpack(hub_ip4(hub))) != 0 || uri.port != listen_hub_udp(hub->id))
+      else if(!listen_hub_active(hub->id) || strcmp(uri.host, ip4_unpack(hub_ip4(hub))) != 0 || uri.port != listen_hub_udp(hub->id)) {
         /* This search is not for our IP:port */
         nfrom = uri.host;
+        port = uri.port;
+      }
     }
     if(nfrom)
-      nmdc_search(hub, from, port, sizerestrict[0] == 'F' ? -2 : ismax[0] == 'T' ? -1 : 1, g_ascii_strtoull(size, NULL, 10), type[0]-'0', query);
+      nmdc_search(hub, nfrom, port, sizerestrict[0] == 'F' ? -2 : ismax[0] == 'T' ? -1 : 1, g_ascii_strtoull(size, NULL, 10), type[0]-'0', query);
     g_free(from);
     g_free(sizerestrict);
     g_free(ismax);
