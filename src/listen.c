@@ -31,24 +31,34 @@
 
 #define LBT_UDP 1
 #define LBT_TCP 2
+#define LBT_IP4 4
+#define LBT_IP6 8
 
-#define LBT_STR(x) ((x) == LBT_TCP ? "TCP" : "UDP")
+#define LBT_UDP4 (LBT_UDP|LBT_IP4)
+#define LBT_UDP6 (LBT_UDP|LBT_IP6)
+#define LBT_TCP4 (LBT_TCP|LBT_IP4)
+#define LBT_TCP6 (LBT_TCP|LBT_IP6)
+
+#define LBT_STR(x) ((x) == LBT_TCP4 ? "TCP4" : (x) == LBT_TCP6 ? "TCP6" : (x) == LBT_UDP4 ? "UDP4" : "UDP6")
 
 // port + ip4 are "cached" for convenience.
 struct listen_bind_t {
   guint16 type; // LBT_*
   guint16 port;
   struct in_addr ip4;
+  struct in6_addr ip6;
   int src; // glib event source
   int sock;
   GSList *hubs; // hubs that use this bind
 };
 
-
 struct listen_hub_bind_t {
   guint64 hubid;
+  // A hub is always active in either IPv4 or IPv6, both is currently not supported.
   listen_bind_t *tcp, *udp;
 };
+
+#define listen_bind_ip(x) ((x)->type & LBT_IP4 ? ip4_unpack((x)->ip4) : ip6_unpack((x)->ip6))
 
 #endif
 
@@ -118,25 +128,34 @@ static void listen_stop() {
 
 static gboolean listen_tcp_handle(gpointer dat) {
   listen_bind_t *b = dat;
-  struct sockaddr_in a = {};
-  socklen_t len = sizeof(a);
-  int c = accept(b->sock, (struct sockaddr *)&a, &len);
-  fcntl(c, F_SETFL, fcntl(c, F_GETFL, 0)|O_NONBLOCK);
+
+  int c;
+  char addr_str[100];
+  if(b->type & LBT_IP4) {
+    struct sockaddr_in a = {};
+    socklen_t len = sizeof(a);
+    c = accept(b->sock, (struct sockaddr *)&a, &len);
+    g_snprintf(addr_str, 100, "%s:%d", ip4_unpack(a.sin_addr), ntohs(a.sin_port));
+  } else {
+    struct sockaddr_in6 a = {};
+    socklen_t len = sizeof(a);
+    c = accept(b->sock, (struct sockaddr *)&a, &len);
+    g_snprintf(addr_str, 100, "[%s]:%d", ip6_unpack(a.sin6_addr), ntohs(a.sin6_port));
+  }
 
   // handle error
   if(c < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
     ui_mf(uit_main_tab, 0, "TCP accept error on %s:%d: %s. Switching to passive mode.",
-      ip4_unpack(b->ip4), b->port, g_strerror(errno));
+      listen_bind_ip(b), (int)b->port, g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
     return FALSE;
   }
 
   // Create connection
-  char addr_str[100];
-  g_snprintf(addr_str, 100, "%s:%d", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
+  fcntl(c, F_SETFL, fcntl(c, F_GETFL, 0)|O_NONBLOCK);
   cc_incoming(cc_create(NULL), b->port, c, addr_str);
   return TRUE;
 }
@@ -146,24 +165,30 @@ static gboolean listen_udp_handle(gpointer dat) {
   static char buf[5000]; // can be static, this function is only called in the main thread.
   listen_bind_t *b = dat;
 
-  struct sockaddr_in a = {};
-  socklen_t len = sizeof(a);
-  int r = recvfrom(b->sock, buf, sizeof(buf)-1, 0, (struct sockaddr *)&a, &len);
+  int r;
+  char addr_str[100];
+  if(b->type & LBT_IP4) {
+    struct sockaddr_in a = {};
+    socklen_t len = sizeof(a);
+    r = recvfrom(b->sock, buf, sizeof(buf)-1, 0, (struct sockaddr *)&a, &len);
+    g_snprintf(addr_str, 100, "%s:%d", ip4_unpack(a.sin_addr), ntohs(a.sin_port));
+  } else {
+    struct sockaddr_in6 a = {};
+    socklen_t len = sizeof(a);
+    r = recvfrom(b->sock, buf, sizeof(buf)-1, 0, (struct sockaddr *)&a, &len);
+    g_snprintf(addr_str, 100, "[%s]:%d", ip6_unpack(a.sin6_addr), ntohs(a.sin6_port));
+  }
 
   // handle error
   if(r < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
     ui_mf(uit_main_tab, 0, "UDP read error on %s:%d: %s. Switching to passive mode.",
-      ip4_unpack(b->ip4), b->port, g_strerror(errno));
+      listen_bind_ip(b), b->port, g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
     return FALSE;
   }
-
-  // Get address in a readable string, for debugging
-  char addr_str[100];
-  g_snprintf(addr_str, 100, "%s:%d", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
 
   // Since all incoming messages must be search results, just pass the messages to search.c
   buf[r] = 0;
@@ -177,85 +202,100 @@ static gboolean listen_udp_handle(gpointer dat) {
 
 
 #define bind_hub_add(lb, h) do {\
-    if((h)->tcp != lb)\
+    if((h)->tcp != lb && (h)->udp != lb)\
       (lb)->hubs = g_slist_prepend((lb)->hubs, h);\
-    if((lb)->type == LBT_TCP)\
+    if((lb)->type & LBT_TCP)\
       (h)->tcp = lb;\
     else\
       (h)->udp = lb;\
   } while(0)
 
 
-static void bind_add(listen_hub_bind_t *b, int type, struct in_addr *ip, guint16 port) {
+static void bind_add(listen_hub_bind_t *b, int type, char *ip, guint16 port) {
   if(!port)
-    port = type == LBT_UDP ? random_udp_port : random_tcp_port;
-  g_debug("Listen: Adding %s %s:%d", LBT_STR(type), ip4_unpack(*ip), port);
+    port = type & LBT_UDP ? random_udp_port : random_tcp_port;
+
+  listen_bind_t lb = {};
+  lb.type = type;
+  lb.port = port;
+  if(type & LBT_IP4)
+    lb.ip4 = var_parse_ip4(ip);
+  else
+    lb.ip6 = var_parse_ip6(ip);
+  g_debug("Listen: Adding %s %s:%d", LBT_STR(type), listen_bind_ip(&lb), port);
+
   // First: look if we can re-use an existing bind and look for any unresolvable conflicts.
   GList *c;
   for(c=listen_binds; c; c=c->next) {
     listen_bind_t *i = c->data;
     // Same? Just re-use.
-    if(type == i->type && (ip4_cmp(i->ip4, *ip) == 0 || ip4_isany(i->ip4)) && i->port == port) {
+    if(type == i->type && i->port == port && (type & LBT_IP4
+          ? ip4_cmp(i->ip4, lb.ip4) == 0 || ip4_isany(i->ip4)
+          : ip6_cmp(i->ip6, lb.ip6) == 0 || ip6_isany(i->ip6))) {
       g_debug("Listen: Re-using!");
-      i->type |= type;
       bind_hub_add(i, b);
       return;
     }
   }
 
   // Create and add bind item
-  listen_bind_t *lb = g_new0(listen_bind_t, 1);
-  lb->type = type;
-  lb->ip4 = *ip;
-  lb->port = port;
-  bind_hub_add(lb, b);
+  listen_bind_t *nlb = g_new0(listen_bind_t, 1);
+  *nlb = lb;
+  bind_hub_add(nlb, b);
 
   // Look for existing binds that should be merged.
   GList *n;
-  for(c=listen_binds; ip4_isany(lb->ip4)&&c; c=n) {
-    n = c->next;
-    listen_bind_t *i = c->data;
-    if(i->port != lb->port || i->type != lb->type)
-      continue;
-    g_debug("Listen: Merging!");
-    lb->type |= i->type;
-    // Move over all hubs to *lb
-    GSList *in;
-    for(in=i->hubs; in; in=in->next)
-      bind_hub_add(lb, (listen_hub_bind_t *)in->data);
-    g_slist_free(i->hubs);
-    // And remove this bind
-    g_free(i);
-    listen_binds = g_list_delete_link(listen_binds, c);
+  if(nlb->type & LBT_IP4 ? ip4_isany(nlb->ip4) : ip6_isany(nlb->ip6)) {
+    for(c=listen_binds; c; c=n) {
+      n = c->next;
+      listen_bind_t *i = c->data;
+      if(i->port != nlb->port || i->type != nlb->type)
+        continue;
+      g_debug("Listen: Merging!");
+      // Move over all hubs to *nlb
+      GSList *in;
+      for(in=i->hubs; in; in=in->next)
+        bind_hub_add(nlb, (listen_hub_bind_t *)in->data);
+      g_slist_free(i->hubs);
+      // And remove this bind
+      g_free(i);
+      listen_binds = g_list_delete_link(listen_binds, c);
+    }
   }
 
-  listen_binds = g_list_prepend(listen_binds, lb);
+  listen_binds = g_list_prepend(listen_binds, nlb);
 }
 
 
 static void bind_create(listen_bind_t *b) {
-  g_debug("Listen: binding %s %s:%d", LBT_STR(b->type), ip4_unpack(b->ip4), b->port);
+  g_debug("Listen: binding %s %s:%d", LBT_STR(b->type), listen_bind_ip(b), b->port);
   int err = 0;
 
   // Create socket
-  int sock = socket(AF_INET, b->type != LBT_UDP ? SOCK_STREAM : SOCK_DGRAM, 0);
+  int sock = socket(b->type & LBT_IP4 ? AF_INET : AF_INET6, b->type & LBT_UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
   g_return_if_fail(sock > 0);
 
-  int set = 1;
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (void *)&set, sizeof(set));
+  // Make sure that, if this is an IPv6 '::' socket, it does not bind to IPv4.
+  // If it would, then this or a subsequent bind() may fail because we may also
+  // create a separate socket for the same port on IPv4.
+  int one = 1;
+#ifdef IPV6_V6ONLY
+  if(b->type & LBT_IP6)
+    setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (void *)&one, sizeof(one));
+#endif
 
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (void *)&one, sizeof(one));
   fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0)|O_NONBLOCK);
 
   // Bind
-  struct sockaddr_in a = {};
-  a.sin_family = AF_INET;
-  a.sin_port = htons(b->port);
-  a.sin_addr = b->ip4;
-  if(bind(sock, (struct sockaddr *)&a, sizeof(a)) < 0)
+  int r = b->type & LBT_IP4
+    ? bind(sock, ip4_sockaddr(b->ip4, b->port), sizeof(struct sockaddr_in))
+    : bind(sock, ip6_sockaddr(b->ip6, b->port), sizeof(struct sockaddr_in6));
+  if(r < 0)
     err = errno;
 
   // listen
-  if(!err && b->type != LBT_UDP && listen(sock, 5) < 0)
+  if(!err && b->type & LBT_TCP && listen(sock, 5) < 0)
     err = errno;
 
   // Bind or listen failed? Abandon ship! (This may be a bit extreme, but at
@@ -263,7 +303,7 @@ static void bind_create(listen_bind_t *b) {
   // activated configuration).
   if(err) {
     ui_mf(uit_main_tab, UIP_MED, "Error binding to %s %s:%d, %s. Switching to passive mode.",
-      LBT_STR(b->type), ip4_unpack(b->ip4), b->port, g_strerror(err));
+      LBT_STR(b->type), listen_bind_ip(b), b->port, g_strerror(err));
     close(sock);
     listen_stop();
     return;
@@ -272,7 +312,7 @@ static void bind_create(listen_bind_t *b) {
 
   // Start accepting incoming connections or handling incoming messages
   GSource *src = fdsrc_new(sock, G_IO_IN);
-  g_source_set_callback((GSource *)src, b->type == LBT_UDP ? listen_udp_handle : listen_tcp_handle, b, NULL);
+  g_source_set_callback((GSource *)src, b->type & LBT_UDP ? listen_udp_handle : listen_tcp_handle, b, NULL);
   b->src = g_source_attach((GSource *)src, NULL);
   g_source_unref((GSource *)src);
 }
@@ -289,6 +329,7 @@ void listen_refresh() {
   hub_t *h = NULL;
   g_hash_table_iter_init(&i, hubs);
   while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h)) {
+    // TODO: IPv6 fixing
     // We only look at hubs on which we are active
     if(ip4_isany(hub_ip4(h)) || !var_get_bool(h->id, VAR_active))
       continue;
@@ -298,11 +339,10 @@ void listen_refresh() {
     g_hash_table_insert(listen_hub_binds, &b->hubid, b);
     // And add the required binds for this hub (Due to the conflict resolution in binds_add(), this is O(n^2))
     // Note: bind_add() can call listen_stop() on error, detect this on whether listen_hub_binds is empty or not.
-    struct in_addr localip = ip4_pack(var_get(b->hubid, VAR_local_address));
-    bind_add(b, LBT_TCP, &localip, var_get_int(b->hubid, VAR_active_port));
+    bind_add(b, LBT_TCP4, var_get(b->hubid, VAR_local_address), var_get_int(b->hubid, VAR_active_port));
     if(!g_hash_table_size(listen_hub_binds))
       break;
-    bind_add(b, LBT_UDP, &localip, var_get_int(b->hubid, VAR_active_udp_port));
+    bind_add(b, LBT_UDP4, var_get(b->hubid, VAR_local_address), var_get_int(b->hubid, VAR_active_udp_port));
     if(!g_hash_table_size(listen_hub_binds))
       break;
   }
