@@ -1035,8 +1035,10 @@ int var_get_int(guint64 h, var_type n) {
 
 // Extract the IPv4 address from a p_ip()-formatted config option.
 struct in_addr var_parse_ip4(char *r) {
-  char *sep = strchr(r, ',');
   struct in_addr a = ip4_any;
+  if(!r)
+    return a;
+  char *sep = strchr(r, ',');
   if(sep) *sep = 0;
   a = ip4_pack(r);
   if(sep) *sep = ',';
@@ -1051,8 +1053,10 @@ struct in_addr var_parse_ip4(char *r) {
 
 // Likewise, for IPv6
 struct in6_addr var_parse_ip6(char *r) {
-  char *sep = strchr(r, ',');
   struct in6_addr a = ip6_any;
+  if(!r)
+    return a;
+  char *sep = strchr(r, ',');
   if(sep) *sep = 0;
   a = ip6_pack(r);
   if(sep) *sep = ',';
