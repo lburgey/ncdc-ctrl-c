@@ -285,7 +285,6 @@ struct cc_t {
   gboolean zlig : 1; // Only used for partial file lists, and only used on ADC because I don't know how NMDC clients handle that
   guint16 port;
   guint16 state;
-  guint16 active_type; // listen.c:LBT_*
   int dir;        // (NMDC) our direction. -1 = Upload, otherwise: Download $dir
   char cid[24];   // (ADC) only the first 8 bytes are used for checking,
                   // but the full 24 bytes are stored after receiving CINF (for logging)
@@ -1487,7 +1486,7 @@ static void handle_detectprotocol(net_t *net, char *dat, int len) {
   cc_t *cc = net_handle(net);
 
   // Enable TLS
-  if(!cc->tls && (cc->active_type == LBT_TLS || ((cc->active_type & LBT_TLS) && *dat >= 0x14 && *dat <= 0x17))) {
+  if(!cc->tls && *dat >= 0x14 && *dat <= 0x17) {
     cc->tls = TRUE;
     net_settls(cc->net, TRUE, handle_handshake);
     if(net_is_connected(cc->net))
@@ -1501,11 +1500,10 @@ static void handle_detectprotocol(net_t *net, char *dat, int len) {
 }
 
 
-void cc_incoming(cc_t *cc, guint16 port, int sock, const char *addr, int type) {
+void cc_incoming(cc_t *cc, guint16 port, int sock, const char *addr) {
   net_connected(cc->net, sock, addr);
   if(!net_is_connected(cc->net))
     return;
-  cc->active_type = type;
   cc->port = port;
   cc->active = TRUE;
   cc->state = CCS_HANDSHAKE;

@@ -533,14 +533,12 @@ void hub_opencc(hub_t *hub, hub_user_t *u) {
   }
 
   guint16 wanttls = var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER;
-  guint16 tcpport = listen_hub_tcp(hub->id);
-  guint16 tlsport = tcpport && wanttls ? listen_hub_tls(hub->id) : 0;
-  gboolean usetls = (tcpport ? tlsport : wanttls) && u->hastls;
+  int port = listen_hub_tcp(hub->id);
+  gboolean usetls = wanttls && u->hastls;
   char *adcproto = !usetls ? "ADC/1.0" : u->hasadc0 ? "ADCS/0.10" : "ADCS/1.0";
-  int port = usetls ? tlsport : tcpport;
 
   // we're active, send CTM
-  if(tcpport) {
+  if(port) {
     if(hub->adc) {
       GString *c = adc_generate('D', ADCC_CTM, hub->sid, u->sid);
       g_string_append_printf(c, " %s %d %s\n", adcproto, port, token);
@@ -1157,7 +1155,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
   case ADCC_RCM:
     if(cmd.argc < 2 || cmd.type != 'D' || cmd.dest != hub->sid)
       g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
-    else if(!listen_hub_tls(hub->id) ? !is_adc_proto(cmd.argv[0]) : !is_valid_proto(cmd.argv[0])) {
+    else if(var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_DISABLE ? !is_adc_proto(cmd.argv[0]) : !is_valid_proto(cmd.argv[0])) {
       GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
       g_string_append(r, " 141 Unknown\\protocol");
       adc_append(r, "PR", cmd.argv[0]);
@@ -1178,7 +1176,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       if(!u)
         g_message("RCM from user who is not on the hub (%s): %s", net_remoteaddr(hub->net), msg);
       else {
-        int port = is_adcs_proto(cmd.argv[0]) ? listen_hub_tls(hub->id) : listen_hub_tcp(hub->id);
+        int port = listen_hub_tcp(hub->id);
         GString *r = adc_generate('D', ADCC_CTM, hub->sid, cmd.source);
         adc_append(r, NULL, cmd.argv[0]);
         g_string_append_printf(r, " %d", port);
@@ -1632,11 +1630,9 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       // Unlike with ADC, the client sending the $RCTM can not indicate it
       // wants to use TLS or not, so the decision is with us. Let's require
       // tls_policy to be PREFER here.
-      guint16 tlsport = listen_hub_tls(hub->id);
-      int usetls = u->hastls && tlsport && var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER;
-      int port = usetls ? tlsport : listen_hub_tcp(hub->id);
-      net_writef(hub->net, "$ConnectToMe %s %s:%d%s|", other, ip4_unpack(hub_ip4(hub)),
-        port, usetls ? "S" : "");
+      int usetls = u->hastls && var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER;
+      int port = listen_hub_tcp(hub->id);
+      net_writef(hub->net, "$ConnectToMe %s %s:%d%s|", other, ip4_unpack(hub_ip4(hub)), port, usetls ? "S" : "");
       cc_expect_add(hub, u, port, NULL, FALSE);
     } else
       g_message("Received a $RevConnectToMe, but we're not active.");

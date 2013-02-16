@@ -31,9 +31,8 @@
 
 #define LBT_UDP 1
 #define LBT_TCP 2
-#define LBT_TLS 4
 
-#define LBT_STR(x) ((x) == LBT_TCP ? "TCP" : (x) == LBT_UDP ? "UDP" : (x) == LBT_TLS ? "TLS" : "TLS+TCP")
+#define LBT_STR(x) ((x) == LBT_TCP ? "TCP" : "UDP")
 
 // port + ip4 are "cached" for convenience.
 struct listen_bind_t {
@@ -48,7 +47,7 @@ struct listen_bind_t {
 
 struct listen_hub_bind_t {
   guint64 hubid;
-  listen_bind_t *tcp, *udp, *tls;
+  listen_bind_t *tcp, *udp;
 };
 
 #endif
@@ -80,11 +79,6 @@ gboolean listen_hub_active(guint64 hub) {
 guint16 listen_hub_tcp(guint64 hub) {
   listen_hub_bind_t *b = g_hash_table_lookup(listen_hub_binds, &hub);
   return b && b->tcp ? b->tcp->port : 0;
-}
-
-guint16 listen_hub_tls(guint64 hub) {
-  listen_hub_bind_t *b = g_hash_table_lookup(listen_hub_binds, &hub);
-  return b && b->tls ? b->tls->port : b && b->tcp && (b->tcp->type & LBT_TLS) ? b->tcp->port : 0;
 }
 
 guint16 listen_hub_udp(guint64 hub) {
@@ -143,7 +137,7 @@ static gboolean listen_tcp_handle(gpointer dat) {
   // Create connection
   char addr_str[100];
   g_snprintf(addr_str, 100, "%s:%d", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
-  cc_incoming(cc_create(NULL), b->port, c, addr_str, b->type);
+  cc_incoming(cc_create(NULL), b->port, c, addr_str);
   return TRUE;
 }
 
@@ -183,21 +177,13 @@ static gboolean listen_udp_handle(gpointer dat) {
 
 
 #define bind_hub_add(lb, h) do {\
-    if((h)->tcp != lb && (h)->tls != lb)\
+    if((h)->tcp != lb)\
       (lb)->hubs = g_slist_prepend((lb)->hubs, h);\
-    if((lb)->type & LBT_TCP)\
+    if((lb)->type == LBT_TCP)\
       (h)->tcp = lb;\
-    else if((lb)->type == LBT_UDP)\
-      (h)->udp = lb;\
     else\
-      (h)->tls = lb;\
-    if((h)->tcp && (h)->tcp->type & LBT_TLS)\
-      (h)->tls = NULL;\
+      (h)->udp = lb;\
   } while(0)
-
-// Whether two types can be merged into a single port. UDP+UDP and
-// (TCP|TLS)+(TCP|TLS) can be merged.
-#define lbt_canmerge(t1, t2) (t1 == t2 || !(t1 & (LBT_TLS|LBT_TCP)) == !(t2 & (LBT_TLS|LBT_TCP)))
 
 
 static void bind_add(listen_hub_bind_t *b, int type, struct in_addr *ip, guint16 port) {
@@ -209,7 +195,7 @@ static void bind_add(listen_hub_bind_t *b, int type, struct in_addr *ip, guint16
   for(c=listen_binds; c; c=c->next) {
     listen_bind_t *i = c->data;
     // Same? Just re-use.
-    if(lbt_canmerge(type, i->type) && (ip4_cmp(i->ip4, *ip) == 0 || ip4_isany(i->ip4)) && i->port == port) {
+    if(type == i->type && (ip4_cmp(i->ip4, *ip) == 0 || ip4_isany(i->ip4)) && i->port == port) {
       g_debug("Listen: Re-using!");
       i->type |= type;
       bind_hub_add(i, b);
@@ -229,7 +215,7 @@ static void bind_add(listen_hub_bind_t *b, int type, struct in_addr *ip, guint16
   for(c=listen_binds; ip4_isany(lb->ip4)&&c; c=n) {
     n = c->next;
     listen_bind_t *i = c->data;
-    if(i->port != lb->port || !lbt_canmerge(i->type, lb->type))
+    if(i->port != lb->port || i->type != lb->type)
       continue;
     g_debug("Listen: Merging!");
     lb->type |= i->type;
@@ -277,7 +263,7 @@ static void bind_create(listen_bind_t *b) {
   // activated configuration).
   if(err) {
     ui_mf(uit_main_tab, UIP_MED, "Error binding to %s %s:%d, %s. Switching to passive mode.",
-      b->type == LBT_UDP ? "UDP" : "TCP", ip4_unpack(b->ip4), b->port, g_strerror(err));
+      LBT_STR(b->type), ip4_unpack(b->ip4), b->port, g_strerror(err));
     close(sock);
     listen_stop();
     return;
@@ -319,11 +305,6 @@ void listen_refresh() {
     bind_add(b, LBT_UDP, &localip, var_get_int(b->hubid, VAR_active_udp_port));
     if(!g_hash_table_size(listen_hub_binds))
       break;
-    if(var_get_int(b->hubid, VAR_tls_policy) > VAR_TLSP_DISABLE) {
-      bind_add(b, LBT_TLS, &localip, var_get_int(b->hubid, VAR_active_tls_port));
-      if(!g_hash_table_size(listen_hub_binds))
-        break;
-    }
   }
 
   // Now walk through *listen_binds and actually create the listen sockets

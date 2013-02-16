@@ -271,7 +271,7 @@ static char *p_active_port(const char *val, GError **err) {
 }
 
 
-static char *g_active_nontcp(guint64 hub, const char *key) {
+static char *g_active_udp(guint64 hub, const char *key) {
   char *r = db_vars_get(hub, key);
   return r ? r : db_vars_get(hub, "active_port");
 }
@@ -908,8 +908,7 @@ struct var_t {
   V(active,           1,1, f_bool,         p_bool,          su_bool,       NULL,         s_active_conf,   "false")\
   V(active_ip,        1,1, f_id,           p_ip,            su_old,        NULL,         s_active_conf,   NULL)\
   V(active_port,      1,1, f_int,          p_active_port,   NULL,          NULL,         s_active_conf,   NULL)\
-  V(active_tls_port,  1,1, f_int,          p_active_port,   NULL,          g_active_nontcp, s_active_conf,NULL)\
-  V(active_udp_port,  1,1, f_int,          p_active_port,   NULL,          g_active_nontcp, s_active_conf,NULL)\
+  V(active_udp_port,  1,1, f_int,          p_active_port,   NULL,          g_active_udp, s_active_conf,   NULL)\
   V(adc_blom,         1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(autoconnect,      0,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(autorefresh,      1,0, f_autorefresh,  p_autorefresh,   NULL,          NULL,         NULL,            "3600")\
