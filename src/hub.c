@@ -710,7 +710,7 @@ void hub_send_nfo(hub_t *hub) {
       g_string_append(cmd, " SU");
       int comma = 0;
       if(ip)
-        g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "TCP4,UDP4");
+        g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", net_is_ipv6(hub->net) ? "TCP6,UDP6" : "TCP4,UDP4");
       if(sup_tls)
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "ADC0,ADCS");
       if(sup_sudp)
