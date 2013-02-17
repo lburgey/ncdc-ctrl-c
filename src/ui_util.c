@@ -340,32 +340,30 @@ void ui_logwindow_add(ui_logwindow_t *lw, const char *msg) {
     return;
   }
 
-  char **lines = g_strsplit(msg, "\n", 0);
-
   // For chat messages and /me's, prefix every line with "<nick>" or "** nick"
   char *prefix = NULL;
   char *tmp;
-  if( (**lines == '<' && (tmp = strchr(*lines, '>')) != NULL && *(++tmp) == ' ') || // <nick>
-      (**lines == '*' && lines[0][1] == '*' && lines[0][2] == ' ' && (tmp = strchr(*lines+3, ' ')) != NULL)) { // ** nick
-    char old = tmp[1];
-    tmp[1] = 0;
-    prefix = g_strdup(*lines);
-    tmp[1] = old;
+  if( (*msg == '<' && (tmp = strchr(msg, '>')) != NULL && *(++tmp) == ' ') || // <nick>
+      (*msg == '*' && msg[1] == '*' && msg[2] == ' ' && (tmp = strchr(msg+3, ' ')) != NULL)) // ** nick
+    prefix = g_strndup(msg, tmp-msg+1);
+
+  // Split \r?\n? stuff into separate log lines
+  gboolean first = TRUE;
+  while(1) {
+    int len = strcspn(msg, "\r\n");
+
+    tmp = !prefix || first ? g_strndup(msg, len) : g_strdup_printf("%s%.*s", prefix, len, msg);
+    ui_logwindow_addline(lw, tmp, FALSE, FALSE);
+    g_free(tmp);
+
+    msg += len;
+    if(!*msg)
+      break;
+    msg += *msg == '\r' && msg[1] == '\n' ? 2 : 1;
+    first = FALSE;
   }
 
-  // add the lines
-  char **line;
-  for(line=lines; *line; line++) {
-    if(!prefix || lines == line)
-      ui_logwindow_addline(lw, *line, FALSE, FALSE);
-    else {
-      tmp = g_strconcat(prefix, *line, NULL);
-      ui_logwindow_addline(lw, tmp, FALSE, FALSE);
-      g_free(tmp);
-    }
-  }
   g_free(prefix);
-  g_strfreev(lines);
 }
 
 
