@@ -258,7 +258,7 @@ static void t_draw(ui_tab_t *tab) {
   mvhline(bottom, 0, ' ', wincols);
   int count = g_hash_table_size(t->tab.hub->users);
   mvaddstr(bottom, 0, "Totals:");
-  mvprintw(bottom, t->cw_user+5, "%s%c   %d users",
+  mvprintw(bottom, t->cw_user+6, "%s%c   %d users",
     str_formatsize(t->tab.hub->sharesize), t->tab.hub->sharecount == count ? ' ' : '+', count);
   mvprintw(bottom, wincols-6, "%3d%%", pos);
   attroff(UIC(separator));
