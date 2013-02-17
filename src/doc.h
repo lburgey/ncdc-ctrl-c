@@ -339,6 +339,7 @@ static const doc_set_t doc_sets[] = {
   "  log_join      - color of join messages\n"
   "  log_quit      - color of quit messages\n"
   "  separator     - the list separator/footer bar\n"
+  "  tab_active    - the active tab in the tab list\n"
   "  tabprio_low   - low priority tab notification color\n"
   "  tabprio_med   - medium priority tab notification color\n"
   "  tabprio_high  - high priority tab notification color\n"
