@@ -113,13 +113,11 @@ automatically, but in the event that this fails, you can also set it yourself:
   /set active_ip 13.33.33.7
 
 If you are behind a NAT or firewall, you have to ensure that the port you
-configured is somehow allowed and/or forwarded. You have a lot of freedom in
-configuring ports within ncdc: The C<active_udp_port> setting is used for
-incoming UDP messages, the C<active_tls_port> setting is used for incoming
-encrypted TCP connections, and the C<active_port> setting is used as a default
-for the other two and for all incoming and unencrypted connections. Unlike
-other currently available Direct Connect clients, ncdc allows the TLS and TCP
-port to be the same, which tends to ease NAT configuration.
+configured is somehow allowed and/or forwarded. The C<active_port> setting is
+used for incoming TCP connections and UDP messages. You can configure a
+different UDP port with the C<active_udp_port> setting. Contrary to many toher
+Direct Connect clients, ncdc only uses a single port for incoming TCP and TLS
+connections; There is no separate port for TLS.
 
 The C</listen> command can tell you which ports it expects to be forwarded, and
 for which hubs these ports will be used. It only lists hubs on which you are
