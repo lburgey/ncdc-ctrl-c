@@ -357,7 +357,7 @@ static void ui_draw_tablist(int xoffset) {
     ui_tab_t *t = n->data;
     addch(' ');
     if(n == ui_tab_cur)
-      attron(A_BOLD);
+      attron(UIC(tab_active));
     printw("%d", i);
     if(n == ui_tab_cur || !t->prio)
       addch(':');
@@ -368,7 +368,7 @@ static void ui_draw_tablist(int xoffset) {
     }
     addstr(t->name);
     if(n == ui_tab_cur)
-      attroff(A_BOLD);
+      attroff(UIC(tab_active));
   }
 
   // check priority of hidden tabs after the last visible one

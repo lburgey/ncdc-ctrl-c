@@ -49,6 +49,7 @@
   C(log_quit,       "cyan")\
   C(log_time,       "black,bold")\
   C(separator,      "default,reverse")\
+  C(tab_active,     "default,bold")\
   C(tabprio_high,   "magenta,bold")\
   C(tabprio_low,    "black,bold")\
   C(tabprio_med,    "cyan,bold")\
