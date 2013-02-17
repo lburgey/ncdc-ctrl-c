@@ -156,7 +156,7 @@ static gboolean listen_tcp_handle(gpointer dat) {
 
   // Create connection
   fcntl(c, F_SETFL, fcntl(c, F_GETFL, 0)|O_NONBLOCK);
-  cc_incoming(cc_create(NULL), b->port, c, addr_str);
+  cc_incoming(cc_create(NULL), b->port, c, addr_str, b->type & LBT_IP4 ? FALSE : TRUE);
   return TRUE;
 }
 

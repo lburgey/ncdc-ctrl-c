@@ -75,10 +75,11 @@ struct net_t {
   void (*cb_handshake)(net_t *, const char *); // state ASY, called after complete handshake.
   void (*cb_shutdown)(net_t *); // state DIS, called after complete disconnect.
 
-  gboolean tls_handshake : 8; // state ASY, whether we're handshaking.
-  gboolean shutdown_closed : 8; // state DIS, whether shutdown() has been called on the socket.
-  gboolean writing : 8; // state ASY. Whether 'socksrc' is write poll event.
-  gboolean wantwrite : 8; // state ASY. Whether we want a write on sock.
+  gboolean v6 : 4; // state ASY,SYN, whether we're on IPv6
+  gboolean tls_handshake : 4; // state ASY, whether we're handshaking.
+  gboolean shutdown_closed : 4; // state DIS, whether shutdown() has been called on the socket.
+  gboolean writing : 4; // state ASY. Whether 'socksrc' is write poll event.
+  gboolean wantwrite : 4; // state ASY. Whether we want a write on sock.
 
   GString *tlsrbuf; // state ASY. Temporary buffer for data read before switching to TLS. (To be fed to GnuTLS)
   GString *rbuf; // state ASY. Read buffer.
@@ -981,13 +982,14 @@ void net_settls(net_t *n, gboolean serv, void (*cb)(net_t *, const char *)) {
 }
 
 
-void net_connected(net_t *n, int sock, const char *addr) {
+void net_connected(net_t *n, int sock, const char *addr, gboolean v6) {
   g_return_if_fail(n->state == NETST_IDL || n->state == NETST_CON);
   g_debug("%s: Connected.", addr);
   n->state = NETST_ASY;
   n->sock = sock;
   if(addr != n->addr)
     strncpy(n->addr, addr, sizeof(n->addr));
+  n->v6 = v6;
   n->wbuf = g_string_sized_new(1024);
   n->rbuf = g_string_sized_new(1024);
 
@@ -1038,7 +1040,7 @@ static void dnscon_tryconn(net_t *n);
 static void dnsconn_handleconn(net_t *n, int err) {
   // Successful.
   if(err == 0) {
-    net_connected(n, n->sock, n->addr);
+    net_connected(n, n->sock, n->addr, n->dnscon->next->ai_family == AF_INET6);
 
     if(n->dnscon->cb)
       n->dnscon->cb(n, NULL);
@@ -1207,6 +1209,7 @@ gboolean net_is_connected(net_t *n)     { return n->state == NETST_ASY || n->sta
 gboolean net_is_connecting(net_t *n)    { return n->state == NETST_DNS || n->state == NETST_CON; }
 gboolean net_is_disconnecting(net_t *n) { return n->state == NETST_DIS; }
 gboolean net_is_idle(net_t *n)          { return n->state == NETST_IDL; }
+gboolean net_is_ipv6(net_t *n)          { return n->v6; }
 
 
 static gboolean handle_timer(gpointer dat) {

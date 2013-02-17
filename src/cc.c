@@ -1500,8 +1500,8 @@ static void handle_detectprotocol(net_t *net, char *dat, int len) {
 }
 
 
-void cc_incoming(cc_t *cc, guint16 port, int sock, const char *addr) {
-  net_connected(cc->net, sock, addr);
+void cc_incoming(cc_t *cc, guint16 port, int sock, const char *addr, gboolean v6) {
+  net_connected(cc->net, sock, addr, v6);
   if(!net_is_connected(cc->net))
     return;
   cc->port = port;
