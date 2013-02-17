@@ -58,8 +58,6 @@ struct listen_hub_bind_t {
   listen_bind_t *tcp, *udp;
 };
 
-#define listen_bind_ip(x) ((x)->type & LBT_IP4 ? ip4_unpack((x)->ip4) : ip6_unpack((x)->ip6))
-
 #endif
 
 
@@ -94,6 +92,14 @@ guint16 listen_hub_tcp(guint64 hub) {
 guint16 listen_hub_udp(guint64 hub) {
   listen_hub_bind_t *b = g_hash_table_lookup(listen_hub_binds, &hub);
   return b && b->udp ? b->udp->port : 0;
+}
+
+
+const char *listen_bind_ipport(listen_bind_t *b) {
+  static char buf[100];
+  g_snprintf(buf, 100, b->type & LBT_IP4 ? "%s:%d" : "[%s]:%d",
+    b->type & LBT_IP4 ? ip4_unpack(b->ip4) : ip6_unpack(b->ip6), (int)b->port);
+  return buf;
 }
 
 
@@ -147,8 +153,8 @@ static gboolean listen_tcp_handle(gpointer dat) {
   if(c < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
-    ui_mf(uit_main_tab, 0, "TCP accept error on %s:%d: %s. Switching to passive mode.",
-      listen_bind_ip(b), (int)b->port, g_strerror(errno));
+    ui_mf(uit_main_tab, 0, "TCP accept error on %s: %s. Switching to passive mode.",
+      listen_bind_ipport(b), g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
     return FALSE;
@@ -183,8 +189,8 @@ static gboolean listen_udp_handle(gpointer dat) {
   if(r < 0) {
     if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
       return TRUE;
-    ui_mf(uit_main_tab, 0, "UDP read error on %s:%d: %s. Switching to passive mode.",
-      listen_bind_ip(b), b->port, g_strerror(errno));
+    ui_mf(uit_main_tab, 0, "UDP read error on %s: %s. Switching to passive mode.",
+      listen_bind_ipport(b), g_strerror(errno));
     listen_stop();
     hub_global_nfochange();
     return FALSE;
@@ -222,7 +228,7 @@ static void bind_add(listen_hub_bind_t *b, int type, char *ip, guint16 port) {
     lb.ip4 = var_parse_ip4(ip);
   else
     lb.ip6 = var_parse_ip6(ip);
-  g_debug("Listen: Adding %s %s:%d", LBT_STR(type), listen_bind_ip(&lb), port);
+  g_debug("Listen: Adding %s %s", LBT_STR(type), listen_bind_ipport(&lb));
 
   // First: look if we can re-use an existing bind and look for any unresolvable conflicts.
   GList *c;
@@ -268,7 +274,7 @@ static void bind_add(listen_hub_bind_t *b, int type, char *ip, guint16 port) {
 
 
 static void bind_create(listen_bind_t *b) {
-  g_debug("Listen: binding %s %s:%d", LBT_STR(b->type), listen_bind_ip(b), b->port);
+  g_debug("Listen: binding %s %s", LBT_STR(b->type), listen_bind_ipport(b));
   int err = 0;
 
   // Create socket
@@ -302,8 +308,8 @@ static void bind_create(listen_bind_t *b) {
   // least it avoids any other problems that may arise from a partially
   // activated configuration).
   if(err) {
-    ui_mf(uit_main_tab, UIP_MED, "Error binding to %s %s:%d, %s. Switching to passive mode.",
-      LBT_STR(b->type), listen_bind_ip(b), b->port, g_strerror(err));
+    ui_mf(uit_main_tab, UIP_MED, "Error binding to %s %s, %s. Switching to passive mode.",
+      LBT_STR(b->type), listen_bind_ipport(b), g_strerror(err));
     close(sock);
     listen_stop();
     return;

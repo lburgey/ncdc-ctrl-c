@@ -1235,7 +1235,7 @@ static void c_listen(char *args) {
         g_string_append(h, hub->tab->name);
       }
     }
-    ui_mf(NULL, 0, " %s:%d (%s): %s", listen_bind_ip(b), b->port, LBT_STR(b->type), h->str);
+    ui_mf(NULL, 0, " %s (%s): %s", listen_bind_ipport(b), LBT_STR(b->type), h->str);
     g_string_free(h, TRUE);
   }
   ui_m(NULL, 0, "");
