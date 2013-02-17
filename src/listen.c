@@ -329,9 +329,8 @@ void listen_refresh() {
   hub_t *h = NULL;
   g_hash_table_iter_init(&i, hubs);
   while(g_hash_table_iter_next(&i, NULL, (gpointer *)&h)) {
-    // TODO: IPv6 fixing
     // We only look at hubs on which we are active
-    if(ip4_isany(hub_ip4(h)) || !var_get_bool(h->id, VAR_active))
+    if(!var_get_bool(h->id, VAR_active) || !hub_ip(h))
       continue;
     // Add to listen_hub_binds
     listen_hub_bind_t *b = g_new0(listen_hub_bind_t, 1);
@@ -339,10 +338,10 @@ void listen_refresh() {
     g_hash_table_insert(listen_hub_binds, &b->hubid, b);
     // And add the required binds for this hub (Due to the conflict resolution in binds_add(), this is O(n^2))
     // Note: bind_add() can call listen_stop() on error, detect this on whether listen_hub_binds is empty or not.
-    bind_add(b, LBT_TCP4, var_get(b->hubid, VAR_local_address), var_get_int(b->hubid, VAR_active_port));
+    bind_add(b, net_is_ipv6(h->net) ? LBT_TCP6 : LBT_TCP4, var_get(b->hubid, VAR_local_address), var_get_int(b->hubid, VAR_active_port));
     if(!g_hash_table_size(listen_hub_binds))
       break;
-    bind_add(b, LBT_UDP4, var_get(b->hubid, VAR_local_address), var_get_int(b->hubid, VAR_active_udp_port));
+    bind_add(b, net_is_ipv6(h->net) ? LBT_UDP6 : LBT_UDP4, var_get(b->hubid, VAR_local_address), var_get_int(b->hubid, VAR_active_udp_port));
     if(!g_hash_table_size(listen_hub_binds))
       break;
   }

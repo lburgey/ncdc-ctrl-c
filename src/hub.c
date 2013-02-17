@@ -80,7 +80,7 @@ struct hub_t {
   char *nick_hub;          // (NMDC) in hub encoding
   char *nick;              // UTF-8
   int sid;                 // (ADC) session ID
-  struct in_addr ip4;      // Our IP, as received from the hub
+  char *ip;                // Our IP, as received from the hub
   gboolean nick_valid : 1; // TRUE is the above nick has also been validated (and we're properly logged in)
   gboolean isreg : 1;      // whether we used a password to login
   gboolean isop : 1;       // whether we're an OP or not
@@ -106,10 +106,9 @@ struct hub_t {
   char *kp;                // NULL if it matches config, 32 bytes slice-alloced otherwise
 
   // last info we sent to the hub
-  char *nfo_desc, *nfo_conn, *nfo_mail;
+  char *nfo_desc, *nfo_conn, *nfo_mail, *nfo_ip;
   unsigned char nfo_slots, nfo_h_norm, nfo_h_reg, nfo_h_op;
   guint64 nfo_share;
-  struct in_addr nfo_ip4;
   guint16 nfo_udp_port;
   gboolean nfo_sup_tls, nfo_sup_sudp;
 
@@ -483,10 +482,22 @@ void hub_global_nfochange() {
 }
 
 
-// Get the current active IP used for this hub. (If we're active)
-struct in_addr hub_ip4(hub_t *hub) {
-  struct in_addr conf = ip4_pack(var_get((hub)->id, VAR_active_ip));
-  return !ip4_isany(conf) ? conf : hub->ip4;
+// Get the current active IP used for this hub. Returns NULL if we're not active.
+char *hub_ip(hub_t *hub) {
+  if(!net_is_connected(hub->net))
+    return NULL;
+
+  // Somewhat roundabout way of obtaining the IP for the correct version
+  char *ip = var_get(hub->id, VAR_active_ip);
+  if(!net_is_ipv6(hub->net)) {
+    struct in_addr ip4 = var_parse_ip4(ip);
+    ip = ip4_isany(ip4) ? NULL : (char *)ip4_unpack(ip4);
+  } else {
+    struct in6_addr ip6 = var_parse_ip6(ip);
+    ip = ip6_isany(ip6) ? NULL : (char *)ip6_unpack(ip6);
+  }
+
+  return ip ? ip : hub->ip;
 }
 
 
@@ -545,7 +556,8 @@ void hub_opencc(hub_t *hub, hub_user_t *u) {
       net_writef(hub->net, c->str);
       g_string_free(c, TRUE);
     } else
-      net_writef(hub->net, "$ConnectToMe %s %s:%d%s|", u->name_hub, ip4_unpack(hub_ip4(hub)), port, usetls ? "S" : "");
+      net_writef(hub->net, net_is_ipv6(hub->net) ? "$ConnectToMe %s [%s]:%d%s" : "$ConnectToMe %s %s:%d%s|",
+          u->name_hub, hub_ip(hub), port, usetls ? "S" : "");
 
   // we're passive, send RCM
   } else {
@@ -606,7 +618,7 @@ void hub_search(hub_t *hub, search_q_t *q) {
   } else {
     guint16 udpport = listen_hub_udp(hub->id);
     char *dest = udpport
-      ? g_strdup_printf("%s:%d", ip4_unpack(hub_ip4(hub)), udpport)
+      ? g_strdup_printf(net_is_ipv6(hub->net) ? "[%s]:%d" : "%s:%d", hub_ip(hub), udpport)
       : g_strdup_printf("Hub:%s", hub->nick_hub);
     if(q->type == 9) {
       char tth[40] = {};
@@ -630,7 +642,6 @@ void hub_search(hub_t *hub, search_q_t *q) {
 
 #define streq(a) ((!a && !hub->nfo_##a) || (a && hub->nfo_##a && strcmp(a, hub->nfo_##a) == 0))
 #define eq(a) (a == hub->nfo_##a)
-#define ip4eq(a) (ip4_cmp(a, hub->nfo_##a) == 0)
 #define beq(a) (!!a == !!hub->nfo_##a)
 
 void hub_send_nfo(hub_t *hub) {
@@ -638,10 +649,9 @@ void hub_send_nfo(hub_t *hub) {
     return;
 
   // get info, to be compared with hub->nfo_
-  char *desc, *conn = NULL, *mail;
+  char *desc, *conn = NULL, *mail, *ip;
   unsigned char slots, h_norm, h_reg, h_op;
   guint64 share;
-  struct in_addr ip4;
   guint16 udp_port;
   gboolean sup_tls, sup_sudp;
 
@@ -670,14 +680,14 @@ void hub_send_nfo(hub_t *hub) {
       h_norm++;
   }
   slots = var_get_int(0, VAR_slots);
-  ip4 = listen_hub_active(hub->id) ? hub_ip4(hub) : ip4_any;
+  ip = listen_hub_active(hub->id) ? hub_ip(hub) : NULL;
   udp_port = listen_hub_udp(hub->id);
   share = fl_local_list_size;
   sup_tls = var_get_int(hub->id, VAR_tls_policy) > VAR_TLSP_DISABLE ? TRUE : FALSE;
   sup_sudp = hub->tls && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE ? TRUE : FALSE;
 
   // check whether we need to make any further effort
-  if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots) && ip4eq(ip4)
+  if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots) && streq(ip)
       && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp))
     return;
 
@@ -694,12 +704,12 @@ void hub_send_nfo(hub_t *hub) {
       // validate our certificate even when we are the one connecting.
       g_string_append_printf(cmd, " KPSHA256/%s", db_certificate_kp);
     }
-    if(f || !ip4eq(ip4))
-      g_string_append_printf(cmd, " I4%s", ip4_unpack(ip4));
-    if(f || !ip4eq(ip4) || !beq(sup_tls) || !beq(sup_sudp)) {
+    if(f || !streq(ip))
+      g_string_append_printf(cmd, net_is_ipv6(hub->net) ? " I6%s" : " I4%s", ip ? ip : !net_is_ipv6(hub->net) ? ip4_unpack(ip4_any) : ip6_unpack(ip6_any));
+    if(f || !streq(ip) || !beq(sup_tls) || !beq(sup_sudp)) {
       g_string_append(cmd, " SU");
       int comma = 0;
-      if(!ip4_isany(ip4))
+      if(ip)
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "TCP4,UDP4");
       if(sup_tls)
         g_string_append_printf(cmd, "%s%s", comma++ ? "," : "", "ADC0,ADCS");
@@ -708,9 +718,9 @@ void hub_send_nfo(hub_t *hub) {
     }
     if((f || !eq(udp_port))) {
       if(udp_port)
-        g_string_append_printf(cmd, " U4%d", udp_port);
+        g_string_append_printf(cmd, net_is_ipv6(hub->net) ? " U6%d" : " U4%d", udp_port);
       else
-        g_string_append(cmd, " U4");
+        g_string_append(cmd, net_is_ipv6(hub->net) ? " U6" : " U4");
     }
     // Separating the SS and SF fields isn't very important. It is relatively
     // safe to assume that if SS changes (which we look at), then SF will most
@@ -740,7 +750,7 @@ void hub_send_nfo(hub_t *hub) {
     char *nconn = nmdc_encode_and_escape(hub, conn?conn:"0.005");
     char *nmail = nmdc_encode_and_escape(hub, mail?mail:"");
     nfo = g_strdup_printf("$MyINFO $ALL %s %s<ncdc V:%s,M:%c,H:%d/%d/%d,S:%d>$ $%s%c$%s$%"G_GUINT64_FORMAT"$|",
-      hub->nick_hub, ndesc, main_version, ip4_isany(ip4) ? 'P' : 'A', h_norm, h_reg, h_op,
+      hub->nick_hub, ndesc, main_version, ip ? 'P' : 'A', h_norm, h_reg, h_op,
       slots, nconn, 1 | (sup_tls ? 0x10 : 0), nmail, share);
     g_free(ndesc);
     g_free(nconn);
@@ -755,12 +765,12 @@ void hub_send_nfo(hub_t *hub) {
   g_free(hub->nfo_desc); hub->nfo_desc = g_strdup(desc);
   g_free(hub->nfo_conn); hub->nfo_conn = g_strdup(conn);
   g_free(hub->nfo_mail); hub->nfo_mail = g_strdup(mail);
+  g_free(hub->nfo_ip);   hub->nfo_ip   = g_strdup(ip);
   hub->nfo_slots = slots;
   hub->nfo_h_norm = h_norm;
   hub->nfo_h_reg = h_reg;
   hub->nfo_h_op = h_op;
   hub->nfo_share = share;
-  hub->nfo_ip4 = ip4;
   hub->nfo_udp_port = udp_port;
   hub->nfo_sup_tls = sup_tls;
   hub->nfo_sup_sudp = sup_sudp;
@@ -816,14 +826,20 @@ void hub_msg(hub_t *hub, hub_user_t *user, const char *str, gboolean me) {
 
 // Call this when the hub tells us our IP.
 static void setownip(hub_t *hub, hub_user_t *u) {
-  if(ip4_cmp(u->ip4, hub->ip4) != 0) {
-    struct in_addr old = hub_ip4(hub);
-    hub->ip4 = u->ip4;
-    // If we're supposed to be active, but weren't because of a missing IP.
-    if(ip4_isany(old) && var_get_bool(hub->id, VAR_active)) {
-      listen_refresh();
-      hub_send_nfo(hub);
-    }
+  char *oldconf = hub_ip(hub);
+  char *oldval = hub->ip;
+  char *new = net_is_ipv6(hub->net)
+    ? (ip6_isany(u->ip6) ? NULL : (char *)ip6_unpack(u->ip6))
+    : (ip4_isany(u->ip4) ? NULL : (char *)ip4_unpack(u->ip4));
+  if((!new && oldval) || (new && !oldval) || (new && oldval && strcmp(new, oldval) != 0)) {
+    g_free(hub->ip);
+    hub->ip = g_strdup(new);
+  }
+
+  // If we're supposed to be active, but weren't because of a missing IP.
+  if(!oldconf && new && var_get_bool(hub->id, VAR_active)) {
+    listen_refresh();
+    hub_send_nfo(hub);
   }
 }
 
@@ -1632,7 +1648,8 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       // tls_policy to be PREFER here.
       int usetls = u->hastls && var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_PREFER;
       int port = listen_hub_tcp(hub->id);
-      net_writef(hub->net, "$ConnectToMe %s %s:%d%s|", other, ip4_unpack(hub_ip4(hub)), port, usetls ? "S" : "");
+      net_writef(hub->net, net_is_ipv6(hub->net) ? "$ConnectToMe %s [%s]:%d%s|" : "$ConnectToMe %s %s:%d%s|",
+          other, hub_ip(hub), port, usetls ? "S" : "");
       cc_expect_add(hub, u, port, NULL, FALSE);
     } else
       g_message("Received a $RevConnectToMe, but we're not active.");
@@ -1659,7 +1676,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       if(yuri_parse(from, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
           (yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0 && yuri_validate_ipv6(uri.host, strlen(uri.host)) != 0))
         g_message("Invalid host:port in $Search (%s)", from);
-      else if(!listen_hub_active(hub->id) || strcmp(uri.host, ip4_unpack(hub_ip4(hub))) != 0 || uri.port != listen_hub_udp(hub->id)) {
+      else if(!listen_hub_active(hub->id) || strcmp(uri.host, hub_ip(hub)) != 0 || uri.port != listen_hub_udp(hub->id)) {
         /* This search is not for our IP:port */
         nfrom = uri.host;
         port = uri.port;
@@ -1884,11 +1901,11 @@ void hub_disconnect(hub_t *hub, gboolean recon) {
   g_free(hub->nick_hub); hub->nick_hub = NULL;
   g_free(hub->hubname);  hub->hubname = NULL;
   g_free(hub->hubname_hub);  hub->hubname_hub = NULL;
+  g_free(hub->ip);       hub->ip = NULL;
   hub->nick_valid = hub->isreg = hub->isop = hub->received_first =
     hub->joincomplete =  hub->sharecount = hub->sharesize =
     hub->supports_nogetinfo = hub->state =
     hub->nfo_h_norm = hub->nfo_h_reg = hub->nfo_h_op = 0;
-  hub->ip4 = ip4_any;
   if(!recon)
     ui_m(hub->tab, 0, "Disconnected.");
   else {
@@ -1916,6 +1933,7 @@ void hub_free(hub_t *hub) {
   g_free(hub->nfo_desc);
   g_free(hub->nfo_conn);
   g_free(hub->nfo_mail);
+  g_free(hub->nfo_ip);
   g_free(hub->gpa_salt);
   g_hash_table_unref(hub->users);
   g_hash_table_unref(hub->sessions);
