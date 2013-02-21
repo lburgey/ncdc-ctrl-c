@@ -196,7 +196,7 @@ static void calc_widths(tab_t *t) {
   w -= 12;
 
   // IP column as well
-  t->cw_ip = t->hide_ip ? 0 : 18;
+  t->cw_ip = t->hide_ip ? 0 : 39;
   w -= t->cw_ip;
 
   // User column has a minimum size (but may grow a bit later on, so will still be counted as a column)
@@ -271,26 +271,26 @@ static void t_draw(ui_tab_t *tab) {
   else {
     hub_user_t *u = g_sequence_get(t->list->sel);
     attron(A_BOLD);
-    mvaddstr(bottom+1,  4, "Username:");
-    mvaddstr(bottom+1, 41, "Share:");
-    mvaddstr(bottom+2,  2, "Connection:");
-    mvaddstr(bottom+2, 40, "E-Mail:");
-    mvaddstr(bottom+3, 10, "IP:");
-    mvaddstr(bottom+3, 43, "Tag:");
-    mvaddstr(bottom+4,  1, "Description:");
+    mvaddstr(bottom+1,     4, "Username:");
+    mvaddstr(bottom+1, 39+16, "Share:");
+    mvaddstr(bottom+2,     2, "Connection:");
+    mvaddstr(bottom+2, 39+15, "E-Mail:");
+    mvaddstr(bottom+3,    10, "IP:");
+    mvaddstr(bottom+3, 39+18, "Tag:");
+    mvaddstr(bottom+4,     1, "Description:");
     attroff(A_BOLD);
     mvaddstr(bottom+1, 14, u->name);
     if(u->hasinfo)
-      mvprintw(bottom+1, 48, "%s (%s bytes)", str_formatsize(u->sharesize), str_fullsize(u->sharesize));
+      mvprintw(bottom+1, 39+23, "%s (%s bytes)", str_formatsize(u->sharesize), str_fullsize(u->sharesize));
     else
-      mvaddstr(bottom+1, 48, "-");
+      mvaddstr(bottom+1, 39+23, "-");
     char *conn = hub_user_conn(u);
     mvaddstr(bottom+2, 14, conn?conn:"-");
     g_free(conn);
-    mvaddstr(bottom+2, 48, u->mail?u->mail:"-");
+    mvaddstr(bottom+2, 39+23, u->mail?u->mail:"-");
     mvaddstr(bottom+3, 14, hub_user_ip(u, "-"));
     char *tag = hub_user_tag(u);
-    mvaddstr(bottom+3, 48, tag?tag:"-");
+    mvaddstr(bottom+3, 39+23, tag?tag:"-");
     g_free(tag);
     mvaddstr(bottom+4, 14, u->desc?u->desc:"-");
     // TODO: CID?
