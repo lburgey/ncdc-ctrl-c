@@ -98,8 +98,8 @@ static void handle_input() {
     // we use SIGWINCH, so KEY_RESIZE can be ignored
     if(r == KEY_CODE_YES && code == KEY_RESIZE)
       continue;
-    // backspace is often sent as DEL control character, correct this
-    if(r != KEY_CODE_YES && code == 127) {
+    // backspace (outside of an escape sequence) is often sent as DEL control character, correct this
+    if(!lastesc && r != KEY_CODE_YES && code == 127) {
       r = KEY_CODE_YES;
       code = KEY_BACKSPACE;
     }

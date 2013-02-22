@@ -961,6 +961,7 @@ gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
     }
     break;
   case INPT_CTRL('w'):     // C-w   - delete to previous space
+  case INPT_ALT(127):      // Alt+backspace
     if(ti->pos > 0) {
       char *end = g_utf8_offset_to_pointer(ti->str->str, ti->pos-1);
       char *begin = end;
