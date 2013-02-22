@@ -629,10 +629,8 @@ static gboolean asy_read(net_t *n) {
 
   // Handle error and disconnect
   if(r < 0) {
-    char *e = g_strdup_printf("Read error: %s", err);
-    g_debug("%s: %s", net_remoteaddr(n), e);
-    n->cb_err(n, NETERR_RECV, e);
-    g_free(e);
+    g_debug("%s: %s", net_remoteaddr(n), err);
+    n->cb_err(n, NETERR_RECV, err);
     return FALSE;
   }
 
@@ -681,10 +679,8 @@ static gboolean dis_shutdown(net_t *n) {
     if(r < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
       return TRUE;
     if(r < 0) {
-      char *e = g_strdup_printf("Read error: %s", g_strerror(errno));
-      g_debug("%s: %s", net_remoteaddr(n), e);
-      n->cb_err(n, NETERR_RECV, e);
-      g_free(e);
+      g_debug("%s: %s", net_remoteaddr(n), g_strerror(errno));
+      n->cb_err(n, NETERR_RECV, g_strerror(errno));
       return FALSE;
     }
     if(r == 0) {
