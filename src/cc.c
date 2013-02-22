@@ -1375,7 +1375,7 @@ static void handle_error(net_t *n, int action, const char *err) {
   if(net_is_disconnecting(n))
     net_disconnect(n);
   else
-    cc_disconnect(net_handle(n), action == NETERR_TIMEOUT);
+    cc_disconnect(net_handle(n), action != NETERR_TIMEOUT);
 }
 
 
