@@ -275,7 +275,7 @@ static void t_draw(ui_tab_t *tab) {
     mvaddstr(bottom+1, 25+16, "Share:");
     mvaddstr(bottom+2,     2, "Connection:");
     mvaddstr(bottom+2, 25+19, "IP:");
-    mvaddstr(bottom+3,     5, "E-Mail:");
+    mvaddstr(bottom+3,     6, "E-Mail:");
     mvaddstr(bottom+3, 25+18, "Tag:");
     mvaddstr(bottom+4,     1, "Description:");
     attroff(A_BOLD);
