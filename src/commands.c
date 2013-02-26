@@ -1318,17 +1318,20 @@ void cmd_handle(char *ostr) {
   }
 
   // extract the command from the string
-  char *cmd, *args;
+  char *cmd = str, *args;
+  while(cmd[0] == ' ')
+    cmd++;
+
   // not a command, imply '/say <string>'
-  if(str[0] != '/') {
+  if(cmd[0] != '/') {
     cmd = "say";
     args = str;
   // it is a command, extract cmd and args
   } else {
-    char *sep = strchr(str+1, ' ');
+    cmd++;
+    char *sep = strchr(cmd, ' ');
     if(sep)
       *sep = 0;
-    cmd = str+1;
     args = sep ? sep+1 : str+strlen(str);
   }
 
