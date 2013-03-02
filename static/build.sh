@@ -23,13 +23,13 @@
 # - Cross-compile to platforms other than Linux?
 
 
-MUSL_VERSION=0.9.8
+MUSL_VERSION=0.9.9
 ZLIB_VERSION=1.2.7
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3071500
-GMP_VERSION=5.0.5
-NETTLE_VERSION=2.5
-GNUTLS_VERSION=3.1.5
+SQLITE_VERSION=3071502
+GMP_VERSION=5.1.1
+NETTLE_VERSION=2.6
+GNUTLS_VERSION=3.1.9
 NCURSES_VERSION=5.9
 GLIB_VERSION=2.34.3
 
@@ -168,7 +168,7 @@ getnettle() {
 
 
 getgnutls() {
-  fem http://ftp.gnu.org/gnu/gnutls/ gnutls-$GNUTLS_VERSION.tar.xz gnutls
+  fem ftp://ftp.gnutls.org/gcrypt/gnutls/v${GNUTLS_VERSION%.*}/ gnutls-$GNUTLS_VERSION.tar.xz gnutls
   prebuild gnutls || return
   # Patch some gnulib stuff to fix building against musl
   if [ ! -e "$srcdir/patched" ]; then
@@ -219,10 +219,13 @@ getglib() {
   esac
   $srcdir/configure --prefix=$PREFIX --enable-static --disable-shared\
     --disable-gtk-doc-html --disable-xattr --disable-fam --disable-dtrace\
-    --disable-gcov --with-pcre=internal --disable-silent-rules\
+    --disable-gcov --disable-modular-tests --with-pcre=internal --disable-silent-rules\
     --host=$HOST CPPFLAGS=-D_GNU_SOURCE || exit
   perl -pi -e 's{(#define GLIB_LOCALE_DIR).+}{$1 "/usr/share/locale"}' config.h
-  make -C glib install || exit
+  make -C glib/libcharset install
+  make -C glib/gnulib install
+  make -C glib/pcre install
+  make -C glib install-libLTLIBRARIES install-data install-nodist_configexecincludeHEADERS || exit
   make -C gthread install || exit
   postbuild
 }
