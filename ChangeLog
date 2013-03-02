@@ -1,3 +1,24 @@
+1.15 - 2013-03-02
+	- IPv6 support
+	- Significantly shorten certificate creation time with old GnuTLS versions
+	- Always enable tls_policy and sudp_policy by default
+	- Link against libgcrypt if detected GnuTLS is older than 3.0
+	- Add color_tab_active setting
+	- Remove active_tls_port setting
+	- Allow '-', '.' and '_' characters in hub names
+	- Allow spaces before a command
+	- Add Alt+backspace as alias for Ctrl+w
+	- Add throttle for 'CGET tthl' requests
+	- Don't throw away PMs from unknown users
+	- Recognize mode field in $MyINFO without tag
+	- Fix possible crash with C-C TLS and old GnuTLS versions
+	- Fix old references to the removed ncdc-db-upgrade utility
+	- Fix loading of file lists from Shareaza 2.6.0.0 and earlier
+	- Fix handling of tab and carriage return in log window
+	- Fix changing of download_dir/incoming_dir if either dir has been deleted
+	- Fix compilation against glib < 2.26
+	- Fix unclean C-C TLS disconnect on timeout
+
 1.14 - 2012-11-04
 	- Added BLOM support for ADC ('/hset adc_blom true' to enable it)
 	- Added section on connection settings to man page
