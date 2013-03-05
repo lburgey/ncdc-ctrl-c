@@ -103,11 +103,15 @@ getmusl() {
   # Order of $HOST is different than the tar/dir names, so we need this case.
   case $TARGET in
     arm)    DIR=arm-linux-musleabi ;;
-    mipsel) DIR=mipsel-linux-musl ;;
+    mipsel) DIR=mipsel-sf-linux-musl ;;
     i486)   DIR=i486-linux-musl ;;
     x86_64) DIR=x86_64-linux-musl ;;
   esac
   fem https://bitbucket.org/GregorR/musl-cross/downloads/ crossx86-$DIR-$MUSL_VERSION.tar.xz "musl-$TARGET" $DIR
+
+  # Configure scripts don't like 'mipsel-sf-musl-linux', so rename the links in
+  # the bin/ dir to remove the '-sf' flag.
+  find tarballs/musl-mipsel/bin -name '*-sf-*' -type l -execdir sh -c 'mv $0 `echo $0 | sed "s/mipsel-sf/mipsel/"`' {} +
 }
 
 
