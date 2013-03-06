@@ -1542,6 +1542,7 @@ void cc_free(cc_t *cc) {
     g_source_remove(cc->timeout_src);
   uit_conn_listchange(cc->iter, UITCONN_DEL);
   g_sequence_remove(cc->iter);
+  net_disconnect(cc->net);
   net_unref(cc->net);
   if(cc->err)
     g_error_free(cc->err);
