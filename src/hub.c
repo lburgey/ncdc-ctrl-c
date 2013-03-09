@@ -1845,6 +1845,11 @@ static void handle_connect(net_t *n, const char *addr) {
   if(!net_is_connected(hub->net))
     return;
 
+  /* If we have a pre-configured active IP, make sure to enable active mode
+   * immediately. */
+  if(hub_ip(hub))
+    listen_refresh();
+
   if(hub->adc)
     net_writef(hub->net, "HSUP ADBASE ADTIGR%s\n", var_get_bool(hub->id, VAR_adc_blom) ? " ADBLO0 ADBLOM" : "");
 
