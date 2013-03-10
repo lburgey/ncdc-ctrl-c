@@ -429,7 +429,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
   case INPT_CHAR('n'): // n - sort on file name
     SETSORT(SORT_NAME);
     break;
-  case INPT_CHAR('t'): // o - toggle sorting dirs before files
+  case INPT_CHAR('t'): // t - toggle sorting dirs before files
     t->dirfirst = !t->dirfirst;
     sort = TRUE;
     break;

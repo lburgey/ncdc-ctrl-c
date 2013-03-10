@@ -658,7 +658,7 @@ static const doc_key_t doc_keys[] = {
   LISTING_KEYS
   "Right/l      Open selected directory.\n"
   "Left/h       Open parent directory.\n"
-  "o            Toggle sorting directories before files.\n"
+  "t            Toggle sorting directories before files.\n"
   "s            Order by file size.\n"
   "n            Order by file name.\n"
   "d            Add selected file/directory to the download queue.\n"
