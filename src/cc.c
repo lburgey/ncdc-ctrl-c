@@ -692,7 +692,7 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
     char *dat = db_fl_gettthl(root, &len);
     if(!dat)
       g_set_error_literal(err, 1, 51, "File Not Available");
-    else if(throttle_check(cc, root, G_MAXUINT64)) {
+    else if(!cc->slot_granted && throttle_check(cc, root, G_MAXUINT64)) {
       g_message("CC:%s: TTHL request throttled: %s", net_remoteaddr(cc->net), id);
       g_set_error_literal(err, 1, 50, "Action throttled");
     } else {
@@ -788,7 +788,7 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
   if(needslot && st.st_size < var_get_int(0, VAR_minislot_size))
     needslot = FALSE;
 
-  if(f && throttle_check(cc, f->tth, start)) {
+  if(f && !cc->slot_granted && throttle_check(cc, f->tth, start)) {
     g_message("CC:%s: File upload throttled: %s offset %"G_GUINT64_FORMAT, net_remoteaddr(cc->net), vpath, start);
     g_set_error_literal(err, 1, 50, "Action throttled");
     g_free(path);
