@@ -75,7 +75,6 @@ typedef struct cc_expect_t {
   char *nick;   // NMDC, hub encoding. Also set on ADC, but only for debugging purposes
   guint64 uid;
   guint16 port;
-  char cid[8];  // ADC
   char *token;  // ADC
   char *kp;     // ADC - slice-alloc'ed with 32 bytes
   time_t added;
@@ -120,10 +119,9 @@ void cc_expect_add(hub_t *hub, hub_user_t *u, guint16 port, char *t, gboolean dl
   e->dl = dl;
   e->uid = u->uid;
   e->port = port;
-  if(e->adc) {
+  if(e->adc)
     e->nick = g_strdup(u->name);
-    memcpy(e->cid, u->cid, 8);
-  } else
+  else
     e->nick = g_strdup(u->name_hub);
   if(u->kp) {
     e->kp = g_slice_alloc(32);
@@ -141,10 +139,13 @@ void cc_expect_add(hub_t *hub, hub_user_t *u, guint16 port, char *t, gboolean dl
 // cc->hub and cc->kp_user and removes it from the expects list. cc->cid and
 // cc->token must be known.
 static gboolean cc_expect_adc_rm(cc_t *cc) {
+  // We're calculating the uid for each (expect->hub->id, cc->cid) pair in the
+  // list and compare it with expect->uid to see if we've got the right user.
+  // This isn't the most efficient solution...
   GList *n;
   for(n=cc_expected->head; n; n=n->next) {
     cc_expect_t *e = n->data;
-    if(e->adc && e->port == cc->port && memcmp(cc->cid, e->cid, 8) == 0 && strcmp(cc->token, e->token) == 0) {
+    if(e->adc && e->port == cc->port && strcmp(cc->token, e->token) == 0 && e->uid == hub_user_adc_id(e->hub->id, cc->cid)) {
       cc->uid = e->uid;
       cc->hub = e->hub;
       cc->kp_user = e->kp;
@@ -286,8 +287,7 @@ struct cc_t {
   guint16 port;
   guint16 state;
   int dir;        // (NMDC) our direction. -1 = Upload, otherwise: Download $dir
-  char cid[24];   // (ADC) only the first 8 bytes are used for checking,
-                  // but the full 24 bytes are stored after receiving CINF (for logging)
+  char *cid;      // (ADC) base32-encoded CID
   int timeout_src;
   char remoteaddr[64]; // xxx.xxx.xxx.xxx:ppppp or [ipv6addr]:ppppp
   char *token;    // (ADC)
@@ -483,12 +483,6 @@ static void xfer_log_add(cc_t *cc) {
   if(!log)
     log = logfile_create("transfers");
 
-  char cid[40] = {};
-  if(cc->adc)
-    base32_encode(cc->cid, cid);
-  else
-    strcpy(cid, "-");
-
   char tth[40] = {};
   if(strcmp(cc->last_file, "files.xml.bz2") == 0)
     strcpy(tth, "-");
@@ -504,7 +498,7 @@ static void xfer_log_add(cc_t *cc) {
   g_return_if_fail(yuri_parse(cc->remoteaddr, &uri) == 0);
 
   char *msg = g_strdup_printf("%s %s %s %s %c %c %s %d %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %s",
-    cc->hub ? cc->hub->tab->name : cc->hub_name, cid, nick, uri.host, cc->dl ? 'd' : 'u',
+    cc->hub ? cc->hub->tab->name : cc->hub_name, cc->adc ? cc->cid : "-", nick, uri.host, cc->dl ? 'd' : 'u',
     transfer_size == cc->last_length ? 'c' : 'i', tth, (int)(time(NULL)-cc->last_start),
     cc->last_size, cc->last_offset, transfer_size, file);
   logfile_add(log, msg);
@@ -839,9 +833,6 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
 
   uit_conn_listchange(cc->iter, UITCONN_MOD);
 
-  if(cc->adc)
-    memcpy(cc->cid, u->cid, 8);
-
   // Set u->ip4 or u->ip6 if we didn't get this from the hub yet (NMDC, this
   // information is only used for display purposes).
   // Note that in the case of ADC, this function is called before the
@@ -934,22 +925,19 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       cc->state = CCS_IDLE;;
       char *id = adc_getparam(cmd.argv, "ID", NULL);
       char *token = adc_getparam(cmd.argv, "TO", NULL);
-      char cid[24];
-      if(istth(id))
-        base32_decode(id, cid);
       if(!id || (cc->active && !token)) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: No token or CID present: %s", net_remoteaddr(cc->net), msg);
         cc_disconnect(cc, TRUE);
         break;
-      } else if(!istth(id) || (!cc->active && memcmp(cid, cc->cid, 8) != 0)) {
+      } else if(!iscid(id) || (!cc->active && (!cc->hub || cc->uid != hub_user_adc_id(cc->hub->id, id)))) {
         g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
         g_message("CC:%s: Incorrect CID: %s", net_remoteaddr(cc->net), msg);
         cc_disconnect(cc, TRUE);
         break;
       } else if(cc->active) {
         cc->token = g_strdup(token);
-        memcpy(cc->cid, cid, 24);
+        cc->cid = g_strdup(id);
         cc_expect_adc_rm(cc);
         hub_user_t *u = cc->uid ? g_hash_table_lookup(hub_uids, &cc->uid) : NULL;
         if(!u) {
@@ -960,7 +948,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         } else
           handle_id(cc, u);
       } else
-        memcpy(cc->cid, cid, 24);
+        cc->cid = g_strdup(id);
       // Perform keyprint validation
       // TODO: Throw an error if kp_user is set but we've not received a kp_real?
       if(cc->kp_real && cc->kp_user && memcmp(cc->kp_real, cc->kp_user, 32) != 0) {
@@ -1455,7 +1443,6 @@ void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short p
   cc->tls = tls;
   cc->adc = TRUE;
   cc->token = g_strdup(token);
-  memcpy(cc->cid, u->cid, 8);
   /* TODO: If the user has both ip4 and ip6, we should prefer the AF used to
    * connect to the hub, rather than ip4. */
   const char *host = !ip4_isany(u->ip4) ? ip4_unpack(u->ip4) : ip6_unpack(u->ip6);
@@ -1554,5 +1541,6 @@ void cc_free(cc_t *cc) {
   g_free(cc->nick);
   g_free(cc->hub_name);
   g_free(cc->last_file);
+  g_free(cc->cid);
   g_free(cc);
 }

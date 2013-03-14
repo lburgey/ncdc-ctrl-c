@@ -387,11 +387,9 @@ static search_r_t *parse_adc(hub_t *hub, adc_cmd_t *cmd) {
   char *tmp, *tmp2;
 
   // If this came from UDP, fetch the users' CID
-  if(!hub && (cmd->type != 'U' || cmd->argc < 1 || !istth(cmd->argv[0])))
+  if(!hub && (cmd->type != 'U' || cmd->argc < 1 || !iscid(cmd->argv[0])))
     return NULL;
-  char cid[24];
-  if(!hub)
-    base32_decode(cmd->argv[0], cid);
+  char *cid = hub ? NULL : cmd->argv[0];
   char **argv = hub ? cmd->argv : cmd->argv+1;
 
   // file
@@ -440,15 +438,9 @@ static search_r_t *parse_adc(hub_t *hub, adc_cmd_t *cmd) {
     tmp = adc_getparam(argv, "TO", NULL);
     if(!tmp || strlen(tmp) != 13 || !isbase32(tmp))
       return NULL;
-    char hubid[8];
-    base32_decode(tmp, hubid);
-    tiger_ctx_t t;
-    tiger_init(&t);
-    tiger_update(&t, hubid, 8);
-    tiger_update(&t, cid, 24);
-    char res[24];
-    tiger_final(&t, res);
-    memcpy(&r.uid, res, 8);
+    guint64 hubid;
+    base32_decode(tmp, (char *)&hubid);
+    r.uid = hub_user_adc_id(hubid, cid);
   }
 
   // If we're here, then we can safely copy and return the result.

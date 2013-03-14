@@ -506,6 +506,12 @@ err:
 // base32-encoded 39-character string.
 #define istth(s) (strlen(s) == 39 && isbase32(s))
 
+#define MAXCIDLEN 64 /* 512 bits */
+
+// Test whether a string is a valid CID. I.e. a base32-encoded string between
+// 128 and MAXCIDLEN bits */
+#define iscid(s) (strlen(s) >= 26 && strlen(s) <= MAXCIDLEN*8/5+1 && isbase32(s))
+
 #endif
 
 

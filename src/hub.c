@@ -56,7 +56,6 @@ struct hub_user_t {
   char *conn;     // NMDC: string pointer, ADC: GUINT_TO_POINTER() of the US param
   char *mail;
   char *client;
-  char cid[8];   // for ADC - only the first 8 bytes of the CID, for simple verification purposes
   guint64 uid;
   guint64 sharesize;
   char *kp;      // ADC with KEYP, 32 bytes slice-alloc'ed
@@ -138,30 +137,52 @@ GHashTable *hubs = NULL;
 
 // hub_user_t related functions
 
+/* Generate user ID for ADC */
+guint64 hub_user_adc_id(guint64 hubid, const char *cid) {
+  tiger_ctx_t t;
+  char tmp[MAX(MAXCIDLEN, 24)];
+  guint64 uid;
+
+  tiger_init(&t);
+  tiger_update(&t, (char *)&hubid, 8);
+  base32_decode(cid, tmp);
+  tiger_update(&t, tmp, (strlen(cid)*5)/8);
+  tiger_final(&t, tmp);
+  memcpy(&uid, tmp, 8);
+
+  return uid;
+}
+
+
+guint64 hub_user_nmdc_id(guint64 hubid, const char *name) {
+  tiger_ctx_t t;
+  guint64 uid;
+  char tmp[24];
+
+  tiger_init(&t);
+  tiger_update(&t, (char *)&hubid, 8);
+  tiger_update(&t, name, strlen(name));
+  tiger_final(&t, tmp);
+  memcpy(&uid, tmp, 8);
+  return uid;
+}
+
 
 // cid is required for ADC. expected to be base32-encoded.
 static hub_user_t *user_add(hub_t *hub, const char *name, const char *cid) {
   hub_user_t *u = g_hash_table_lookup(hub->users, name);
   if(u)
     return u;
-  tiger_ctx_t t;
-  char tmp[24];
-  tiger_init(&t);
-  tiger_update(&t, (char *)&(hub->id), 8);
   u = g_slice_new0(hub_user_t);
   u->hub = hub;
   if(hub->adc) {
     u->name = g_strdup(name);
-    base32_decode(cid, tmp);
-    memcpy(u->cid, tmp, 8);
-    tiger_update(&t, tmp, 24);
+    u->uid = hub_user_adc_id(hub->id, cid);
   } else {
     u->name_hub = g_strdup(name);
     u->name = charset_convert(hub, TRUE, name);
-    tiger_update(&t, u->name_hub, strlen(u->name_hub));
+    u->uid = hub_user_nmdc_id(hub->id, name);
   }
-  tiger_final(&t, tmp);
-  memcpy(&(u->uid), tmp, 8);
   // insert in hub->users
   g_hash_table_insert(hub->users, hub->adc ? u->name : u->name_hub, u);
   // insert in hub_uids
@@ -1071,9 +1092,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       if(!u) {
         char *nick = adc_getparam(cmd.argv, "NI", NULL);
         char *cid = adc_getparam(cmd.argv, "ID", NULL);
-        // Note that the ADC spec allows hashes of varying length. I'm limiting
-        // myself to TTH hashes here since that is more memory-efficient.
-        if(nick && cid && istth(cid))
+        if(nick && cid && iscid(cid))
           u = user_add(hub, nick, cid);
       }
       if(!u)
