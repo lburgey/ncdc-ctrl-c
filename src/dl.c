@@ -797,7 +797,7 @@ void dl_queue_setprio(dl_t *dl, signed char prio) {
 void dl_queue_setuerr(guint64 uid, char *tth, char e, const char *emsg) {
   dl_t *dl = tth ? g_hash_table_lookup(dl_queue, tth) : NULL;
   dl_user_t *du = g_hash_table_lookup(queue_users, &uid);
-  if(!dl || (tth && !du))
+  if(!du || (tth && !dl))
     return;
 
   g_debug("%016"G_GINT64_MODIFIER"x: Setting download error for `%s' to: %s", uid, dl?dl->dest:"all", dl_strerror(e, emsg));
