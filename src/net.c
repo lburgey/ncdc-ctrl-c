@@ -198,7 +198,7 @@ static int low_send(net_t *n, const char *buf, int len, const char **err) {
   if(n->state != NETST_DIS)
     time(&n->timeout_last);
   if(r < 0) {
-    *err = n->tls ? gnutls_strerror(errno) : g_strerror(errno);
+    *err = n->tls ? gnutls_strerror(r) : g_strerror(errno);
     return -1;
   }
 
