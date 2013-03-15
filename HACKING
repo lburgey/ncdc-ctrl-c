@@ -195,6 +195,18 @@ belongs to the hub tab, including the preceding C<#> character.
 Stores the shared directories. C<name> is the virtual name, C<path> is the
 absolute filesystem path obtained by C<realpath()>.
 
+  CREATE TABLE users (
+    hub INTEGER NOT NULL,
+    uid INTEGER NOT NULL,
+    nick TEXT NOT NULL,
+    flags INTEGER NOT NULL
+  )
+
+Stores information about "special" users. Currently only used for users who are
+granted a slot. The C<uid> column is set, but its value is not currently used.
+Matching is instead done on the C<nick> column.  C<flags> is a bit mask of
+flags, the flag for a granted slot is 1.
+
 =head2 Hash data
 
   CREATE TABLE hashdata (
