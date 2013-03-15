@@ -742,21 +742,22 @@ static void c_whois(char *args) {
 
 
 static void listgrants() {
-  guint64 *list = cc_grant_list();
-  if(!*list)
-    ui_m(NULL, 0, "No slots granted to anyone.");
-  else {
-    ui_m(NULL, 0, "\nGranted slots to:");
-    guint64 *n = list;
-    for(; *n; n++) {
-      hub_user_t *u = g_hash_table_lookup(hub_uids, n);
-      if(u)
-        ui_mf(NULL, 0, "  %"G_GINT64_MODIFIER"x (%s on %s)", *n, u->name, u->hub->tab->name);
-      else
-        ui_mf(NULL, 0, "  %"G_GINT64_MODIFIER"x (user offline)", *n);
-    }
-    ui_m(NULL, 0, "");
+  db_user_t **list = db_users_list();
+  int n = 0;
+  db_user_t **i = list;
+  for(; *i; i++) {
+    if(!(i[0]->flags & DB_USERFLAG_GRANT))
+      continue;
+    if(!n++)
+      ui_m(NULL, 0, "\nGranted slots to:");
+    hub_t *hub = hub_global_byid(i[0]->hub);
+    ui_mf(NULL, 0, "  %s on %s%s", i[0]->nick, db_vars_get(i[0]->hub, "hubname"),
+      !hub || !hub_user_get(hub, i[0]->nick) ? " (user offline)" : "");
   }
+  if(n)
+    ui_m(NULL, 0, "");
+  else
+    ui_m(NULL, 0, "No slots granted to anyone.");
   g_free(list);
 }
 
@@ -780,58 +781,45 @@ static void c_grant(char *args) {
   }
 
   if(u) {
-    cc_grant(u);
+    db_users_set(u->hub->id, u->uid, u->name, db_users_get(u->hub->id, u->name) | DB_USERFLAG_GRANT);
     ui_m(NULL, 0, "Slot granted.");
   }
 }
 
 
+// TODO: Allow ungranting users on hubs that aren't open
 static void c_ungrant(char *args) {
   ui_tab_t *tab = ui_tab_cur->data;
-  guint64 uid = 0;
   if(!*args && tab->type != uit_msg) {
     listgrants();
     return;
-  } else if(!*args && tab->type == uit_msg)
-    uid = uit_msg_uid(tab);
-  else {
-    guint64 *key;
-    char id[17] = {};
-    GHashTableIter iter;
-    g_hash_table_iter_init(&iter, cc_granted);
-    while(g_hash_table_iter_next(&iter, (gpointer *)&key, NULL)) {
-      hub_user_t *u = g_hash_table_lookup(hub_uids, key);
-      g_snprintf(id, 17, "%"G_GINT64_MODIFIER"x", *key);
-      if((u && strcasecmp(u->name, args) == 0) || g_ascii_strncasecmp(id, args, strlen(args)) == 0) {
-        if(uid) {
-          ui_mf(NULL, 0, "Ambiguous user `%s'.", args);
-          return;
-        }
-        uid = *key;
-      }
-    }
   }
 
-  if(uid && g_hash_table_remove(cc_granted, &uid))
-    ui_mf(NULL, 0, "Slot for `%"G_GINT64_MODIFIER"x' revoked.", uid);
-  else
-    ui_mf(NULL, 0, "No slot granted to `%s'.", !*args && tab->type == uit_msg ? tab->name+1 : args);
+  if(!tab->hub) {
+    ui_m(NULL, 0, "This command can only be used on hub tabs.");
+    return;
+  }
+  char *nick = !*args && tab->type == uit_msg ? tab->name+1 : args;
+
+  if(db_users_get(tab->hub->id, nick) & DB_USERFLAG_GRANT) {
+    db_users_rm(tab->hub->id, nick);
+    ui_mf(NULL, 0, "Slot for `%s' revoked.", nick);
+  } else
+    ui_mf(NULL, 0, "No slot granted to `%s' on this hub.", nick);
 }
 
 
 static void c_ungrant_sug(char *args, char **sug) {
+  ui_tab_t *tab = ui_tab_cur->data;
   int len = strlen(args);
-  char id[17] = {};
-  guint64 *list = cc_grant_list();
-  guint64 *i = list;
+  db_user_t **list = db_users_list();
+  db_user_t **i = list;
   int n = 0;
   for(; n<20 && *i; i++) {
-    hub_user_t *u = g_hash_table_lookup(hub_uids, i);
-    g_snprintf(id, 17, "%"G_GINT64_MODIFIER"x", *i);
-    if((u && strncasecmp(u->name, args, len) == 0))
-      sug[n++] = g_strdup(u->name);
-    if(n < 20 && g_ascii_strncasecmp(id, args, len) == 0)
-      sug[n++] = g_strdup(id);
+    if(!tab->hub || i[0]->hub != tab->hub->id)
+      continue;
+    if(strncasecmp(i[0]->nick, args, len) == 0)
+      sug[n++] = g_strdup(i[0]->nick);
   }
   g_free(list);
 }
@@ -1260,6 +1248,7 @@ static void c_delhub(char *args) {
     return;
   }
   db_vars_rmhub(id);
+  db_users_rmhub(id);
   ui_mf(NULL, 0, "Hub #%s deleted from the configuration.", args);
 }
 

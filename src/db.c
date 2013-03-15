@@ -1123,6 +1123,153 @@ char **db_vars_hubs() {
 
 
 
+// Users table
+// (not thread-safe)
+
+#if INTERFACE
+
+#define DB_USERFLAG_GRANT  1 // User has been granted a slot
+
+struct db_user_t {
+  guint64 hub;
+  guint64 uid; // Set, but not actually used. Matching is on the nick.
+  int flags;
+  char nick[1];
+};
+
+#endif
+
+static GHashTable *db_users_cache = NULL;
+
+static guint db_user_hash(gconstpointer key) {
+  const db_user_t *u = key;
+  return g_str_hash(u->nick) + g_int64_hash(&u->hub);
+}
+
+static gboolean db_user_equal(gconstpointer pa, gconstpointer pb) {
+  const db_user_t *a = pa;
+  const db_user_t *b = pb;
+  return a->hub == b->hub && strcmp(a->nick, b->nick) == 0 ? TRUE : FALSE;
+}
+
+// For use with qsort()
+static int db_users_cmp(const void *pa, const void *pb) {
+  db_user_t *a = *((db_user_t **)pa);
+  db_user_t *b = *((db_user_t **)pb);
+  int r = g_utf8_collate(a->nick, b->nick);
+  if(r == 0)
+    r = a->hub > b->hub ? 1 : a->hub < b->hub ? -1 : 0;
+  return r;
+}
+
+static db_user_t *db_users_alloc(guint64 hub, guint64 uid, int flags, const char *nick) {
+  db_user_t *u = g_malloc(offsetof(db_user_t, nick) + strlen(nick) + 1);
+  u->hub = hub;
+  u->uid = uid;
+  u->flags = flags;
+  strcpy(u->nick, nick);
+  return u;
+}
+
+static void db_users_cacheget() {
+  if(db_users_cache)
+    return;
+
+  db_users_cache = g_hash_table_new_full(db_user_hash, db_user_equal, NULL, g_free);
+  GAsyncQueue *a = g_async_queue_new_full(g_free);
+  db_queue_push(DBF_NOCACHE, "SELECT hub, uid, flags, nick FROM users",
+    DBQ_RES, a, DBQ_INT64, DBQ_INT64, DBQ_INT, DBQ_TEXT,
+    DBQ_END
+  );
+
+  char *r;
+  while((r = g_async_queue_pop(a)) && darray_get_int32(r) == SQLITE_ROW) {
+    guint64 hub = darray_get_int64(r);
+    guint64 uid = darray_get_int64(r);
+    int flags = darray_get_int32(r);
+    db_user_t *u = db_users_alloc(hub, uid, flags, darray_get_string(r));
+    g_hash_table_insert(db_users_cache, u, u);
+    g_free(r);
+  }
+  g_free(r);
+  g_async_queue_unref(a);
+}
+
+// Returns the flags for a particular user, 0 if not in the DB
+int db_users_get(guint64 hub, const char *nick) {
+  db_users_cacheget();
+  db_user_t *u = db_users_alloc(hub, 0, 0, nick);
+  db_user_t *r = g_hash_table_lookup(db_users_cache, u);
+  g_free(u);
+  return r ? r->flags : 0;
+}
+
+
+void db_users_rm(guint64 hub, const char *nick) {
+  if(!db_users_get(hub, nick))
+    return;
+
+  db_user_t *u = db_users_alloc(hub, 0, 0, nick);
+  g_hash_table_remove(db_users_cache, u);
+  g_free(u);
+
+  db_queue_push(0, "DELETE FROM users WHERE nick = ? AND hub = ?",
+    DBQ_TEXT, nick, DBQ_INT64, hub, DBQ_END);
+}
+
+
+// Set a value. If val = NULL, then _rm() is called instead.
+void db_users_set(guint64 hub, guint64 uid, const char *nick, int flags) {
+  if(!flags) {
+    db_users_rm(hub, nick);
+    return;
+  }
+
+  db_user_t *u = db_users_alloc(hub, uid, flags, nick);
+  g_hash_table_replace(db_users_cache, u, u);
+
+  db_queue_push(0, "INSERT OR REPLACE INTO users (hub, uid, nick, flags) VALUES (?, ?, ?, ?)",
+    DBQ_INT64, hub, DBQ_INT64, uid, DBQ_TEXT, nick, DBQ_INT, flags, DBQ_END);
+}
+
+
+// Remove all user info of a particular
+void db_users_rmhub(guint64 hub) {
+  db_users_cacheget();
+
+  GHashTableIter i;
+  db_user_t *u;
+  g_hash_table_iter_init(&i, db_users_cache);
+  while(g_hash_table_iter_next(&i, NULL, (gpointer *)&u))
+    if(u->hub == hub)
+      g_hash_table_iter_remove(&i);
+
+  db_queue_push(0, "DELETE FROM users WHERE hub = ?", DBQ_INT64, hub, DBQ_END);
+}
+
+
+// Get an ordered list (username, hubid) of users. The array must be g_free()'d
+// after use, but the elements shouldn't.
+db_user_t **db_users_list() {
+  db_users_cacheget();
+
+  db_user_t **list = g_new(db_user_t *, g_hash_table_size(db_users_cache)+1);
+  db_user_t *u;
+  GHashTableIter i;
+  g_hash_table_iter_init(&i, db_users_cache);
+  int n = 0;
+  while(g_hash_table_iter_next(&i, NULL, (gpointer *)&u))
+    list[n++] = u;
+  list[n] = NULL;
+  qsort(list, n, sizeof(db_user_t *), db_users_cmp);
+  return list;
+}
+
+
+
+
+
+
 // Initialize the database directory and other stuff
 
 const char *db_dir = NULL;
@@ -1347,6 +1494,15 @@ static int db_dir_init() {
 }
 
 
+#define DB_USERS_TABLE \
+  "CREATE TABLE users ("\
+  "  hub INTEGER NOT NULL,"\
+  "  uid INTEGER NOT NULL,"\
+  "  nick TEXT NOT NULL,"\
+  "  flags INTEGER NOT NULL"\
+  ")"
+
+
 static void db_init_schema() {
   // Get user_version
   GAsyncQueue *a = g_async_queue_new_full(g_free);
@@ -1364,7 +1520,7 @@ static void db_init_schema() {
   // New database? Initialize schema.
   if(ver == 0) {
     db_queue_lock();
-    db_queue_push_unlocked(DBF_NEXT|DBF_NOCACHE, "PRAGMA user_version = 1", DBQ_END);
+    db_queue_push_unlocked(DBF_NEXT|DBF_NOCACHE, "PRAGMA user_version = 2", DBQ_END);
     db_queue_push_unlocked(DBF_NEXT|DBF_NOCACHE,
       "CREATE TABLE hashdata ("
       "  root TEXT NOT NULL PRIMARY KEY,"
@@ -1401,6 +1557,7 @@ static void db_init_schema() {
       "  name TEXT NOT NULL PRIMARY KEY,"
       "  path TEXT NOT NULL"
       ")", DBQ_END);
+    db_queue_push_unlocked(DBF_NEXT|DBF_NOCACHE, DB_USERS_TABLE, DBQ_END);
     // Get a result from the last one, to make sure the above queries were successful.
     GAsyncQueue *a = g_async_queue_new_full(g_free);
     db_queue_push_unlocked(DBF_LAST|DBF_NOCACHE,
@@ -1414,6 +1571,20 @@ static void db_init_schema() {
     char *r = g_async_queue_pop(a);
     if(darray_get_int32(r) != SQLITE_DONE)
       g_error("Error creating database schema.");
+    g_free(r);
+    g_async_queue_unref(a);
+  }
+
+  // Version 1 didn't have the users table
+  if(ver == 1) {
+    db_queue_lock();
+    GAsyncQueue *a = g_async_queue_new_full(g_free);
+    db_queue_push_unlocked(DBF_NEXT|DBF_NOCACHE, "PRAGMA user_version = 2", DBQ_END);
+    db_queue_push_unlocked(DBF_LAST|DBF_NOCACHE, DB_USERS_TABLE, DBQ_RES, a, DBQ_END);
+    db_queue_unlock();
+    char *r = g_async_queue_pop(a);
+    if(darray_get_int32(r) != SQLITE_DONE)
+      g_error("Error updating database schema.");
     g_free(r);
     g_async_queue_unref(a);
   }

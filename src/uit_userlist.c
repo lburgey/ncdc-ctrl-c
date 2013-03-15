@@ -378,7 +378,7 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     if(!sel)
       ui_m(NULL, 0, "No user selected.");
     else {
-      cc_grant(sel);
+      db_users_set(sel->hub->id, sel->uid, sel->name, db_users_get(sel->hub->id, sel->name) | DB_USERFLAG_GRANT);
       ui_m(NULL, 0, "Slot granted.");
     }
     break;

@@ -90,10 +90,8 @@ static const doc_cmd_t doc_cmds[] = {
 },
 { "grant", "[-list|<user>]", "Grant someone a slot.",
   "Grant someone a slot. This allows the user to download from you even if you"
-  " have no free slots.  The slot will be granted for as long as ncdc stays"
-  " open or the /ungrant command is used. If you restart ncdc, the user will"
-  " have to wait for a regular slot. Unless, of course, you /grant a slot"
-  " again.\n\n"
+  " have no free slots.  The slot will remain granted until the /ungrant"
+  " command is used, even if ncdc has been restarted in the mean time.\n\n"
   "To get a list of users whom you have granted a slot, use `/grant' without"
   " arguments or with `-list'. Be warned that using `/grant' without arguments on"
   " a PM tab will grant the slot to the user you are talking with. Make sure to"
@@ -225,7 +223,7 @@ static const doc_cmd_t doc_cmds[] = {
   " you give it will be public. An initial `/refresh' is done automatically on"
   " the added directory."
 },
-{ "ungrant", "[<username>|<id>]", "Revoke a granted slot.",
+{ "ungrant", "[<user>]", "Revoke a granted slot.",
   NULL
 },
 { "unset", "[<key>]", "Unset a global configuration variable.",

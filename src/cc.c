@@ -27,46 +27,6 @@
 #include "ncdc.h"
 #include "cc.h"
 
-
-// List (well, table) of users who are granted a slot. Key = UID (g_memdup'ed),
-// value = (void *)1. cc_init_global() is responsible for initializing it, but
-// the list is otherwise managed in commands.c.
-GHashTable *cc_granted = NULL;
-
-void cc_grant(hub_user_t *u) {
-  if(!g_hash_table_lookup(cc_granted, &u->uid))
-    g_hash_table_insert(cc_granted, g_memdup(&u->uid, 8), (void *)1);
-}
-
-
-// For use with qsort()
-static int cc_grant_cmp(const void *pa, const void *pb) {
-  guint64 a = *((guint64 *)pa);
-  guint64 b = *((guint64 *)pb);
-  hub_user_t *ua = g_hash_table_lookup(hub_uids, &a);
-  hub_user_t *ub = g_hash_table_lookup(hub_uids, &b);
-  return !ua && !ub ? (a > b ? 1 : a < b ? -1 : 0) :
-     ua && !ub ? 1 : !ua && ub ? -1 : g_utf8_collate(ua->name, ub->name);
-}
-
-
-// Get an ordered list of granted users. Must be g_free()'d after user.
-guint64 *cc_grant_list() {
-  guint64 *list = g_new(guint64, g_hash_table_size(cc_granted)+1);
-  guint64 *key;
-  GHashTableIter iter;
-  g_hash_table_iter_init(&iter, cc_granted);
-  int n = 0;
-  while(g_hash_table_iter_next(&iter, (gpointer *)&key, NULL))
-    list[n++] = *key;
-  list[n] = 0;
-  qsort(list, n, 8, cc_grant_cmp);
-  return list;
-}
-
-
-
-
 // List of expected incoming or outgoing connections.  This is list managed by
 // the functions below, in addition to cc_init_global() and cc_remove_hub(),
 
@@ -378,7 +338,6 @@ GSequence *cc_list;
 void cc_global_init() {
   cc_expected = g_queue_new();
   cc_list = g_sequence_new(NULL);
-  cc_granted = g_hash_table_new_full(g_int64_hash, g_int64_equal, g_free, NULL);
 
   throttle_list = g_hash_table_new_full(throttle_hash, throttle_equal, NULL, throttle_free);
   g_timeout_add_seconds_full(G_PRIORITY_LOW, 600, throttle_purge, NULL, NULL);
@@ -862,7 +821,7 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
     }
   }
 
-  cc->slot_granted = g_hash_table_lookup(cc_granted, &(u->uid)) ? TRUE : FALSE;
+  cc->slot_granted = db_users_get(u->hub->id, u->name) & DB_USERFLAG_GRANT ? TRUE : FALSE;
 }
 
 
