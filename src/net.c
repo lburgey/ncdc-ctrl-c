@@ -1220,7 +1220,7 @@ static gboolean handle_timer(gpointer dat) {
 
   // 30 second timeout on connecting, disconnecting, synchronous transfers, and
   // non-keepalive ASY connections.
-  if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_DIS || (n->state == NETST_ASY && !n->timeout_msg))) {
+  if(intv > 30 && (n->state == NETST_DNS || n->state == NETST_CON || n->state == NETST_DIS || n->state == NETST_SYN || (n->state == NETST_ASY && !n->timeout_msg))) {
     if(n->state == NETST_DNS || n->state == NETST_CON)
       n->cb_err(n, NETERR_TIMEOUT, g_strerror(ETIMEDOUT));
     else {
