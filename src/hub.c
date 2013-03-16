@@ -1163,7 +1163,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       g_message("Invalid message from %s: %s", net_remoteaddr(hub->net), msg);
     else if(var_get_int(hub->id, VAR_tls_policy) == VAR_TLSP_DISABLE ? !is_adc_proto(cmd.argv[0]) : !is_valid_proto(cmd.argv[0])) {
       GString *r = adc_generate('D', ADCC_STA, hub->sid, cmd.source);
-      g_string_append(r, " 141 Unknown\\protocol");
+      g_string_append(r, " 141 Unknown\\sprotocol");
       adc_append(r, "PR", cmd.argv[0]);
       adc_append(r, "TO", cmd.argv[2]);
       g_string_append_c(r, '\n');
