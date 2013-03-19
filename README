@@ -17,7 +17,7 @@ REQUIREMENTS
   ncursesw
   zlib
   bzip2
-  sqlite  >= 3.0.7
+  sqlite  >= 3.3.9
   glib    >= 2.24.0
   gnutls  >= 2.4.0
 
