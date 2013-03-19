@@ -1153,8 +1153,15 @@ static void adc_handle(net_t *net, char *msg, int _len) {
     else {
       int code = (cmd.argv[0][1]-'0')*10 + (cmd.argv[0][2]-'0');
       int severity = cmd.argv[0][0]-'0';
-      ui_mf(hub->tab, UIP_LOW, "(%s-%02d) %s",
-        !severity ? "status" : severity == 1 ? "warning" : "error", code, cmd.argv[1]);
+      /* Direct STA messages are usually from CTM/RCM errors. Passing those to
+       * the main chat is spammy and unintuitive. */
+      if(cmd.type != 'D')
+        ui_mf(hub->tab, UIP_LOW, "(%s-%02d) %s",
+          !severity ? "status" : severity == 1 ? "warning" : "error", code, cmd.argv[1]);
+      else {
+        hub_user_t *u = g_hash_table_lookup(hub->sessions, GINT_TO_POINTER(cmd.source));
+        g_message("Direct Status message from %s on %s: %s", u ? u->name : "unknown user", net_remoteaddr(hub->net), msg);
+      }
     }
     break;
 
