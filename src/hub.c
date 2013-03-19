@@ -771,7 +771,7 @@ void hub_send_nfo(hub_t *hub) {
     char *nconn = nmdc_encode_and_escape(hub, conn?conn:"0.005");
     char *nmail = nmdc_encode_and_escape(hub, mail?mail:"");
     nfo = g_strdup_printf("$MyINFO $ALL %s %s<ncdc V:%s,M:%c,H:%d/%d/%d,S:%d>$ $%s%c$%s$%"G_GUINT64_FORMAT"$|",
-      hub->nick_hub, ndesc, main_version, ip ? 'P' : 'A', h_norm, h_reg, h_op,
+      hub->nick_hub, ndesc, main_version, ip ? 'A' : 'P', h_norm, h_reg, h_op,
       slots, nconn, 1 | (sup_tls ? 0x10 : 0), nmail, share);
     g_free(ndesc);
     g_free(nconn);
