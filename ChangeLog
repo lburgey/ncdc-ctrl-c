@@ -1,3 +1,14 @@
+1.16 - 2013-03-21
+	- List of granted users is now remembered across restarts
+	- Don't throttle users who are granted a slot
+	- Support CIDs of variable size on ADC
+	- Log, but otherwise ignore, DSTA messages on ADC
+	- Fix possible crash with graceful disconnect on C-C connections
+	- Fix bug with enabling active mode when active_ip is set
+	- Fix reporting of active mode on NMDC hubs
+	- Fix bug with the 'X' key on the queue tab
+	- Fix idle disconnect timeout when a file transfer is active
+
 1.15 - 2013-03-02
 	- IPv6 support
 	- Significantly shorten certificate creation time with old GnuTLS versions
