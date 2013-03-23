@@ -1,3 +1,7 @@
+1.16.1 - 2013-03-23
+	- Fix crash when opening connection on ADC in passive mode
+	- Fix documentation of 'd' key in download_exclude setting
+
 1.16 - 2013-03-21
 	- List of granted users is now remembered across restarts
 	- Don't throttle users who are granted a slot
