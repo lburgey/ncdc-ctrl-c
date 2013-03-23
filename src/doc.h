@@ -382,7 +382,7 @@ static const doc_set_t doc_sets[] = {
   " files to their final destination."
 },
 { "download_exclude", 0, "<regex>",
-  "When recursively adding a directory to the download queue - by pressing `b'"
+  "When recursively adding a directory to the download queue - by pressing `d'"
   " on a directory in the file list browser - any item in the selected"
   " directory with a name that matches this regular expression will not be"
   " added to the download queue.\n\n"
