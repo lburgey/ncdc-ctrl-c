@@ -96,16 +96,16 @@ void cc_expect_add(hub_t *hub, hub_user_t *u, guint16 port, char *t, gboolean dl
 
 
 // Checks the expects list for the current connection, sets cc->dl, cc->uid,
-// cc->hub and cc->kp_user and removes it from the expects list. cc->cid and
-// cc->token must be known.
-static gboolean cc_expect_adc_rm(cc_t *cc) {
+// cc->hub and cc->kp_user and removes it from the expects list. cc->token must
+// be known, and either cc->cid must be set or a uid must be given.
+static gboolean cc_expect_adc_rm(cc_t *cc, guint64 uid) {
   // We're calculating the uid for each (expect->hub->id, cc->cid) pair in the
   // list and compare it with expect->uid to see if we've got the right user.
   // This isn't the most efficient solution...
   GList *n;
   for(n=cc_expected->head; n; n=n->next) {
     cc_expect_t *e = n->data;
-    if(e->adc && e->port == cc->port && strcmp(cc->token, e->token) == 0 && e->uid == hub_user_adc_id(e->hub->id, cc->cid)) {
+    if(e->adc && e->port == cc->port && strcmp(cc->token, e->token) == 0 && e->uid == (cc->cid ? hub_user_adc_id(e->hub->id, cc->cid) : uid)) {
       cc->uid = e->uid;
       cc->hub = e->hub;
       cc->kp_user = e->kp;
@@ -897,7 +897,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       } else if(cc->active) {
         cc->token = g_strdup(token);
         cc->cid = g_strdup(id);
-        cc_expect_adc_rm(cc);
+        cc_expect_adc_rm(cc, 0);
         hub_user_t *u = cc->uid ? g_hash_table_lookup(hub_uids, &cc->uid) : NULL;
         if(!u) {
           g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
@@ -1408,7 +1408,7 @@ void cc_adc_connect(cc_t *cc, hub_user_t *u, const char *laddr, unsigned short p
   g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), ip4_isany(u->ip4) ? "[%s]:%d" : "%s:%d", host, (int)port);
 
   // check whether this was as a reply to a RCM from us
-  cc_expect_adc_rm(cc);
+  cc_expect_adc_rm(cc, u->uid);
   if(!cc->kp_user && u->kp) {
     cc->kp_user = g_slice_alloc(32);
     memcpy(cc->kp_user, u->kp, 32);
