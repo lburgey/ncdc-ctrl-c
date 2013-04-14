@@ -260,7 +260,7 @@ guint64 str_parsesize(const char *str) {
     num *= 1024;
   else
     return G_MAXUINT64;
-  if(!e[1] || g_strcasecmp(e+1, "b") == 0 || g_strcasecmp(e+1, "ib") == 0)
+  if(!e[1] || g_ascii_strcasecmp(e+1, "b") == 0 || g_ascii_strcasecmp(e+1, "ib") == 0)
     return num;
   else
     return G_MAXUINT64;
