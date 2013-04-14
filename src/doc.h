@@ -719,7 +719,8 @@ static const doc_key_t doc_keys[] = {
   "i/Return     Toggle information box.\n"
   "m            Send a PM to the selected user.\n"
   "g            Grant a slot to the selected user.\n"
-  "b/B          Browse the selected users' list, B to force a redownload."
+  "b/B          Browse the selected users' list, B to force a redownload.\n"
+  "q            Match selected users' list with the download queue."
 },
 
 { NULL }

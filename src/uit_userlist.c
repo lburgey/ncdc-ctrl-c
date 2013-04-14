@@ -389,6 +389,12 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     else
       uit_fl_queue(sel->uid, key == INPT_CHAR('B'), NULL, tab, TRUE, FALSE);
     break;
+  case INPT_CHAR('q'): // q - download filelist and match queue for selected user
+    if(!sel)
+      ui_m(NULL, 0, "No user selected.");
+    else
+      uit_fl_queue(sel->uid, FALSE, NULL, NULL, FALSE, TRUE);
+    break;
   }
 
   if(sort) {
