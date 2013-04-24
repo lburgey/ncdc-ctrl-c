@@ -882,12 +882,10 @@ void net_write(net_t *n, const char *buf, int len) {
 // Logs the write for debugging. Does not log a trailing newline if there is one.
 static void asy_debugwrite(net_t *n, int oldlen) {
   if(n->wbuf->len && n->wbuf->len > oldlen) {
-    char end = n->wbuf->str[n->wbuf->len-1];
-    if(end == '\n')
-      n->wbuf->str[n->wbuf->len-1] = 0;
-    g_debug("%s> %s", net_remoteaddr(n), n->wbuf->str+oldlen);
-    if(end == '\n')
-      n->wbuf->str[n->wbuf->len-1] = end;
+    int len = n->wbuf->len-oldlen;
+    if(n->wbuf->str[n->wbuf->len-1] == '\n')
+      len--;
+    g_debug("%s> %.*s", net_remoteaddr(n), len, n->wbuf->str+oldlen);
   }
 }
 
@@ -1446,12 +1444,8 @@ void net_udp_send_raw(const char *host, unsigned short port, const char *msg, in
 static void net_udp_debug() {
   if(net_udp_queue->tail) {
     net_udp_t *m = net_udp_queue->tail->data;
-    char end = m->msglen > 0 ? m->msg[m->msglen-1] : 0;
-    if(end == '\n')
-      m->msg[m->msglen-1] = 0;
-    g_debug("UDP:%s:%d> %.*s", m->host, (int)m->port, m->msglen, m->msg);
-    if(end == '\n')
-      m->msg[m->msglen-1] = end;
+    g_debug("UDP:%s:%d> %.*s", m->host, (int)m->port,
+        m->msglen > 0 && m->msg[m->msglen-1] == '\n' ? m->msglen-1 : m->msglen, m->msg);
   }
 }
 
