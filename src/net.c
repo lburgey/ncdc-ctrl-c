@@ -1449,7 +1449,7 @@ static void net_udp_debug() {
     char end = m->msglen > 0 ? m->msg[m->msglen-1] : 0;
     if(end == '\n')
       m->msg[m->msglen-1] = 0;
-    g_debug("UDP:%s:%d> %s", m->host, (int)m->port, m->msg);
+    g_debug("UDP:%s:%d> %.*s", m->host, (int)m->port, m->msglen, m->msg);
     if(end == '\n')
       m->msg[m->msglen-1] = end;
   }
