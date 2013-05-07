@@ -241,6 +241,79 @@ directory at the same time.
 
 =back
 
+=head2 Format of transfers.log
+
+Uploads and downloads are logged in the transfers.log file. Transfers are
+separated by a newline (C<0x0a>). Each log line has the following fields,
+separated by a space:
+
+=over
+
+=item 1.
+
+Date/time when the transfer ended, formatted as C<[YYYY-MM-DD HH:MM:SS ZONE]>,
+
+=item 2.
+
+Hub name, including the C<#> prefix,
+
+=item 3.
+
+Base32-encoded CID of the other user for ADC transfers, or a '-' for NMDC,
+
+=item 4.
+
+User name (escaped),
+
+=item 5.
+
+IPv4 or IPv6 address,
+
+=item 6.
+
+Direction, C<u> for upload or C<d> for download,
+
+=item 7.
+
+Whether the transfer completed successfully (C<c>) or has been
+interrupted/disconnected before all requested file data has been transferred
+(C<i>),
+
+=item 8.
+
+Base32-encoded TTH of the transferred file, or '-' for C<files.xml.bz2>,
+
+=item 9.
+
+Total transfer time, in seconds,
+
+=item 10.
+
+File size, in bytes,
+
+=item 11.
+
+File offset, in bytes,
+
+=item 12.
+
+Transfer size, in bytes,
+
+=item 13.
+
+File path (escaped). Absolute virtual path for uploads, destination path for
+downloads.
+
+=back
+
+All fields are encoded in UTF-8. Fields that may contain a space or newline are
+escaped as follows: A space is escaped as C<\s>, a newline as C<\n> and a
+backslash as C<\\>. The timestamp is not escaped.
+
+Many clients download files is separate (smallish) chunks. Ncdc makes no
+attempt to combine multiple chunk requests in a single log entry, so you may
+see the same uploaded file several times with a different file offset.
+
 
 =head1 LICENSE
 
