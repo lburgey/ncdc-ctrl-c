@@ -324,8 +324,10 @@ more information.
 
 =head1 BUGS
 
-Please report bugs or feature requests to projects@yorhel.nl or connect to the
-development hub at adc://dc.blicky.net:2780/.
+Please report bugs or feature requests to the bug tracker or the mailing list.
+Both can be found on the ncdc homepage at L<http://dev.yorhel.nl/ncdc>. There
+is also an ADC hub available at C<adc://dc.blicky.net:2780/> for general
+support and discussions.
 
 =head1 AUTHOR
 
