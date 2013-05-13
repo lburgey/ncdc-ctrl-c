@@ -909,6 +909,14 @@ static void ui_textinput_search(ui_textinput_t *ti, gboolean backwards) {
 }
 
 
+#define iswordchar(x) (!(\
+      ((x) >= ' ' && (x) <= '/') ||\
+      ((x) >= ':' && (x) <= '@') ||\
+      ((x) >= '[' && (x) <= '`') ||\
+      ((x) >= '{' && (x) <= '~')\
+    ))
+
+
 gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
   int chars = g_utf8_strlen(ti->str->str, -1);
   gboolean completereset = TRUE;
@@ -930,9 +938,9 @@ gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
   case INPT_ALT('b'):      // Alt+b - cursor one word backward
     if(ti->pos > 0) {
       char *pos = g_utf8_offset_to_pointer(ti->str->str, ti->pos-1);
-      while(pos > ti->str->str && *pos == ' ')
+      while(pos > ti->str->str && !iswordchar(*pos))
         pos--;
-      while(pos > ti->str->str && *(pos-1) != ' ')
+      while(pos > ti->str->str && iswordchar(*(pos-1)))
         pos--;
       ti->pos = g_utf8_strlen(ti->str->str, pos-ti->str->str);
     }
@@ -940,9 +948,9 @@ gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
   case INPT_ALT('f'):      // Alt+f - cursor one word forward
     if(ti->pos < chars) {
       char *pos = g_utf8_offset_to_pointer(ti->str->str, ti->pos);
-      while(*pos == ' ')
+      while(!iswordchar(*pos))
         pos++;
-      while(*pos && *pos != ' ')
+      while(*pos && iswordchar(*pos))
         pos++;
       ti->pos = g_utf8_strlen(ti->str->str, pos-ti->str->str);
     }
@@ -965,9 +973,9 @@ gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
     if(ti->pos > 0) {
       char *end = g_utf8_offset_to_pointer(ti->str->str, ti->pos-1);
       char *begin = end;
-      while(begin > ti->str->str && *begin == ' ')
+      while(begin > ti->str->str && !iswordchar(*begin))
         begin--;
-      while(begin > ti->str->str && *(begin-1) != ' ')
+      while(begin > ti->str->str && iswordchar(*(begin-1)))
         begin--;
       ti->pos -= g_utf8_strlen(begin, g_utf8_next_char(end)-begin);
       g_string_erase(ti->str, begin-ti->str->str, g_utf8_next_char(end)-begin);
