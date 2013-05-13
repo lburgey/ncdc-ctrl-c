@@ -103,6 +103,11 @@ static void handle_input() {
       r = KEY_CODE_YES;
       code = KEY_BACKSPACE;
     }
+    // backspace inside an escape sequence is also possible, convert the other way around
+    if(lastesc && r == KEY_CODE_YES && code == KEY_BACKSPACE) {
+      r = !KEY_CODE_YES;
+      code = 127;
+    }
     key = r == KEY_CODE_YES ? INPT_KEY(code) : code == 27 ? INPT_ALT(0) : code <= 31 ? INPT_CTRL(ctrl_to_ascii(code)) : INPT_CHAR(code);
     // convert wchar_t into gunichar
     if(INPT_TYPE(key) == 1) {
