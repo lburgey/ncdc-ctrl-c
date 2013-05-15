@@ -109,6 +109,10 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   case S_DIROPEN:
     if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
       x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
+      if(x->name[0] == '.' && (!x->name[1] || (x->name[1] == '.' && !x->name[2]))) {
+        g_set_error(err, 1, 0, "'.' or '..' not allowed in directory name");
+        return -1;
+      }
       return 0;
     }
     if(type == XMLT_ATTDONE) {
@@ -168,6 +172,10 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   case S_FILEOPEN:
     if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
       x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
+      if(x->name[0] == '.' && (!x->name[1] || (x->name[1] == '.' && !x->name[2]))) {
+        g_set_error(err, 1, 0, "'.' or '..' not allowed in file name");
+        return -1;
+      }
       return 0;
     }
     if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "TTH") == 0 && !x->filehastth) {
