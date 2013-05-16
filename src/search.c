@@ -497,7 +497,7 @@ static char *try_decrypt(const char *key, const char *in, int inlen, char *out) 
 
 
 gboolean search_handle_udp(const char *addr, char *pack, int len) {
-  if(len < 10)
+  if(len < 10 || !search_list)
     return TRUE;
 
   pack = g_memdup(pack, len);
