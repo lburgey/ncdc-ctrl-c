@@ -82,6 +82,10 @@ static int readcb(void *context, char *buf, int len, GError **err) {
 }
 
 
+#define isvalidfilename(x) (\
+    !(((x)[0] == '.' && (!(x)[1] || ((x)[1] == '.' && !(x)[2])))) && !strchr((x), '/'))
+
+
 static int entitycb(void *context, int type, const char *arg1, const char *arg2, GError **err) {
   ctx_t *x = context;
   //printf("%d,%d: %s, %s\n", x->state, type, arg1, arg2);
@@ -109,8 +113,8 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   case S_DIROPEN:
     if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
       x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
-      if(x->name[0] == '.' && (!x->name[1] || (x->name[1] == '.' && !x->name[2]))) {
-        g_set_error(err, 1, 0, "'.' or '..' not allowed in directory name");
+      if(!isvalidfilename(x->name)) {
+        g_set_error(err, 1, 0, "Invalid directory name");
         return -1;
       }
       return 0;
@@ -172,8 +176,8 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
   case S_FILEOPEN:
     if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
       x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
-      if(x->name[0] == '.' && (!x->name[1] || (x->name[1] == '.' && !x->name[2]))) {
-        g_set_error(err, 1, 0, "'.' or '..' not allowed in file name");
+      if(!isvalidfilename(x->name)) {
+        g_set_error(err, 1, 0, "Invalid file name");
         return -1;
       }
       return 0;
