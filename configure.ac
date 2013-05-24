@@ -2,6 +2,7 @@
 AC_INIT([ncdc], [1.16g], [projects@yorhel.nl])
 AC_CONFIG_SRCDIR([src/ncdc.h])
 AC_CONFIG_HEADER([config.h])
+m4_include([deps/lean.m4])
 AM_INIT_AUTOMAKE([foreign subdir-objects])
 PKG_PROG_PKG_CONFIG([0.18])
 
@@ -27,11 +28,7 @@ AM_CONDITIONAL([HAVE_MH], [test "x$have_mh" = "xyes"])
 
 
 # Check for header files.
-AC_CHECK_HEADERS(
-  [wchar.h locale.h signal.h unistd.h fcntl.h zlib.h bzlib.h\
-   sys/types.h sys/stat.h sys/socket.h\
-   arpa/inet.h netdb.h netinet/in.h netinet/tcp.h],[],
-  AC_MSG_ERROR([Required header file not found]))
+AC_CHECK_HEADERS([zlib.h bzlib.h],[], AC_MSG_ERROR([Required header file not found]))
 
 have_nch=no
 AC_CHECK_HEADERS([ncursesw/ncurses.h ncurses/ncurses.h ncurses.h],[have_nch=yes])
@@ -39,18 +36,6 @@ if test "x$have_nch" = "xno"; then
   AC_MSG_ERROR([Could not find a header files for ncurses.])
 fi
 
-
-# Require a large off_t
-AC_CHECK_SIZEOF([off_t])
-if test "$ac_cv_sizeof_off_t" -lt 8; then
-  AC_MSG_ERROR([No large file support available in this system.])
-fi
-
-
-# Check for library functions.
-AC_CHECK_FUNCS(
-  [setlocale sigaction fcntl ftruncate],[],
-  AC_MSG_ERROR([Required function missing]))
 
 # Check for posix_fadvise()
 AC_CHECK_FUNCS([posix_fadvise])
