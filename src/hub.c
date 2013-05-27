@@ -1555,7 +1555,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
         continue;
       *sep = 0;
       hub_user_t *u = user_add(hub, *cur, NULL);
-      if(yuri_validate_ipv4(sep+1, strlen(sep+1)) == 0) {
+      if(ip4_isvalid(sep+1)) {
         struct in_addr new = ip4_pack(sep+1);
         if(ip4_cmp(new, u->ip4) != 0) {
           u->ip4 = new;
@@ -1648,7 +1648,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     else {
       yuri_t uri;
       if(yuri_parse(addr, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
-          (yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0 && yuri_validate_ipv6(uri.host, strlen(uri.host)) != 0))
+          (!ip4_isvalid(uri.host) && !ip6_isvalid(uri.host) != 0))
         g_message("Invalid host:port in $ConnectToMe (%s)", addr);
       else
         cc_nmdc_connect(cc_create(hub), uri.host, uri.port, var_get(hub->id, VAR_local_address), *tls ? TRUE : FALSE);
@@ -1700,7 +1700,7 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
         nfrom = from+4;
     } else {
       if(yuri_parse(from, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
-          (yuri_validate_ipv4(uri.host, strlen(uri.host)) != 0 && yuri_validate_ipv6(uri.host, strlen(uri.host)) != 0))
+          (!ip4_isvalid(uri.host) && !ip6_isvalid(uri.host)))
         g_message("Invalid host:port in $Search (%s)", from);
       else if(!listen_hub_active(hub->id) || strcmp(uri.host, hub_ip(hub)) != 0 || uri.port != listen_hub_udp(hub->id)) {
         /* This search is not for our IP:port */

@@ -119,9 +119,9 @@ static char *p_ip(const char *val, GError **err) {
   struct in6_addr i6 = ip6_any;
   char *sep = strchr(val, ',');
   if(sep) *sep = 0;
-  if(yuri_validate_ipv4(val, strlen(val)) == 0)
+  if(ip4_isvalid(val))
     i4 = ip4_pack(val);
-  else if(yuri_validate_ipv6(val, strlen(val)) == 0)
+  else if(ip6_isvalid(val))
     i6 = ip6_pack(val);
   else {
     g_set_error_literal(err, 1, 0, "Invalid IP.");
@@ -131,9 +131,9 @@ static char *p_ip(const char *val, GError **err) {
     *(sep++) = ',';
     while(*sep == ' ')
       sep++;
-    if(ip4_isany(i4) && yuri_validate_ipv4(sep, strlen(sep)) == 0)
+    if(ip4_isany(i4) && ip4_isvalid(sep))
       i4 = ip4_pack(sep);
-    else if(ip6_isany(i6) && yuri_validate_ipv6(sep, strlen(sep)) == 0)
+    else if(ip6_isany(i6) && ip6_isvalid(sep))
       i6 = ip6_pack(sep);
     else {
       g_set_error_literal(err, 1, 0, "Invalid IP.");

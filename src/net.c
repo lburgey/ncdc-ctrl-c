@@ -1400,7 +1400,7 @@ static gboolean udp_handle_out(gpointer dat) {
     return FALSE;
 
   int n;
-  if(yuri_validate_ipv4(m->host, strlen(m->host)) == 0) {
+  if(ip4_isvalid(m->host)) {
     struct in_addr a = ip4_pack(m->host);
     n = sendto(net_udp4_sock, m->msg, m->msglen, 0, ip4_sockaddr(a, m->port), sizeof(struct sockaddr_in));
   } else {
@@ -1433,7 +1433,7 @@ void net_udp_send_raw(const char *host, unsigned short port, const char *msg, in
   m->msglen = len;
   m->port = port;
   strncpy(m->host, host, sizeof(m->host));
-  m->sock = yuri_validate_ipv4(host, strlen(host)) == 0 ? net_udp4_sock : net_udp6_sock;
+  m->sock = ip4_isvalid(host) ? net_udp4_sock : net_udp6_sock;
 
   g_queue_push_tail(net_udp_queue, m);
   if(net_udp_queue->head == net_udp_queue->tail)

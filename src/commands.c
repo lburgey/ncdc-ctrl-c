@@ -273,7 +273,7 @@ static gboolean c_connect_set_hubaddr(char *addr) {
 
   // Reconstruct (without the kp) and save
   char *new = g_strdup_printf(
-    yuri_validate_ipv6(uri.host, strlen(uri.host)) == 0 ? "%s://[%s]:%d" : "%s://%s:%d/",
+    ip6_isvalid(uri.host) ? "%s://[%s]:%d" : "%s://%s:%d/",
     uri.scheme, uri.host, (int)uri.port);
   var_set(tab->hub->id, VAR_hubaddr, new, NULL);
 

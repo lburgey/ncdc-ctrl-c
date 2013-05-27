@@ -561,6 +561,16 @@ void base32_decode(const char *from, char *to) {
 struct in_addr ip4_any = {};
 struct in6_addr ip6_any = {};
 
+gboolean ip4_isvalid(const char *str) {
+  struct in_addr a;
+  return inet_pton(AF_INET, str, &a) == 1;
+}
+
+gboolean ip6_isvalid(const char *str) {
+  struct in6_addr a;
+  return inet_pton(AF_INET6, str, &a) == 1;
+}
+
 struct in_addr ip4_pack(const char *str) {
   struct in_addr a;
   return !str || inet_pton(AF_INET, str, &a) != 1 ? ip4_any : a;

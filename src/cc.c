@@ -802,7 +802,7 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
   if(net_is_connected(cc->net) && (ip4_isany(u->ip4) && ip6_isany(u->ip6))) {
     yuri_t uri;
     if(yuri_parse(net_remoteaddr(cc->net), &uri) == 0) {
-      if(yuri_validate_ipv4(uri.host, strlen(uri.host)) == 0)
+      if(ip4_isvalid(uri.host))
         u->ip4 = ip4_pack(uri.host);
       else
         u->ip6 = ip6_pack(uri.host);
@@ -1388,7 +1388,7 @@ static void handle_connect(net_t *n, const char *addr) {
 
 void cc_nmdc_connect(cc_t *cc, const char *host, unsigned short port, const char *laddr, gboolean tls) {
   g_return_if_fail(cc->state == CCS_CONN);
-  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), yuri_validate_ipv6(host, strlen(host)) == 0 ? "[%s]:%d" : "%s:%d", host, (int)port);
+  g_snprintf(cc->remoteaddr, sizeof(cc->remoteaddr), ip6_isvalid(host) ? "[%s]:%d" : "%s:%d", host, (int)port);
   cc->tls = tls;
   net_connect(cc->net, host, port, laddr, handle_connect);
   g_clear_error(&cc->err);
