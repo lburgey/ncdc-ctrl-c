@@ -1,4 +1,4 @@
-/* Copyright (c) 2012 Yoran Heling
+/* Copyright (c) 2012-2013 Yoran Heling
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -21,7 +21,11 @@
 */
 
 #include "yuri.h"
+#include <string.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 
 /* The ctype.h functions are locale-dependent. We don't want that. */
@@ -33,138 +37,62 @@
 #define y_ishex(x)    (((x) >= 'a' && (x) <= 'f') || ((x) >= 'A' && (x) <= 'F') || y_isnum(x))
 #define y_isscheme(x) ((x) == '+' || (x) == '-' || (x) == '.' || y_isalnum(x))
 #define y_isdomain(x) ((x) == '-' || y_isalnum(x))
+#define y_hexval(x)   ((x) >= '0' && (x) <= '9' ? (x)-'0' : (x) >= 'A' && (x) <= 'F' ? (x)-'A'+10 : (x)-'a'+10)
 
 
-/* Copy len bytes from *src to *dest. A nil character is appended to dest, so
- * it must be large enough to hold len+1 bytes.
- * XXX: This is *not* equivalent to BSD strlcpy()! */
-static void yuri__strlcpy(char *dest, const char *src, int len) {
-	while(len-- > 0)
-		*(dest++) = *(src++);
-	*dest = 0;
-}
-
-
-/* Similar to yuri__strlcpy(), except calls y_tolower() on each character */
-static void yuri__strllower(char *dest, const char *src, int len) {
-	while(len-- > 0) {
-		*dest = y_tolower(*src);
-		src++;
-		dest++;
+/* Parses the "<scheme>://" part, if it exists, and advances the buf pointer.
+ */
+static void yuri__scheme(char **buf, yuri_t *out) {
+	const char *end = *buf;
+	if(!y_isalpha(**buf)) {
+		out->scheme = *buf + strlen(*buf);
+		return;
 	}
-	*dest = 0;
-}
-
-
-/* Parses the "<scheme>://" part and returns the pointer after the scheme.
- * Simply returns 'in' if it couldn't find a (valid) scheme. */
-static const char *yuri__scheme(const char *in, yuri_t *out) {
-	const char *end = in;
-	if(!y_isalpha(*end))
-		return in;
 	do
 		++end;
-	while(end <= in+15 && y_isscheme(*end));
-	if(end > in+15 || *end != ':' || end[1] != '/' || end[2] != '/')
-		return in;
-	yuri__strllower(out->scheme, in, end-in);
-	return end + 3;
+	while(end <= *buf+15 && y_isscheme(*end));
+	if(end > *buf+15 || *end != ':' || end[1] != '/' || end[2] != '/') {
+		out->scheme = *buf + strlen(*buf);
+		return;
+	}
+	/* Valid scheme, lowercase it and advance *buf. */
+	out->scheme = *buf;
+	while(*buf != end) {
+		**buf = y_tolower(**buf);
+		(*buf)++;
+	}
+	**buf = 0;
+	*buf += 3;
 }
 
 
-/* Parses the ":<port>" part in the string pointed to by [in..end]. Returns the
- * new end of the string, or the current end if it couldn't find a (valid)
- * port string. */
-static const char *yuri__port(const char *in, const char *end, yuri_t *out) {
-	const char *nend = end-1;
+/* Parses the ":<port>" part in buf and, if it exists, sets the ':' to zero to
+ * ensure that buf is a complete host string. */
+static void yuri__port(char *buf, size_t len, yuri_t *out) {
 	uint32_t res = 0, mul = 1;
+	out->port = 0;
+	if(!len)
+		return;
 	/* Read backwards */
-	while(nend >= in && y_isnum(*nend)) {
+	while(--len > 0 && y_isnum(buf[len])) {
 		if(mul >= 100000)
-			return end;
-		res += mul * (*nend-'0');
+			return;
+		res += mul * (buf[len]-'0');
 		if(res > 65535)
-			return end;
+			return;
 		mul *= 10;
-		nend--;
 	}
-	if(!res || nend < in || *nend != ':' || nend[1] == '0')
-		return end;
+	if(!res || !len || buf[len] != ':' || buf[len+1] == '0')
+		return;
 	out->port = res;
-	return nend;
-}
-
-
-/* RFC3986, p. 19, IPv4address. */
-int yuri_validate_ipv4(const char *str, int len) {
-	int i;
-	for(i=0; i<4; i++) {
-		if(i) {
-			if(len < 1 || *str != '.')
-				return -1;
-			str++; len--;
-		}
-		if(len >= 3 && ((str[0] == '2' && str[1] == '5' && str[2] >= '0' && str[2] <= '5')   /* 250-255 */
-		             || (str[0] == '2' && str[1] >= '0' && str[1] <= '4' && y_isnum(str[2])) /* 200-249 */
-		             || (str[0] == '1' && y_isnum(str[1]) && y_isnum(str[2])))               /* 100-199 */
-				) {
-			str += 3; len -= 3;
-		} else if(len >= 2 && str[0] >= '1' && str[0] <= '9' && y_isnum(str[1])) { /* 10-99 */
-			str += 2; len -= 2;
-		} else if(len >= 1 && y_isnum(str[0])) { /* 0-9 */
-			str++; len--;
-		} else
-			return -1;
-	}
-	return len ? -1 : 0;
-}
-
-
-int yuri_validate_ipv6(const char *str, int len) {
-	int i, hasskip = 0;
-	if(len >= 2 && *str == ':' && str[1] == ':') {
-		hasskip = 1;
-		str += 2; len -= 2;
-	}
-	for(i=0; i<8; i++) {
-		if(!len && hasskip)
-			break;
-		/* separator */
-		if(i) {
-			if(len < 1 || *str != ':')
-				return -1;
-			str++; len--;
-		}
-		if(len < 1)
-			return -1;
-		if(i && !hasskip && *str == ':') {
-			hasskip = 1;
-			str++; len--;
-			if(!len)
-				break;
-		}
-		/* last 32 bits may use IPv4 notation */
-		if(len >= 4 && (hasskip ? i < 6 : i == 6) && str[1] != ':' && str[2] != ':' && (str[1] == '.' || str[2] == '.' || str[3] == '.'))
-			return yuri_validate_ipv4(str, len);
-		/* 1-4 hex digits */
-		if(!y_ishex(*str))
-			return -1;
-		str++; len--;
-#define H if(len >= 1 && y_ishex(*str)) { str++; len--; }
-		H H H
-#undef H
-	}
-	return len || (hasskip && i==8) ? -1 : 0;
+	buf[len] = 0;
 }
 
 
 /* RFC1034 section 3.5 has an explanation of a (commonly used) domain syntax,
  * but I suspect it may be overly strict. This implementation will suffice, I
- * suppose. Unlike the IPv4 and IPv6 validators, this function is not public.
- * Mostly because DNS names aren't strictly specified, and because there are
- * alternative representations depending on where the name comes from (see also
- * the comment on the length check) */
-static int yuri__validate_dns(const char *str, int len) {
+ * suppose. */
+static int yuri__validate_domain(const char *str, int len) {
 	int haslabel = 0, /* whether we've seen a label */
 		lastishyp = 0, /* whether the last seen character in the label is a hyphen */
 		startdig = 0, /* whether the last seen label starts with a digit (Not allowed per RFC1738, a sensible restriction IMO) */
@@ -203,33 +131,185 @@ static int yuri__validate_dns(const char *str, int len) {
 }
 
 
-int yuri_parse(const char *in, yuri_t *out) {
-	const char *authend, *hostend;
+int yuri__host(char *buf, yuri_t *out) {
+	char addrbuf[16];
 
-	*out->scheme = 0;
-	*out->host = 0;
-	out->port = 0;
-	out->rest = NULL;
+	/* IPv6 */
+	if(*buf == '[') {
+		if(buf[strlen(buf)-1] != ']')
+			return -1;
+		buf++;
+		buf[strlen(buf)-1] = 0;
+		if(inet_pton(AF_INET6, buf, addrbuf) != 1)
+			return -1;
+		out->hosttype = YURI_IPV6;
+		out->host = buf;
+		return 0;
+	}
 
-	in = yuri__scheme(in, out);
+	/* IPv4 */
+	if(inet_pton(AF_INET, buf, addrbuf) == 1) {
+		out->hosttype = YURI_IPV4;
+		out->host = buf;
+		return 0;
+	}
+
+	/* Domain */
+	out->hosttype = YURI_DOMAIN;
+	out->host = buf;
+	return yuri__validate_domain(buf, strlen(buf));
+}
+
+
+int yuri_parse(char *buf, yuri_t *out) {
+	char *end, endc;
+
+	out->buf = buf;
+	yuri__scheme(&buf, out);
 
 	/* Find the end of the authority component (RFC3986, section 3.2) */
-	for(authend=in; *authend && *authend != '/' && *authend != '?' && *authend != '#'; authend++)
-		;
+	end = buf;
+	while(*end && *end != '/' && *end != '?' && *end != '#')
+		end++;
+	endc = *end;
+	*end = 0;
 
-	hostend = yuri__port(in, authend, out);
-	if(hostend-in > 2 && *in == '[' && *(hostend-1) == ']' && yuri_validate_ipv6(in+1, hostend-in-2) == 0)
-		yuri__strlcpy(out->host, in+1, hostend-in-2);
-	else if(yuri_validate_ipv4(in, hostend-in) == 0 || yuri__validate_dns(in, hostend-in) == 0)
-		yuri__strlcpy(out->host, in, hostend-in);
-	else
+	yuri__port(buf, end-buf, out);
+	if(yuri__host(buf, out))
 		return -1;
 
-	if(*authend && *authend == '/')
-		authend++;
-	out->rest = *authend ? authend : NULL;
+	/* path */
+	if(endc == '/') {
+		out->path = ++end;
+		while(*end && *end != '?' && *end != '#')
+			end++;
+		endc = *end;
+		*end = 0;
+		if(yuri_validate_escape(out->path))
+			return -1;
+	} else
+		out->path = end;
+
+	/* query */
+	if(endc == '?') {
+		out->query = ++end;
+		while(*end && *end != '#')
+			end++;
+		endc = *end;
+		*end = 0;
+		if(yuri_validate_escape(out->query))
+			return -1;
+	} else
+		out->query = end;
+
+	/* fragment */
+	if(endc == '#') {
+		out->fragment = ++end;
+		while(*end)
+			if(*(end++) == '#')
+				return -1;
+		if(yuri_validate_escape(out->fragment))
+			return -1;
+	} else
+		out->fragment = end;
 
 	return 0;
+}
+
+
+int yuri_parse_copy(const char *str, yuri_t *out) {
+	char *buf = strdup(str);
+	if(!buf)
+		return -2;
+	if(yuri_parse(buf, out)) {
+		free(buf);
+		return -1;
+	}
+	return 0;
+}
+
+
+int yuri_validate_escape(const char *str) {
+	while(*str) {
+		if(*str != '%') {
+			str++;
+			continue;
+		}
+		if(!y_ishex(str[1]) || !y_ishex(str[2]) || (str[1] == '0' && str[2] == '0'))
+			return -1;
+		str += 3;
+	}
+	return 0;
+}
+
+
+char *yuri_unescape(char *str) {
+	unsigned char *src = (unsigned char *)str, *dest = (unsigned char *)str;
+	if(!str)
+		return NULL;
+	while(*src) {
+		if(*src != '%') {
+			*(dest++) = *(src++);
+			continue;
+		}
+		*(dest++) = (y_hexval(src[1])<<4) | y_hexval(src[2]);
+		src += 3;
+	}
+	*dest = 0;
+	return str;
+}
+
+
+/* Special unescape function for the query string. Differs from yuri_unescape()
+ * in that it also converts '+' to a space. */
+static char *yuri__query_unescape(char *str) {
+	unsigned char *src = (unsigned char *)str, *dest = (unsigned char *)str;
+	while(*src) {
+		if(*src == '+') {
+			*(dest++) = ' ';
+			src++;
+			continue;
+		}
+		if(*src != '%') {
+			*(dest++) = *(src++);
+			continue;
+		}
+		*(dest++) = (y_hexval(src[1])<<4) | y_hexval(src[2]);
+		src += 3;
+	}
+	*dest = 0;
+	return str;
+}
+
+
+int yuri_query_parse(char **str, char **key, char **value) {
+	if(!str || !*str || !**str)
+		return 0;
+
+	/* Key */
+	char *sep = *str;
+	while(*sep && *sep != '=' && *sep != ';' && *sep != '&')
+		sep++;
+	if(!*sep || *sep == ';' || *sep == '&') { /* No value */
+		*key = *str;
+		*value = sep;
+		*str = *sep ? sep+1 : sep;
+		*sep = 0;
+		yuri__query_unescape(*key);
+		return 1;
+	}
+	*(sep++) = 0;
+	*key = *str;
+	yuri__query_unescape(*key);
+
+	/* Value */
+	*value = sep;
+	while(*sep && *sep != ';' && *sep != '&')
+		sep++;
+	*str = *sep ? sep+1 : sep;
+	*sep = 0;
+	yuri__query_unescape(*value);
+	return 1;
 }
 
 /* vim: set noet sw=4 ts=4: */

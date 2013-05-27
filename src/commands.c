@@ -242,8 +242,8 @@ static gboolean c_connect_set_hubaddr(char *addr) {
     ui_m(NULL, 0, "Invalid URL format.");
     return FALSE;
   }
-  if(!uri.scheme[0])
-    strcpy(uri.scheme, "dchub");
+  if(!*uri.scheme)
+    uri.scheme = "dcbub";
   if(!uri.port)
     uri.port = 411;
   if(strcmp(uri.scheme, "dchub") != 0 && strcmp(uri.scheme, "nmdc") != 0 && strcmp(uri.scheme, "nmdcs") != 0
@@ -252,18 +252,18 @@ static gboolean c_connect_set_hubaddr(char *addr) {
     return FALSE;
   }
 
-  // yuri doesn't do query string parsing (yet), so look for the kp argument manually.
-  char *kp = NULL;
-  if(uri.rest && (kp = strstr(uri.rest, "kp=SHA256/")) != NULL) {
-    kp = g_strndup(kp + 10, 52);
-    if(strlen(kp) != 52 || !isbase32(kp)) {
+  // Get kp from the query string
+  char *kp = NULL, *key, *value;
+  while(!kp && yuri_query_parse(&uri.query, &key, &value)) {
+    if(strcmp(key, "kp") != 0)
+      continue;
+    if(strncmp(value, "SHA256/", 7) != 0 || strlen(value+7) != 52 || !isbase32(value+7)) {
       ui_m(NULL, 0, "Invalid keyprint.");
-      free(kp);
       return FALSE;
     }
+    kp = value+7;
     if(strcmp(uri.scheme, "nmdcs") != 0 && strcmp(uri.scheme, "adcs") != 0) {
       ui_m(NULL, 0, "Keyprint is only valid for adcs:// or nmdcs:// URLs.");
-      free(kp);
       return FALSE;
     }
   }
@@ -273,7 +273,7 @@ static gboolean c_connect_set_hubaddr(char *addr) {
 
   // Reconstruct (without the kp) and save
   char *new = g_strdup_printf(
-    ip6_isvalid(uri.host) ? "%s://[%s]:%d" : "%s://%s:%d/",
+    uri.hosttype == YURI_IPV6 ? "%s://[%s]:%d" : "%s://%s:%d/",
     uri.scheme, uri.host, (int)uri.port);
   var_set(tab->hub->id, VAR_hubaddr, new, NULL);
 
@@ -285,7 +285,6 @@ static gboolean c_connect_set_hubaddr(char *addr) {
 
   g_free(old);
   g_free(new);
-  g_free(kp);
   return TRUE;
 }
 

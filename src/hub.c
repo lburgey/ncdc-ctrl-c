@@ -1647,8 +1647,8 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       g_message("Received a $ConnectToMe for someone else (to %s from %s)", me, addr);
     else {
       yuri_t uri;
-      if(yuri_parse(addr, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
-          (!ip4_isvalid(uri.host) && !ip6_isvalid(uri.host) != 0))
+      if(yuri_parse(addr, &uri) != 0 || *uri.scheme || uri.port == 0 ||
+          uri.hosttype == YURI_DOMAIN || *uri.path || *uri.query || *uri.fragment)
         g_message("Invalid host:port in $ConnectToMe (%s)", addr);
       else
         cc_nmdc_connect(cc_create(hub), uri.host, uri.port, var_get(hub->id, VAR_local_address), *tls ? TRUE : FALSE);
@@ -1694,13 +1694,13 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
     char *query = g_match_info_fetch(nfo, 6);
     unsigned short port = 0;
     char *nfrom = NULL;
-    yuri_t uri;
     if(strncmp(from, "Hub:", 4) == 0) {
       if(strcmp(from+4, hub->nick_hub) != 0) /* Not our nick */
         nfrom = from+4;
     } else {
-      if(yuri_parse(from, &uri) != 0 || uri.scheme[0] != 0 || uri.port == 0 ||
-          (!ip4_isvalid(uri.host) && !ip6_isvalid(uri.host)))
+      yuri_t uri;
+      if(yuri_parse(from, &uri) != 0 || *uri.scheme || uri.port == 0 ||
+          uri.hosttype == YURI_DOMAIN || *uri.path || *uri.query || *uri.fragment)
         g_message("Invalid host:port in $Search (%s)", from);
       else if(!listen_hub_active(hub->id) || strcmp(uri.host, hub_ip(hub)) != 0 || uri.port != listen_hub_udp(hub->id)) {
         /* This search is not for our IP:port */
@@ -1891,7 +1891,7 @@ static void handle_connect(net_t *n, const char *addr) {
 void hub_connect(hub_t *hub) {
   char *oaddr = var_get(hub->id, VAR_hubaddr);
   yuri_t addr;
-  yuri_parse(oaddr, &addr);
+  yuri_parse_copy(oaddr, &addr);
   if(!addr.port)
     addr.port = 411;
   hub->adc = strncmp(addr.scheme, "adc", 3) == 0;
@@ -1908,6 +1908,7 @@ void hub_connect(hub_t *hub) {
 
   ui_mf(hub->tab, 0, "Connecting to %s...", oaddr);
   net_connect(hub->net, addr.host, addr.port, var_get(hub->id, VAR_local_address), handle_connect);
+  free(addr.buf);
 }
 
 

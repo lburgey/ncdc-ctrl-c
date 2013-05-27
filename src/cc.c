@@ -454,13 +454,15 @@ static void xfer_log_add(cc_t *cc) {
   char *file = adc_escape(cc->last_file, FALSE);
 
   yuri_t uri;
-  g_return_if_fail(yuri_parse(cc->remoteaddr, &uri) == 0);
+  g_return_if_fail(yuri_parse_copy(cc->remoteaddr, &uri) == 0);
 
   char *msg = g_strdup_printf("%s %s %s %s %c %c %s %d %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT" %s",
     cc->hub ? cc->hub->tab->name : cc->hub_name, cc->adc ? cc->cid : "-", nick, uri.host, cc->dl ? 'd' : 'u',
     transfer_size == cc->last_length ? 'c' : 'i', tth, (int)(time(NULL)-cc->last_start),
     cc->last_size, cc->last_offset, transfer_size, file);
   logfile_add(log, msg);
+
+  free(uri.buf);
   g_free(msg);
   g_free(nick);
   g_free(file);
@@ -801,11 +803,12 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
   // first place).
   if(net_is_connected(cc->net) && (ip4_isany(u->ip4) && ip6_isany(u->ip6))) {
     yuri_t uri;
-    if(yuri_parse(net_remoteaddr(cc->net), &uri) == 0) {
-      if(ip4_isvalid(uri.host))
+    if(yuri_parse_copy(net_remoteaddr(cc->net), &uri) == 0) {
+      if(uri.hosttype == YURI_IPV4)
         u->ip4 = ip4_pack(uri.host);
       else
         u->ip6 = ip6_pack(uri.host);
+      free(uri.buf);
     }
   }
 
