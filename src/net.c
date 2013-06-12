@@ -114,6 +114,21 @@ struct net_t {
 
 
 
+static int net_sock_bind(int af, int sock, char *laddr) {
+  if(!laddr)
+    return 0;
+
+  if(af == AF_INET) {
+    struct in_addr a = var_parse_ip4(laddr);
+    return bind(sock, ip4_sockaddr(a, 0), sizeof(struct sockaddr_in));
+  }
+  if(af == AF_INET6) {
+    struct in6_addr a = var_parse_ip6(laddr);
+    return bind(sock, ip6_sockaddr(a, 0), sizeof(struct sockaddr_in6));
+  }
+  g_return_val_if_reached(0);
+}
+
 
 // Low-level recv/send wrappers
 
@@ -1096,15 +1111,7 @@ static void dnscon_tryconn(net_t *n) {
   n->sock = socket(c->ai_family, SOCK_STREAM, 0);
   fcntl(n->sock, F_SETFL, fcntl(n->sock, F_GETFL, 0)|O_NONBLOCK);
 
-  int r = 0;
-  if(n->dnscon->laddr && c->ai_family == AF_INET) {
-    struct in_addr a = var_parse_ip4(n->dnscon->laddr);
-    r = bind(n->sock, ip4_sockaddr(a, 0), sizeof(struct sockaddr_in));
-  } else if(n->dnscon->laddr && c->ai_family == AF_INET6) {
-    struct in6_addr a = var_parse_ip6(n->dnscon->laddr);
-    r = bind(n->sock, ip6_sockaddr(a, 0), sizeof(struct sockaddr_in6));
-  }
-  if(r < 0) {
+  if(net_sock_bind(c->ai_family, n->sock, n->dnscon->laddr) < 0) {
     char *e = g_strdup_printf("Can't bind to local address: %s", g_strerror(errno));
     g_debug("%s: %s", net_remoteaddr(n), e);
     n->cb_err(n, NETERR_CONN, e);
@@ -1112,7 +1119,7 @@ static void dnscon_tryconn(net_t *n) {
     return;
   }
 
-  r = connect(n->sock, n->dnscon->next->ai_addr, n->dnscon->next->ai_addrlen);
+  int r = connect(n->sock, n->dnscon->next->ai_addr, n->dnscon->next->ai_addrlen);
 
   // The common case, I guess
   if(r && errno == EINPROGRESS) {
@@ -1371,105 +1378,87 @@ void net_unref(net_t *n) {
 
 
 
-// Some global stuff for sending UDP packets
+// Simple API for sending UDP packets
 
-typedef struct net_udp_t {
-  char host[62];
-  unsigned short port;
-  int sock; /* net_udp4_sock or net_udp6_sock */
-  char *msg;
-  int msglen;
-} net_udp_t;
+#if INTERFACE
 
-static int net_udp4_sock, net_udp6_sock;
-static GQueue *net_udp_queue;
+struct net_udp_t {
+  char addr[62];
+  int sock;
+};
+
+#endif
 
 
-static gboolean udp_handle_out(gpointer);
+// Creates a new UDP socket for sending messages to the given destination.
+// host is assumed to be a valid IPv4 or IPv6 address.
+void net_udp_init(net_udp_t *udp, const char *host, unsigned short port, char *laddr) {
+  int af = ip4_isvalid(host) ? AF_INET : AF_INET6;
+  snprintf(udp->addr, sizeof(udp->addr), af == AF_INET ? "%s:%d" : "[%s]:%d", host, (int)port);
 
-static void udp_setwatcher() {
-  net_udp_t *m = g_queue_peek_head(net_udp_queue);
-  if(!m)
+  udp->sock = socket(af, SOCK_DGRAM, 0);
+  fcntl(udp->sock, F_SETFL, fcntl(udp->sock, F_GETFL, 0)|O_NONBLOCK);
+
+  if(net_sock_bind(af, udp->sock, laddr) < 0) {
+    g_message("Can't bind UDP socket for '%s' to local address '%s': %s", udp->addr, laddr, g_strerror(errno));
+    close(udp->sock);
     return;
-  GSource *src = fdsrc_new(m->sock, G_IO_OUT);
-  g_source_set_callback(src, udp_handle_out, NULL, NULL);
-  g_source_attach(src, NULL);
-  g_source_unref(src);
-}
-
-
-static gboolean udp_handle_out(gpointer dat) {
-  net_udp_t *m = g_queue_pop_head(net_udp_queue);
-  if(!m)
-    return FALSE;
+  }
 
   int n;
-  if(ip4_isvalid(m->host)) {
-    struct in_addr a = ip4_pack(m->host);
-    n = sendto(net_udp4_sock, m->msg, m->msglen, 0, ip4_sockaddr(a, m->port), sizeof(struct sockaddr_in));
+  if(af == AF_INET) {
+    struct in_addr a = ip4_pack(host);
+    n = connect(udp->sock, ip4_sockaddr(a, port), sizeof(struct sockaddr_in));
   } else {
-    struct in6_addr a = ip6_pack(m->host);
-    n = sendto(net_udp6_sock, m->msg, m->msglen, 0, ip6_sockaddr(a, m->port), sizeof(struct sockaddr_in6));
+    struct in6_addr a = ip6_pack(host);
+    n = connect(udp->sock, ip6_sockaddr(a, port), sizeof(struct sockaddr_in6));
   }
-
-  if(n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR)) {
-    g_queue_push_head(net_udp_queue, m);
-    return TRUE;
-  }
-
-  if(n != m->msglen)
-    g_message("Error sending UDP message: %s.", g_strerror(errno));
-  else {
-    ratecalc_add(&net_out, m->msglen);
-  }
-  g_free(m->msg);
-  g_slice_free(net_udp_t, m);
-  udp_setwatcher();
-  return FALSE;
-}
-
-
-// host is assumed to be a valid IPv4 or IPv6 address.
-// TODO: Outgoing udp socket should be bound to the local_address config option!
-void net_udp_send_raw(const char *host, unsigned short port, const char *msg, int len) {
-  net_udp_t *m = g_slice_new0(net_udp_t);
-  m->msg = g_memdup(msg, len);
-  m->msglen = len;
-  m->port = port;
-  strncpy(m->host, host, sizeof(m->host));
-  m->sock = ip4_isvalid(host) ? net_udp4_sock : net_udp6_sock;
-
-  g_queue_push_tail(net_udp_queue, m);
-  if(net_udp_queue->head == net_udp_queue->tail)
-    udp_setwatcher();
-}
-
-
-static void net_udp_debug() {
-  if(net_udp_queue->tail) {
-    net_udp_t *m = net_udp_queue->tail->data;
-    g_debug("UDP:%s:%d> %.*s", m->host, (int)m->port,
-        m->msglen > 0 && m->msg[m->msglen-1] == '\n' ? m->msglen-1 : m->msglen, m->msg);
+  if(n < 0) {
+    g_message("Can't associate UDP socket with '%s': %s", udp->addr, g_strerror(errno));
+    close(udp->sock);
+    return;
   }
 }
 
 
-void net_udp_send(const char *host, unsigned short port, const char *msg) {
-  net_udp_send_raw(host, port, msg, strlen(msg));
-  net_udp_debug();
+void net_udp_destroy(net_udp_t *udp) {
+  if(udp->sock >= 0)
+    close(udp->sock);
 }
 
 
-void net_udp_sendf(const char *host, unsigned short port, const char *fmt, ...) {
+// Send a message to a UDP socket, logs but otherwise ignores errors. Note that
+// the socket is created as non-blocking and this function does not attempt to
+// retry the send() on EWOULDBLOCK or EAGAIN. It is assumed that the kernel
+// buffers are large enough that we can burst-queue several messages, and that,
+// if the kernel buffers are full, we might be better off dropping some
+// messages than queueing them until infinity.
+void net_udp_send_raw(net_udp_t *udp, const char *msg, int len) {
+  int r = send(udp->sock, msg, len, 0);
+  if(r != len)
+    g_message("Error sending UDP message to '%s': %s", udp->addr, g_strerror(errno));
+  else
+    ratecalc_add(&net_out, len);
+}
+
+
+void net_udp_send(net_udp_t *udp, const char *msg) {
+  int len = strlen(msg);
+  if(len) {
+    g_debug("UDP:%s> %.*s", udp->addr, msg[len-1] == '\n' ? len-1 : len, msg);
+    net_udp_send_raw(udp, msg, len);
+  }
+}
+
+
+void net_udp_sendf(net_udp_t *udp, const char *fmt, ...) {
   va_list va;
   va_start(va, fmt);
   char *str = g_strdup_vprintf(fmt, va);
   va_end(va);
-  net_udp_send_raw(host, port, str, strlen(str));
+  net_udp_send(udp, str);
   g_free(str);
-  net_udp_debug();
 }
-
 
 
 
@@ -1486,11 +1475,5 @@ void net_init_global() {
 
   dns_pool = g_thread_pool_new(dnscon_thread, NULL, -1, FALSE, NULL);
   syn_pool = g_thread_pool_new(syn_thread, NULL, -1, FALSE, NULL);
-
-  net_udp4_sock = socket(AF_INET, SOCK_DGRAM, 0);
-  net_udp6_sock = socket(AF_INET6, SOCK_DGRAM, 0);
-  fcntl(net_udp4_sock, F_SETFL, fcntl(net_udp4_sock, F_GETFL, 0)|O_NONBLOCK);
-  fcntl(net_udp6_sock, F_SETFL, fcntl(net_udp6_sock, F_GETFL, 0)|O_NONBLOCK);
-  net_udp_queue = g_queue_new();
 }
 

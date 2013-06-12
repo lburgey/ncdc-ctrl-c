@@ -865,22 +865,17 @@ static void setownip(hub_t *hub, hub_user_t *u) {
 }
 
 
-static void adc_sch_reply_send(hub_t *hub, const char *host, unsigned short port, GString *r, const char *key) {
-  if(!host) {
+static void adc_sch_reply_send(hub_t *hub, net_udp_t *udp, GString *r, const char *key) {
+  if(!udp) {
     net_writestr(hub->net, r->str);
     return;
   } else if(!key || var_get_int(0, VAR_sudp_policy) == VAR_SUDPP_DISABLE) {
-    net_udp_send(host, port, r->str);
+    net_udp_send(udp, r->str);
     return;
   }
 
   // net_udp_* can't log this since it will be encrypted, so log it here.
-  char end = r->len > 0 ? r->str[r->len-1] : 0;
-  if(end == '\n')
-    r->str[r->len-1] = 0;
-  g_debug("SUDP:%s:%d: %s", host, (int)port, r->str);
-  if(end == '\n')
-    r->str[r->len-1] = end;
+  g_debug("SUDP:%s> %.*s", udp->addr, (int)r->len-1, r->str);
 
   // prepend 16 random bytes to message
   char nonce[16];
@@ -895,7 +890,7 @@ static void adc_sch_reply_send(hub_t *hub, const char *host, unsigned short port
 
   // Now encrypt & send
   crypt_aes128cbc(TRUE, key, 16, r->str, r->len);
-  net_udp_send_raw(host, port, r->str, r->len);
+  net_udp_send_raw(udp, r->str, r->len);
 }
 
 
@@ -914,20 +909,23 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
 
   char tth[40] = {};
   char *cid = NULL;
-  char *host = NULL;
-  unsigned short port = 0;
+  net_udp_t udpbuf, *udp = NULL;
   if((u->hasudp4 && u->udp4) || (u->hasudp6 && u->udp6)) {
     cid = var_get(0, VAR_cid);
     /* TODO: If the user has both UDP4 and UDP6, we should prefer the AF used
      * to connect to the hub, rather than IPv4. */
-    host = g_strdup(u->hasudp4 && u->udp4 ? ip4_unpack(u->ip4) : ip6_unpack(u->ip6));
-    port = u->hasudp4 && u->udp4 ? u->udp4 : u->udp6;
+    udp = &udpbuf;
+    net_udp_init(udp,
+        u->hasudp4 && u->udp4 ? ip4_unpack(u->ip4) : ip6_unpack(u->ip6),
+        u->hasudp4 && u->udp4 ? u->udp4 : u->udp6,
+        var_get(hub->id, VAR_local_address)
+    );
   }
 
   int i;
   for(i=0; i<len; i++) {
-    GString *r = host ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
-    if(host)
+    GString *r = udp ? adc_generate('U', ADCC_RES, 0, 0) : adc_generate('D', ADCC_RES, hub->sid, cmd->source);
+    if(udp)
       g_string_append_printf(r, " %s", cid);
     if(to)
       adc_append(r, "TO", to);
@@ -942,11 +940,12 @@ static void adc_sch_reply(hub_t *hub, adc_cmd_t *cmd, hub_user_t *u, fl_list_t *
       g_string_append_c(r, '/'); // make sure a directory path ends with a slash
     g_string_append_c(r, '\n');
 
-    adc_sch_reply_send(hub, host, port, r, ky ? sudpkey : NULL);
+    adc_sch_reply_send(hub, udp, r, ky ? sudpkey : NULL);
     g_string_free(r, TRUE);
   }
 
-  g_free(host);
+  if(udp)
+    net_udp_destroy(udp);
 }
 
 
@@ -1374,6 +1373,10 @@ static void nmdc_search(hub_t *hub, char *from, unsigned short port, int size_m,
   char tth[44] = "TTH:";
   tth[43] = 0;
 
+  net_udp_t udp;
+  if(port)
+    net_udp_init(&udp, from, port, var_get(hub->id, VAR_local_address));
+
   while(--i>=0) {
     char *fl = fl_list_path(res[i]);
     // Windows style path delimiters... why!?
@@ -1392,12 +1395,15 @@ static void nmdc_search(hub_t *hub, char *from, unsigned short port, int size_m,
     if(!port)
       net_writef(hub->net, "%s\05%s|", msg, from);
     else
-      net_udp_sendf(from, port, "%s|", msg);
+      net_udp_sendf(&udp, "%s|", msg);
     g_free(fl);
     g_free(msg);
     g_free(size);
     g_free(tmp);
   }
+
+  if(port)
+    net_udp_destroy(&udp);
 }
 
 
