@@ -363,6 +363,10 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
     // No need for a lock here, we're not using the TLS session and socket fd's
     // are thread-safe. To some extent at least.
 #ifdef HAVE_LINUX_SENDFILE
+    // XXX: On 32bit Linux with musl, sendfile() may fail with EOVERFLOW when
+    // off is larger than UINT32_MAX. We're currently handling that by
+    // switching to the fallback code, but it may be worth to try passing a
+    // NULL offset and let sendfile() do the seeking.
     ssize_t r = sendfile(sock, s->fd, &off, MIN(b, s->left));
 #elif HAVE_BSD_SENDFILE
     off_t len = 0;
@@ -388,7 +392,7 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
       continue;
     } else if(errno == EAGAIN || errno == EINTR) {
       continue;
-    } else if(errno == ENOTSUP || errno == ENOSYS || errno == EINVAL) {
+    } else if(errno == ENOTSUP || errno == ENOSYS || errno == EINVAL || errno == EOVERFLOW) {
       g_message("sendfile() failed with `%s', using fallback.", g_strerror(errno));
       // Don't set s->err here, let the fallback handle the rest
       return;
