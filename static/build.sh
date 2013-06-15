@@ -24,14 +24,14 @@
 
 
 MUSL_VERSION=0.9.9
-ZLIB_VERSION=1.2.7
+ZLIB_VERSION=1.2.8
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3071502
-GMP_VERSION=5.1.1
-NETTLE_VERSION=2.6
-GNUTLS_VERSION=3.1.9
+SQLITE_VERSION=3071700
+GMP_VERSION=5.1.2
+NETTLE_VERSION=2.7.1
+GNUTLS_VERSION=3.1.12
 NCURSES_VERSION=5.9
-GLIB_VERSION=2.34.3
+GLIB_VERSION=2.36.3
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -139,7 +139,7 @@ getbzip2() {
 
 
 getsqlite() {
-  fem http://sqlite.org/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
+  fem http://sqlite.org/2013/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
   prebuild sqlite || return
   $srcdir/configure --prefix=$PREFIX --disable-readline --disable-dynamic-extensions\
     --disable-shared --enable-static --host=$HOST || exit
