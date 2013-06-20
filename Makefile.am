@@ -1,18 +1,26 @@
-EXTRA_DIST=ChangeLog doc/ncdc.pod.in
-CLEANFILES=doc/ncdc.1 doc/ncdc.pod
+EXTRA_DIST=ChangeLog
+noinst_PROGRAMS=
 AM_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
 AM_CPPFLAGS=-I$(builddir)/src -I$(srcdir)/deps/ylib
 
-man_MANS=doc/ncdc.1
 
-noinst_PROGRAMS=gendoc
+
+if INSTALL_MANPAGE
+man_MANS=doc/ncdc.1
+endif
+
+EXTRA_DIST+=doc/ncdc.1 doc/ncdc.pod.in
+
+if USE_POD2MAN
+noinst_PROGRAMS+=gendoc
 gendoc_SOURCES=doc/gendoc.c
+
+CLEANFILES=doc/ncdc.1 doc/ncdc.pod
 
 doc/ncdc.pod: $(srcdir)/doc/ncdc.pod.in gendoc$(EXEEXT)
 	$(AM_V_GEN)./gendoc$(EXEEXT) <"$(srcdir)/doc/ncdc.pod.in" >doc/ncdc.pod
 
-doc/ncdc.1: doc/ncdc.pod Makefile
-if USE_POD2MAN
+doc/ncdc.1: doc/ncdc.pod
 	$(AM_V_GEN)pod2man --center "ncdc manual" --release "@PACKAGE@-@VERSION@" doc/ncdc.pod >doc/ncdc.1
 endif
 

@@ -166,4 +166,18 @@ fi
 AM_CONDITIONAL(USE_GIT_VERSION, test "x$usegitver" = "xyes")
 
 
+
+# If we don't have pod2man and doc/ncdc.1 isn't available in the source
+# directory, throw a warning and just go ahead without installing the man page.
+installmanpage=yes
+if test "x$have_pod2man" = "xno" -a \! -s "$srcdir/doc/ncdc.1"; then
+  echo ""
+  echo "Note: Could not find doc/ncdc.1 in the source directory nor the pod2man"
+  echo "utility on your system. No manual page will be installed."
+  echo ""
+  installmanpage=no
+fi
+AM_CONDITIONAL([INSTALL_MANPAGE], [test "x$installmanpage" = "xyes"])
+
+
 AC_OUTPUT([Makefile])
