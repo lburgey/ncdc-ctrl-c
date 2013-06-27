@@ -333,11 +333,13 @@ static void user_nmdc_nfo(hub_t *hub, hub_user_t *u, char *str) {
 
   // connection and flag
   str = next;
-  if(!(next = strchr(str, '$')) || str == next)
+  if(!(next = strchr(str, '$')))
     return;
-  flags = *(next-1);
-  *(next-1) = *next = 0; next++;
-
+  if(str != next) {
+    flags = *(next-1);
+    *(next-1) = 0;
+  }
+  *next = 0; next++;
   conn = str;
   cleanspace(conn);
 
