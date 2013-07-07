@@ -243,7 +243,7 @@ static gboolean c_connect_set_hubaddr(char *addr) {
     return FALSE;
   }
   if(!*uri.scheme)
-    uri.scheme = "dcbub";
+    uri.scheme = "dchub";
   if(!uri.port)
     uri.port = 411;
   if(strcmp(uri.scheme, "dchub") != 0 && strcmp(uri.scheme, "nmdc") != 0 && strcmp(uri.scheme, "nmdcs") != 0
