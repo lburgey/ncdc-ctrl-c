@@ -213,7 +213,8 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = dltab->details ? winrows-14 : winrows-4;
-  int pos = ui_listing_draw(dltab->list, 2, bottom-1, draw_row);
+  int cursor;
+  int pos = ui_listing_draw(dltab->list, 2, bottom-1, &cursor, draw_row);
 
   dl_t *sel = g_sequence_iter_is_end(dltab->list->sel) ? NULL : g_sequence_get(dltab->list->sel);
 
@@ -244,8 +245,9 @@ static void t_draw(ui_tab_t *tab) {
     if(!dltab->users || !g_sequence_get_length(dltab->users->list))
       mvaddstr(bottom+3, 0, "  No users for this download.");
     else
-      ui_listing_draw(dltab->users, bottom+2, winrows-3, dud_draw_row);
+      ui_listing_draw(dltab->users, bottom+2, winrows-3, &cursor, dud_draw_row);
   }
+  move(cursor, 0);
 }
 
 

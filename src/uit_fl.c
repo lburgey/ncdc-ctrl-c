@@ -354,12 +354,13 @@ static void t_draw(ui_tab_t *tab) {
 
   // rows
   int pos = -1;
+  int cursor = 2;
   if(t->loading)
     mvaddstr(3, 2, "Loading filelist...");
   else if(t->err)
     mvprintw(3, 2, "Error loading filelist: %s", t->err->message);
   else if(t->fl && t->fl->sub && t->fl->sub->len)
-    pos = ui_listing_draw(t->list, 2, winrows-4, draw_row);
+    pos = ui_listing_draw(t->list, 2, winrows-4, &cursor, draw_row);
   else
     mvaddstr(3, 2, "Directory empty.");
 
@@ -387,6 +388,7 @@ static void t_draw(ui_tab_t *tab) {
       mvprintw(winrows-3, 0, " %d items, %s bytes", num, str_fullsize(sel->size));
   }
   attroff(UIC(separator));
+  move(cursor, 0);
 }
 
 

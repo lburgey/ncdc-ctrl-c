@@ -246,7 +246,8 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = t->details ? winrows-11 : winrows-3;
-  ui_listing_draw(t->list, 2, bottom-1, t_draw_row);
+  int cursor;
+  ui_listing_draw(t->list, 2, bottom-1, &cursor, t_draw_row);
 
   // footer
   attron(UIC(separator));
@@ -272,6 +273,7 @@ static void t_draw(ui_tab_t *tab) {
   // detailed info
   if(t->details)
     t_draw_details(t, bottom);
+  move(cursor, 0);
 }
 
 

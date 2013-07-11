@@ -251,7 +251,8 @@ static void t_draw(ui_tab_t *tab) {
 
   // rows
   int bottom = t->details ? winrows-7 : winrows-3;
-  int pos = ui_listing_draw(t->list, 2, bottom-1, draw_row);
+  int cursor;
+  int pos = ui_listing_draw(t->list, 2, bottom-1, &cursor, draw_row);
 
   // footer
   attron(UIC(separator));
@@ -264,11 +265,9 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(separator));
 
   // detailed info box
-  if(!t->details)
-    return;
-  if(g_sequence_iter_is_end(t->list->sel))
+  if(t->details && g_sequence_iter_is_end(t->list->sel))
     mvaddstr(bottom+1, 2, "No user selected.");
-  else {
+  else if(t->details) {
     hub_user_t *u = g_sequence_get(t->list->sel);
     attron(A_BOLD);
     mvaddstr(bottom+1,     4, "Username:");
@@ -295,6 +294,8 @@ static void t_draw(ui_tab_t *tab) {
     mvaddstr(bottom+4, 14, u->desc?u->desc:"-");
     // TODO: CID?
   }
+
+  move(cursor, 0);
 }
 #undef DRAW_COL
 

@@ -241,7 +241,8 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = winrows-4;
-  int pos = ui_listing_draw(t->list, 2, bottom-1, draw_row);
+  int cursor;
+  int pos = ui_listing_draw(t->list, 2, bottom-1, &cursor, draw_row);
 
   search_r_t *sel = g_sequence_iter_is_end(t->list->sel) ? NULL : g_sequence_get(t->list->sel);
 
@@ -263,6 +264,7 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(separator));
   if(sel)
     mvaddnstr(bottom+1, 3, sel->file, str_offset_from_columns(sel->file, wincols-3));
+  move(cursor, 0);
 }
 
 

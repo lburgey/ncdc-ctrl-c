@@ -1228,18 +1228,25 @@ static void ui_listing_fixtop(ui_listing_t *ul, int height) {
 
 // Every item is assumed to occupy exactly one line.
 // Returns the relative position of the current page (in percent).
+// The selected row number is written to *cur, to be used with move(cur, 0).
 // TODO: The return value is only correct if no skip function is used or if
 // there are otherwise no hidden rows. It'll give a blatantly wrong number if
 // there are.
-int ui_listing_draw(ui_listing_t *ul, int top, int bottom, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
+int ui_listing_draw(ui_listing_t *ul, int top, int bottom, int *cur, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
   int height = 1 + bottom - top;
   ui_listing_fixtop(ul, height);
+
+  if(cur)
+    *cur = top;
 
   // draw
   GSequenceIter *n = ul->top;
   while(top <= bottom && !g_sequence_iter_is_end(n)) {
-    cb(ul, n, top++, ul->dat);
+    if(cur && n == ul->sel)
+      *cur = top;
+    cb(ul, n, top, ul->dat);
     n = ui_listing_next(ul, n);
+    top++;
   }
 
   ui_listing_updateisbegin(ul);
