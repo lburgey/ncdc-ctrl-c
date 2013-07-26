@@ -497,6 +497,34 @@ err:
 
 
 
+// Bit array utility functions. These functions work on an array of guint8,
+// where each bit can be accessed with its own index.
+// This does not use, because those may require byte swapping to store in a
+// endian-neutral way. These bit arrays are naturally endian-neutral, so can be
+// stored and retreived easily.
+
+#if INTERFACE
+
+#define bita_size(n) ((n+7)/8)
+
+#define bita_new(n) g_new0(guint8, bita_size(n))
+
+#define bita_free(a) g_free(a)
+
+#define bita_get(a, i) (((a)[i/8] >> (i&7)) & 1)
+
+#define bita_set(a, i) ((a)[i/8] |= 1<<(i&7))
+
+#define bita_reset(a, i) ((a)[i/8] &= ~(1<<(i&7)))
+
+#define bita_val(a, i, t) (t ? bita_set(a, i) : bita_reset(a, i))
+
+#endif
+
+
+
+
+
 #if INTERFACE
 
 // Tests whether a string is a valid base32-encoded string.

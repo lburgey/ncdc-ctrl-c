@@ -120,6 +120,9 @@ struct dl_t {
   guint64 hash_block;    // number of bytes that each block represents
   tth_ctx_t *hash_tth;   // TTH state of the last block that we have
   GSequenceIter *iter;   // used by ui_dl
+  /* XXX: Added as part of the new dlfile.c code. Some of the above fields should be replaced/merged/removed. */
+  guint8 *bitmap;
+  GPtrArray *threads;
 };
 
 #endif

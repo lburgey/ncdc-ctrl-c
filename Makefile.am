@@ -48,6 +48,7 @@ ncdc_SOURCES=\
 	src/commands.c\
 	src/db.c\
 	src/dl.c\
+	src/dlfile.c\
 	src/fl_load.c\
 	src/fl_local.c\
 	src/fl_save.c\
@@ -112,6 +113,7 @@ src/cc.$(OBJEXT): src/cc.h
 src/commands.$(OBJEXT): src/commands.h
 src/db.$(OBJEXT): src/db.h
 src/dl.$(OBJEXT): src/dl.h
+src/dlfile.$(OBJEXT): src/dlfile.h
 src/fl_load.$(OBJEXT): src/fl_load.h
 src/fl_local.$(OBJEXT): src/fl_local.h
 src/fl_save.$(OBJEXT): src/fl_save.h
