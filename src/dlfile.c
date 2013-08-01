@@ -226,34 +226,47 @@ void dlfile_load(dl_t *dl) {
 }
 
 
+/* Create the inc file and initialize the necessary structs to prepare for
+ * handling downloaded data. */
+static void dlfile_open(dl_t *dl) {
+  /* TODO: Error handling */
+  if(dl->incfd <= 0)
+    dl->incfd = open(dl->inc, O_WRONLY|O_CREAT, 0666);
+
+  /* Everything else has already been initialized if we have a thread */
+  if(dl->threads)
+    return;
+
+  if(!dl->islist) {
+    dl->bitmap = bita_new(dlfile_chunks(dl->size));
+    dlfile_save_bitmap(dl, dl->incfd);
+  }
+
+  dlfile_thread_t *t = g_slice_new0(dlfile_thread_t);
+  t->chunk = 0;
+  t->allocated = 0;
+  if(!dl->islist)
+    t->avail = dlfile_chunks(dl->size);
+  tth_init(&t->hash_tth);
+  dl->threads = g_slist_prepend(dl->threads, t);
+}
+
+
 /* The 'speed' argument should be a pessimistic estimate of the peers' speed,
  * in bytes/s. I think this is best obtained from a 30 second average.
  * Returns the thread pointer. */
 dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
   dlfile_thread_t *t = NULL;
-
-  /* XXX: Create incfile and load dl->bitmap etc here? The code below assumes
-   * everything has been initialized properly. */
+  dlfile_open(dl);
 
   /* File lists should always be downloaded in a single GET request because
    * their contents may be modified between subsequent requests. */
   if(dl->islist) {
-    if(dl->threads)
-      t = dl->threads->data;
-    else {
-      t = g_slice_new0(dlfile_thread_t);
-      dl->threads = g_slist_prepend(dl->threads, t);
-    }
+    t = dl->threads->data;
     t->chunk = 0;
     t->len = 0;
     return t;
   }
-
-  /* Number of chunks to request as one segment. The size of a segment is
-   * chosen to approximate a download time of ~5 min.
-   * XXX: Make the minimum segment size configurable to allow users to disable
-   * segmented downloading (still at least DLFILE_CHUNKSIZE). */
-  guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
 
   /* Walk through the threads and look for:
    *      t = Thread with largest avail and with allocated = 0
@@ -285,6 +298,11 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
     dl->threads = g_slist_prepend(dl->threads, t);
   }
 
+  /* Number of chunks to request as one segment. The size of a segment is
+   * chosen to approximate a download time of ~5 min.
+   * XXX: Make the minimum segment size configurable to allow users to disable
+   * segmented downloading (still at least DLFILE_CHUNKSIZE). */
+  guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
   t->allocated = MIN(t->avail, chunks);
   return t;
 }
