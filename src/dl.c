@@ -1177,52 +1177,6 @@ gboolean dl_recv_data(void *dat, const char *buf, int length) {
 // Loading/initializing the download queue on startup
 
 
-// Checks the incoming file for what we already have and modifies dl->have and
-// dl->hash_tth accordingly.
-void dl_load_partial(dl_t *dl) {
-  // get size of the incomplete file, but only if we have tthl info
-  char *fn = NULL;
-  if(dl->hastthl) {
-    char tth[40] = {};
-    base32_encode(dl->hash, tth);
-    fn = g_build_filename(var_get(0, VAR_incoming_dir), tth, NULL);
-    struct stat st;
-    if(stat(fn, &st) >= 0)
-      dl->have = st.st_size;
-  }
-
-  // If we have already downloaded some data, hash the last block and update
-  // dl->hash_tth.
-  guint64 left = dl->hash_block ? dl->have % dl->hash_block : 0;
-  if(left > 0) {
-    dl->have -= left;
-    int fd = open(fn, O_RDONLY);
-    if(fd < 0 || lseek(fd, dl->have, SEEK_SET) == (off_t)-1) {
-      g_warning("Error opening %s: %s. Throwing away last block.", fn, g_strerror(errno));
-      left = 0;
-      if(fd >= 0)
-        close(fd);
-    }
-    while(left > 0) {
-      char buf[10240];
-      int r = read(fd, buf, MIN(left, 10240));
-      if(r < 0) {
-        g_warning("Error reading from %s: %s. Throwing away unreadable data.", fn, g_strerror(errno));
-        left = 0;
-        break;
-      }
-      dl_recv_update(dl, buf, r);
-      dl->have += r;
-      left -= r;
-    }
-    if(fd >= 0)
-      close(fd);
-  }
-
-  g_free(fn);
-}
-
-
 // Creates and inserts a dl_t item from the database in the queue
 void dl_load_dl(const char *tth, guint64 size, const char *dest, signed char prio, char error, const char *error_msg, int tthllen) {
   g_return_if_fail(dest);
@@ -1266,7 +1220,7 @@ void dl_init_global() {
   GHashTableIter iter;
   g_hash_table_iter_init(&iter, dl_queue);
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&dl))
-    dl_load_partial(dl);
+    dlfile_load(dl);
   // Delete old filelists
   dl_fl_clean(NULL);
 }
