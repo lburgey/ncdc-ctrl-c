@@ -50,8 +50,9 @@
 #define DLFILE_CHUNKSIZE (128*1024)
 
 
-/* For file lists (dl->islist), only len and buf are used. The other fields
- * aren't used because no length of TTH info is known before downloading. */
+/* For file lists (dl->islist), only len, chunk and buf are used. The other
+ * fields aren't used because no length of TTH info is known before
+ * downloading. */
 struct dlfile_thread_t {
   dl_t *dl;
   tth_ctx_t hash_tth;
@@ -140,6 +141,7 @@ static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint
     tth_update(&t->hash_tth, buf, DLFILE_CHUNKSIZE);
     t->chunk++;
     t->avail--;
+    dl->have += DLFILE_CHUNKSIZE;
     (*reset)--;
   }
 
@@ -168,12 +170,14 @@ static void dlfile_load_threads(dl_t *dl, int fd) {
         break;
     gboolean hasfullblock = j == i+chunksinblock;
 
-    if(!t || bita_get(dl->bitmap, i))
-      t = hasfullblock ? NULL : dlfile_load_block(dl, fd, i, chunksinblock, &reset);
-    else {
+    if(t && !bita_get(dl->bitmap, i)) {
       t->avail += chunksinblock;
       reset = chunksinblock;
-    }
+    } else if(hasfullblock) {
+      t = NULL;
+      dl->have += dl->hash_block;
+    } else
+      t = dlfile_load_block(dl, fd, i, chunksinblock, &reset);
 
     for(j=i+(chunksinblock-reset); j<i+chunksinblock; j++)
       if(bita_get(dl->bitmap, j)) {
@@ -192,6 +196,7 @@ static void dlfile_load_threads(dl_t *dl, int fd) {
  * dl_queue_seterr() and allow the user to try again.
  * TODO: Load pre-bitmap incoming files and convert them to the new format? */
 void dlfile_load(dl_t *dl) {
+  dl->have = 0;
   int fd = open(dl->inc, O_RDONLY);
   if(fd < 0) {
     if(errno != ENOENT) {
@@ -239,6 +244,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
       t = g_slice_new0(dlfile_thread_t);
       dl->threads = g_slist_prepend(dl->threads, t);
     }
+    t->chunk = 0;
     t->len = 0;
     return t;
   }

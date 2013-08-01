@@ -403,17 +403,6 @@ static gboolean dl_queue_start_user(dl_user_t *du) {
   dl_t *dl = dud->dl;
   g_debug("dl:%016"G_GINT64_MODIFIER"x: using connection for %s", du->uid, dl->dest);
 
-  // For filelists: Don't allow resuming of the download. It could happen that
-  // the client modifies its filelist in between our retries. In that case the
-  // downloaded filelist would end up being corrupted. To avoid that: make sure
-  // lists are downloaded in one go, and throw away any incomplete data.
-  if(dl->islist && dl->have > 0) {
-    dl->have = dl->size = 0;
-    g_return_val_if_fail(close(dl->incfd) == 0, FALSE);
-    dl->incfd = open(dl->inc, O_WRONLY|O_CREAT|O_TRUNC, 0666);
-    g_return_val_if_fail(dl->incfd >= 0, FALSE);
-  }
-
   // Update state and connect
   dl->active = TRUE;
   du->active = dud;
