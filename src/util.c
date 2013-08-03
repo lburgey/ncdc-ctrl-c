@@ -1058,6 +1058,7 @@ struct fadv_t {
 #define fadv_init(a,f,o,l) ((a)->fd = 0)
 #define fadv_purge(a, l)   ((a)->fd = 0)
 #define fadv_close(a)      ((a)->fd = 0)
+#define fadv_oneshot(f,o,s,l)
 
 #endif
 
@@ -1076,6 +1077,18 @@ void fadv_purge(fadv_t *a, int length) {
     a->offset += a->chunk;
     a->chunk = 0;
   }
+}
+
+/* A one-shot function to flush all pages that the given range resides on,
+ * except for the last page if the range isn't page-aligned. */
+void fadv_oneshot(int fd, guint64 off, size_t length, int flag) {
+  if(!(var_ffc_get() & flag))
+    return;
+  length += off & 511;
+  off &= ~511;
+  length &= ~511;
+  if(length != off)
+    posix_fadvise(fd, off, length, POSIX_FADV_DONTNEED);
 }
 
 #endif

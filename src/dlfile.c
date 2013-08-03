@@ -334,17 +334,18 @@ static gboolean dlfile_recv_check(dlfile_thread_t *t, int num, char *leaf) {
 
 static gboolean dlfile_recv_write(dlfile_thread_t *t, const char *buf, int len) {
   off_t off = ((guint64)t->chunk * DLFILE_CHUNKSIZE) + t->len;
+  off_t offi = off;
   size_t rem = len;
   const char *bufi = buf;
   while(rem > 0) {
-    ssize_t r = pwrite(t->dl->incfd, bufi, rem, off);
+    ssize_t r = pwrite(t->dl->incfd, bufi, rem, offi);
     if(r <= 0)
       return FALSE; /* TODO: Error handling */
-    off += r;
+    offi += r;
     rem -= r;
     bufi += r;
   }
-  /* TODO: fadv support */
+  fadv_oneshot(t->dl->incfd, off, len, VAR_FFC_DOWNLOAD);
   return TRUE;
 }
 
