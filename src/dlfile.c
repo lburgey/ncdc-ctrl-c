@@ -40,6 +40,17 @@
  *          size. Segments are allocated at the start of a thread.
  */
 
+/* TODO: The following fields may be accessed from multiple threads
+ * simultaneously and should be protected by a mutex:
+ *   dl_t.{have,bitmap}
+ *   dlfile_thread_t.{allocated,avail,chunk}
+ *
+ * Some other fields are shared, too, but those are never modified while a
+ * downloading thread is active and thus do not need synchronisation.
+ * These include dl_t.{size,islist,hash_block,incfd} and possibly more.
+ *
+ * TODO: Fix complete/abort/removal of dl_t items */
+
 
 #if INTERFACE
 
@@ -50,17 +61,15 @@
 #define DLFILE_CHUNKSIZE (128*1024)
 
 
-/* For file lists (dl->islist), only len, chunk and buf are used. The other
- * fields aren't used because no length of TTH info is known before
- * downloading. */
+/* For file lists (dl->islist), only len and chunk are used. The other fields
+ * aren't used because no length of TTH info is known before downloading. */
 struct dlfile_thread_t {
   dl_t *dl;
   tth_ctx_t hash_tth;
   guint32 allocated; /* Number of remaining chunks allocated to this thread (including current) */
   guint32 avail;     /* Number of undownloaded chunks in and after this thread (including current & allocated) */
   guint32 chunk;     /* Current chunk number */
-  guint32 len;       /* Number of bytes downloaded into this chunk buffer */
-  char buf[DLFILE_CHUNKSIZE];
+  guint32 len;       /* Number of bytes downloaded into this chunk */
 };
 
 #endif
@@ -123,9 +132,11 @@ static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint
   t->avail = chunksinblock;
   tth_init(&t->hash_tth);
 
+  char *bufp = malloc(DLFILE_CHUNKSIZE);
+
   *reset = chunksinblock;
   while(bita_get(dl->bitmap, t->chunk)) {
-    char *buf = t->buf;
+    char *buf = bufp;
     off_t off = (guint64)t->chunk * DLFILE_CHUNKSIZE;
     size_t left = DLFILE_CHUNKSIZE;
     while(left > 0) {
@@ -145,6 +156,7 @@ static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint
     (*reset)--;
   }
 
+  free(bufp);
   dl->threads = g_slist_prepend(dl->threads, t);
   return t;
 }
@@ -308,12 +320,72 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
 }
 
 
+static gboolean dlfile_recv_check(dlfile_thread_t *t, int num, char *leaf) {
+  /* We don't have TTHL data for small files, so check against the root hash
+   * instead. */
+  if(t->dl->size < t->dl->hash_block) {
+    g_return_val_if_fail(num == 0, FALSE);
+    return memcmp(leaf, t->dl->hash, 24) == 0 ? TRUE : FALSE;
+  }
+  /* Otherwise, check against the TTHL data in the database. */
+  return db_dl_checkhash(t->dl->hash, num, leaf);
+}
+
+
+static gboolean dlfile_recv_write(dlfile_thread_t *t, const char *buf, int len) {
+  off_t off = ((guint64)t->chunk * DLFILE_CHUNKSIZE) + t->len;
+  size_t rem = len;
+  const char *bufi = buf;
+  while(rem > 0) {
+    ssize_t r = pwrite(t->dl->incfd, bufi, rem, off);
+    if(r <= 0)
+      return FALSE; /* TODO: Error handling */
+    off += r;
+    rem -= r;
+    bufi += r;
+  }
+  /* TODO: fadv support */
+  return TRUE;
+}
+
+
 /* Called when new data has been received from a downloading thread.  The data
  * is written to the file, the TTH calculation is updated and checked with the
  * DB, and the bitmap is updated.
  * This function may be called from another OS thread.
  * Returns TRUE to indicate success, FALSE on failure. */
 gboolean dlfile_recv(dlfile_thread_t *t, const char *buf, int len) {
+  dlfile_recv_write(t, buf, len);
+
+  while(len > 0) {
+    guint32 inchunk = MIN((guint32)len, DLFILE_CHUNKSIZE - t->len);
+    t->len += inchunk;
+    gboolean islast = ((guint64)t->chunk * DLFILE_CHUNKSIZE) + t->len == t->dl->size;
+
+    tth_update(&t->hash_tth, buf, inchunk);
+    buf += inchunk;
+    len -= inchunk;
+
+    if(!islast && t->len < DLFILE_CHUNKSIZE)
+      continue;
+
+    bita_set(t->dl->bitmap, t->chunk);
+    t->chunk++;
+    t->allocated--;
+    t->avail--;
+    t->len = 0;
+
+    if(islast || t->chunk % (t->dl->hash_block / DLFILE_CHUNKSIZE) == 0) {
+      char leaf[24];
+      tth_final(&t->hash_tth, leaf);
+      tth_init(&t->hash_tth);
+      if(!dlfile_recv_check(t, t->chunk/(t->dl->hash_block / DLFILE_CHUNKSIZE), leaf))
+        return FALSE; /* TODO: Error handling */
+    }
+  }
+
+  /* TODO: Update t->dl->have */
+  /* TODO: Flush bitmap if it has been changed (needs to be synchronized with other threads?) */
   return TRUE;
 }
 
