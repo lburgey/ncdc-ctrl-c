@@ -121,6 +121,7 @@ struct dl_t {
   tth_ctx_t *hash_tth;   // TTH state of the last block that we have
   GSequenceIter *iter;   // used by ui_dl
   /* XXX: Added as part of the new dlfile.c code. Some of the above fields should be replaced/merged/removed. */
+  int active_threads;
   guint8 *bitmap;        // Only used if hastthl
   GSList *threads;
 };

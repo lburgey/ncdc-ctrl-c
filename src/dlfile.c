@@ -238,6 +238,50 @@ void dlfile_load(dl_t *dl) {
 }
 
 
+
+/* XXX: This function may block in the main thread for a while. Perhaps do it in a threadpool? */
+static void dlfile_finished(dl_t *dl) {
+  /* Remove bitmap from the file */
+  /* TODO: Error handling */
+  if(!dl->islist)
+    ftruncate(dl->incfd, dl->size);
+  close(dl->incfd);
+
+  char *fdest = g_filename_from_utf8(dl->dest, -1, NULL, NULL, NULL);
+  if(!fdest)
+    fdest = g_strdup(dl->dest);
+
+  /* Create destination directory, if it does not exist yet. */
+  char *parent = g_path_get_dirname(fdest);
+  g_mkdir_with_parents(parent, 0755);
+  /* TODO: Error handling */
+  g_free(parent);
+
+  /* Prevent overwiting other files by appending a prefix to the destination if
+   * it already exists. It is assumed that fn + any dupe-prevention-extension
+   * does not exceed NAME_MAX. (Not that checking against NAME_MAX is really
+   * reliable - some filesystems have an even more strict limit) */
+  int num = 1;
+  char *dest = g_strdup(fdest);
+  while(!dl->islist && g_file_test(dest, G_FILE_TEST_EXISTS)) {
+    g_free(dest);
+    dest = g_strdup_printf("%s.%d", fdest, num++);
+  }
+
+  GError *err = NULL;
+  file_move(dl->inc, dest, dl->islist, &err);
+  if(err) {
+    /* TODO: Error handling. */
+    g_error_free(err);
+  }
+
+  g_free(dest);
+  g_free(fdest);
+
+  /* TODO: Notify dl.c */
+}
+
+
 /* Create the inc file and initialize the necessary structs to prepare for
  * handling downloaded data. */
 static void dlfile_open(dl_t *dl) {
@@ -277,6 +321,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
     t = dl->threads->data;
     t->chunk = 0;
     t->len = 0;
+    dl->active_threads++;
     return t;
   }
 
@@ -316,6 +361,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
    * segmented downloading (still at least DLFILE_CHUNKSIZE). */
   guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
   t->allocated = MIN(t->avail, chunks);
+  dl->active_threads++;
   return t;
 }
 
@@ -392,4 +438,18 @@ gboolean dlfile_recv(dlfile_thread_t *t, const char *buf, int len) {
 
 
 void dlfile_recv_done(dlfile_thread_t *t) {
+  dl_t *dl = t->dl;
+  dl->active_threads--;
+
+  if(t->avail)
+    t->allocated = 0;
+  else {
+    dl->threads = g_slist_remove(dl->threads, t);
+    g_slice_free(dlfile_thread_t, t);
+  }
+
+  /* TODO: If anything went wrong in dlfile_recv(), propagate the error to the dl_t object here. */
+
+  if(!dl->threads)
+    dlfile_finished(dl);
 }
