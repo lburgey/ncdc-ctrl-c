@@ -538,9 +538,11 @@ void cc_download(cc_t *cc, dl_t *dl) {
   } else {
     cc->dlthread = dlfile_getchunk(dl, 1); /* TODO: Pass a reasonable speed indication */
     cc->last_offset = ((guint64)cc->dlthread->chunk * DLFILE_CHUNKSIZE) + cc->dlthread->len;
-    gint64 len = dl->islist ? -1 : ((gint64)cc->dlthread->allocated * DLFILE_CHUNKSIZE) - cc->dlthread->len;
+    gint64 len = dl->islist ? -1 :
+      MIN(((gint64)cc->dlthread->allocated * DLFILE_CHUNKSIZE) - cc->dlthread->len, (gint64)(dl->size - cc->last_offset));
+
     if(cc->adc)
-      net_writef(cc->net, "CGET file %s %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT"\n", fn, cc->last_offset, len);
+      net_writef(cc->net, "CGET file %s %"G_GUINT64_FORMAT" %"G_GINT64_FORMAT"\n", fn, cc->last_offset, len);
     else
       net_writef(cc->net, "$ADCGET file %s %"G_GUINT64_FORMAT" %"G_GINT64_FORMAT"|", fn, cc->last_offset, len);
   }

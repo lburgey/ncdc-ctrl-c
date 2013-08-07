@@ -127,6 +127,7 @@ static void dlfile_save_bitmap(dl_t *dl, int fd) {
 
 static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint32 chunksinblock, guint32 *reset) {
   dlfile_thread_t *t = g_slice_new0(dlfile_thread_t);
+  t->dl = dl;
   t->chunk = chunk;
   t->avail = chunksinblock;
   tth_init(&t->hash_tth);
@@ -317,6 +318,7 @@ static void dlfile_open(dl_t *dl) {
   }
 
   dlfile_thread_t *t = g_slice_new0(dlfile_thread_t);
+  t->dl = dl;
   t->chunk = 0;
   t->allocated = 0;
   if(!dl->islist)
@@ -368,6 +370,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
     if(chunk < tsec->chunk + tsec->allocated)
       chunk = tsec->chunk + tsec->allocated;
     t = g_slice_new0(dlfile_thread_t);
+    t->dl = dl;
     t->chunk = chunk;
     t->avail = tsec->avail - (chunk - tsec->chunk);
     tth_init(&t->hash_tth);
@@ -428,34 +431,37 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
   dlfile_thread_t *t = vt;
   dlfile_recv_write(t, buf, len);
 
+  t->dl->have += len;
+
   while(len > 0) {
     guint32 inchunk = MIN((guint32)len, DLFILE_CHUNKSIZE - t->len);
     t->len += inchunk;
     gboolean islast = ((guint64)t->chunk * DLFILE_CHUNKSIZE) + t->len == t->dl->size;
 
-    tth_update(&t->hash_tth, buf, inchunk);
+    if(!t->dl->islist)
+      tth_update(&t->hash_tth, buf, inchunk);
     buf += inchunk;
     len -= inchunk;
 
     if(!islast && t->len < DLFILE_CHUNKSIZE)
       continue;
 
-    bita_set(t->dl->bitmap, t->chunk);
+    if(!t->dl->islist)
+      bita_set(t->dl->bitmap, t->chunk);
     t->chunk++;
     t->allocated--;
     t->avail--;
     t->len = 0;
 
-    if(islast || t->chunk % (t->dl->hash_block / DLFILE_CHUNKSIZE) == 0) {
+    if(!t->dl->islist && (islast || t->chunk % (t->dl->hash_block / DLFILE_CHUNKSIZE) == 0)) {
       char leaf[24];
       tth_final(&t->hash_tth, leaf);
       tth_init(&t->hash_tth);
-      if(!dlfile_recv_check(t, t->chunk/(t->dl->hash_block / DLFILE_CHUNKSIZE), leaf))
+      if(!dlfile_recv_check(t, (t->chunk-1)/(t->dl->hash_block / DLFILE_CHUNKSIZE), leaf))
         return FALSE; /* TODO: Error handling */
     }
   }
 
-  /* TODO: Update t->dl->have */
   /* TODO: Flush bitmap if it has been changed (needs to be synchronized with other threads?) */
   return TRUE;
 }
@@ -465,19 +471,19 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   dl_t *dl = t->dl;
   dl->active_threads--;
 
-  if(t->avail) {
-    t->allocated = 0;
-    dl->allbusy = FALSE;
-  } else {
+  if(dl->islist ? dl->have == dl->size : !t->avail) {
     dl->threads = g_slist_remove(dl->threads, t);
     g_slice_free(dlfile_thread_t, t);
+  } else {
+    t->allocated = 0;
+    dl->allbusy = FALSE;
   }
 
   /* TODO: If anything went wrong in dlfile_recv(), propagate the error to the dl_t object here. */
 
   /* File has been removed from the queue but the dl struct is still in memory
    * because this thread hadn't finished yet. Free it now. */
-  if(!dl->active_threads && g_hash_table_lookup(dl_queue, dl->hash))
+  if(!dl->active_threads && !g_hash_table_lookup(dl_queue, dl->hash))
     dl_queue_rm(dl);
   else if(!dl->threads)
     dlfile_finished(dl);
