@@ -554,8 +554,6 @@ void cc_download(cc_t *cc, dl_t *dl) {
 
 
 static void handle_recvdone(net_t *n, void *dat) {
-  // Notify dl
-  dlfile_recv_done(dat);
   // If the connection is still active, log the transfer and check for more
   // stuff to download
   if(n && net_is_connected(n)) {
@@ -565,6 +563,8 @@ static void handle_recvdone(net_t *n, void *dat) {
     cc->state = CCS_IDLE;
     dl_user_cc(cc->uid, cc);
   }
+  // Notify dl
+  dlfile_recv_done(dat);
 }
 
 
@@ -1458,6 +1458,8 @@ static gboolean handle_timeout(gpointer dat) {
 
 void cc_disconnect(cc_t *cc, gboolean force) {
   g_return_if_fail(cc->state != CCS_DISCONN);
+  if(cc->dl && cc->uid)
+    dl_user_cc(cc->uid, NULL);
   if(cc->state == CCS_TRANSFER)
     xfer_log_add(cc);
   if(force || !net_is_asy(cc->net))
@@ -1468,8 +1470,6 @@ void cc_disconnect(cc_t *cc, gboolean force) {
   g_free(cc->token);
   cc->token = NULL;
   cc->state = CCS_DISCONN;
-  if(cc->dl && cc->uid)
-    dl_user_cc(cc->uid, NULL);
 }
 
 

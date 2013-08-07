@@ -103,11 +103,10 @@ struct dl_t {
   gboolean active : 1;   // Whether it is being downloaded by someone
   gboolean flopen : 1;   // For lists: Whether to open a browse tab after completed download
   gboolean flmatch : 1;  // For lists: Whether to match queue after completed download
-  gboolean dlthread : 1; // Whether a dl thread is active. XXX: Remove
-  gboolean delete : 1;   // Pending deletion. XXX: Is this one necessary? Same as presence in dl_queue
   gboolean allbusy : 1;  // When no more unallocated chunks are available (maintained by dlfile.c)
   signed char prio;      // DLP_*
   char error;            // DLE_*
+  unsigned char active_threads; // number of active downloading threads (maintained by dlfile.c)
   int incfd;             // file descriptor for this file in <incoming_dir>
   char *error_msg;       // if error != DLE_NONE
   char *flsel;           // path to file/dir to select for filelists
@@ -116,14 +115,12 @@ struct dl_t {
   GPtrArray *u;          // list of users who have this file (GSequenceIter pointers into dl_user.queue)
   guint64 size;          // total size of the file
   guint64 have;          // what we have so far
+  guint64 hash_block;    // number of bytes that each block represents
   char *inc;             // path to the incomplete file (<incoming_dir>/<base32-hash>)
   char *dest;            // destination path
-  guint64 hash_block;    // number of bytes that each block represents
   GSequenceIter *iter;   // used by ui_dl
-  /* XXX: Added as part of the new dlfile.c code. Some of the above fields should be replaced/merged/removed. */
-  int active_threads;
-  guint8 *bitmap;        // Only used if hastthl
-  GSList *threads;
+  GSList *threads;       // maintained by dlfile.c
+  guint8 *bitmap;        // Only used if hastthl, maintained by dlfile.c
 };
 
 #endif
@@ -170,7 +167,6 @@ char *dl_strerror(char err, const char *sub) {
 // dl_user_t related functions
 
 static gboolean dl_user_waitdone(gpointer dat);
-static void dl_queue_checkrm(dl_t *dl, gboolean justfin);
 
 
 // Determine whether a dl_user_dl struct can be considered as "enabled".
@@ -222,7 +218,7 @@ static dl_user_dl_t *dl_user_getdl(const dl_user_t *du) {
     dl_user_dl_t *dud = g_sequence_get(i);
     if(!dl_user_dl_enabled(dud))
       break;
-    if(!dud->dl->active)
+    if(!dud->dl->allbusy)
       return dud;
   }
   return NULL;
@@ -240,15 +236,9 @@ static void dl_user_setstate(dl_user_t *du, int state) {
   else if(state >= 0 && du->state == DLU_WAI && state != DLU_WAI)
     g_source_remove(du->timeout);
 
-  // Update dl_user_dl.active, dl.active and dl_user.active if we came from the
-  // ACT state. These are set in dl_queue_start_user().
   // ACT -> x
-  if(state >= 0 && du->state == DLU_ACT && state != DLU_ACT && du->active) {
-    dl_user_dl_t *dud = du->active;
+  if(state >= 0 && du->state == DLU_ACT && state != DLU_ACT && du->active)
     du->active = NULL;
-    dud->dl->active = FALSE;
-    dl_queue_checkrm(dud->dl, FALSE);
-  }
 
   // Set state
   //g_debug("dlu:%"G_GINT64_MODIFIER"x: %d -> %d (active = %s)", du->uid, du->state, state, du->active ? "true":"false");
@@ -338,19 +328,15 @@ static void dl_user_rm(dl_t *dl, int i) {
   dl_user_dl_t *dud = g_sequence_get(dudi);
   dl_user_t *du = dud->u;
 
-  // Make sure to disconnect the user and disable dl->active if we happened to
-  // be actively downloading the file from this user.
+  // Make sure to disconnect the user if we happened to be actively downloading
+  // the file from this user.
   if(du->active == dud) {
     cc_disconnect(du->cc, TRUE);
     du->active = NULL;
-    dl->active = FALSE;
-    // Note that cc_disconnect() immediately calls dl_user_cc(), causing
-    // dl->active to be reset anyway. I'm not sure whether it's a good idea to
-    // rely on that, however.
   }
 
   uit_dl_dud_listchange(dud, UITDL_DEL);
-  g_sequence_remove(dudi); // dl_user_dl_free() will be called implicitely
+  g_sequence_remove(dudi); // dl_user_dl_free() will be called implicitly
   g_ptr_array_remove_index_fast(dl->u, i);
   dl_user_setstate(du, -1);
 }
@@ -405,7 +391,6 @@ static gboolean dl_queue_start_user(dl_user_t *du) {
   g_debug("dl:%016"G_GINT64_MODIFIER"x: using connection for %s", du->uid, dl->dest);
 
   // Update state and connect
-  dl->active = TRUE;
   du->active = dud;
   dl_user_setstate(du, DLU_ACT);
   cc_download(du->cc, dl);
@@ -683,79 +668,34 @@ int dl_queue_match_fl(guint64 uid, fl_list_t *fl, int *added) {
 
 // removes an item from the queue
 void dl_queue_rm(dl_t *dl) {
-  dl->delete = TRUE;
-
   // remove from the user info (this will also force a disconnect if the item
   // is being downloaded.)
   while(dl->u->len > 0)
     dl_user_rm(dl, 0);
-  // remove from dl list, if it's still in there. (Could have been removed
-  // before, while dlthread was active)
+  // remove from dl list
   if(g_hash_table_lookup(dl_queue, dl->hash)) {
     uit_dl_listchange(dl, UITDL_DEL);
     g_hash_table_remove(dl_queue, dl->hash);
   }
 
-  // Don't do anything else if the dlthread is still active. Wait until the
-  // thread stops and calls this function again to actually free and remove the
-  // stuff.
-  if(dl->dlthread)
+  // Don't do anything else if there is still an active downloading thread.
+  // Wait until all threads stop this function is called again to actually free
+  // and remove the stuff.
+  if(dl->active_threads)
     return;
 
   // remove from the database
   if(!dl->islist)
     db_dl_rm(dl->hash);
-  // close the incomplete file, in case it's still open
-  if(dl->incfd > 0)
-    g_warn_if_fail(close(dl->incfd) == 0);
-  // remove the incomplete file, in case we still have it
-  if(dl->inc && g_file_test(dl->inc, G_FILE_TEST_EXISTS))
-    unlink(dl->inc);
   // free and remove dl struct
   // and free
+  dlfile_rm(dl);
   g_ptr_array_unref(dl->u);
   g_free(dl->inc);
   g_free(dl->flsel);
   g_free(dl->dest);
   g_free(dl->error_msg);
   g_slice_free(dl_t, dl);
-}
-
-
-// Called when dl->active is reset or when the download has finished. If both
-// actions are satisfied, we can _rm() the dl item. This makes sure that a dl
-// struct is not removed while active is true. Otherwise the user will be
-// forcibly disconnected in dl_user_rm(). (Which is what you want if you remove
-// it while downloading, not if it's removed after finishing the download).
-static void dl_queue_checkrm(dl_t *dl, gboolean justfin) {
-  if(dl->delete)
-    return;
-
-  if(justfin) {
-    g_return_if_fail(!dl->dlthread);
-    // If the download just finished, we might as well remove it from the
-    // database immediately. Makes sure we won't load it on the next startup.
-    if(!dl->islist)
-      db_dl_rm(dl->hash);
-
-    // Since the dl item is now considered as "disabled" by the download
-    // management code, make sure it is also last in every user's download
-    // queue. For performance reasons, we can also already remove the users who
-    // aren't active.
-    int i = 0;
-    while(i<dl->u->len) {
-      GSequenceIter *iter = g_ptr_array_index(dl->u, i);
-      dl_user_dl_t *dud = g_sequence_get(iter);
-      if(dud != dud->u->active)
-        dl_user_rm(dl, i);
-      else {
-        g_sequence_sort_changed(iter, dl_user_dl_sort, NULL);
-        i++;
-      }
-    }
-  }
-  if(!dl->active && !dl->dlthread && (dl->size || !dl->islist) && dl->have == dl->size)
-    dl_queue_rm(dl);
 }
 
 
@@ -885,50 +825,8 @@ void dl_queue_rmuser(guint64 uid, char *tth) {
 // Managing of active downloads
 
 // Called when we've got a complete file
-static void dl_finished(dl_t *dl) {
+void dl_finished(dl_t *dl) {
   g_debug("dl: download of `%s' finished, removing from queue", dl->dest);
-  // close
-  if(dl->incfd > 0)
-    g_warn_if_fail(close(dl->incfd) == 0);
-  dl->incfd = 0;
-
-  char *fdest = g_filename_from_utf8(dl->dest, -1, NULL, NULL, NULL);
-  if(!fdest) // Just insist on UTF-8 if the conversion fails.
-    fdest = g_strdup(dl->dest);
-
-  // Create destination directory, if it does not exist yet.
-  char *parent = g_path_get_dirname(fdest);
-  if(g_mkdir_with_parents(parent, 0755) < 0)
-    dl_queue_seterr(dl, DLE_IO_DEST, g_strerror(errno));
-  g_free(parent);
-
-  // Prevent overwiting other files by appending a prefix to the destination if
-  // it already exists. It is assumed that fn + any dupe-prevention-extension
-  // does not exceed NAME_MAX. (Not that checking against NAME_MAX is really
-  // reliable - some filesystems have an even more strict limit)
-  int num = 1;
-  char *dest = g_strdup(fdest);
-  while(!dl->islist && g_file_test(dest, G_FILE_TEST_EXISTS)) {
-    g_free(dest);
-    dest = g_strdup_printf("%s.%d", fdest, num++);
-  }
-
-  // Move the file to the destination.
-  // TODO: this may block for a while if they are not on the same filesystem,
-  // do this in a separate thread?
-  GError *err = NULL;
-  if(dl->prio != DLP_ERR) {
-    file_move(dl->inc, dest, dl->islist, &err);
-    if(err) {
-      // Note: 'dest' is in filename encoding, but that's not a huge problem
-      // when it's just going to a g_warning().
-      g_warning("Error moving `%s' to `%s': %s", dl->inc, dest, err->message);
-      dl_queue_seterr(dl, DLE_IO_DEST, err->message);
-      g_error_free(err);
-    }
-  }
-  g_free(dest);
-  g_free(fdest);
 
   // open the file list
   if(dl->islist && dl->prio != DLP_ERR) {
@@ -939,8 +837,8 @@ static void dl_finished(dl_t *dl) {
         FALSE, dl->flsel, dl->flpar, dl->flopen, dl->flmatch);
     ui_tab_cur = cur;
   }
-  // and check whether we can remove this item from the queue
-  dl_queue_checkrm(dl, TRUE);
+
+  dl_queue_rm(dl);
 }
 
 
@@ -954,10 +852,9 @@ void dl_settthl(guint64 uid, char *tth, char *tthl, int len) {
   g_return_if_fail(du->state == DLU_ACT);
   g_return_if_fail(!dl->islist);
   g_return_if_fail(!dl->have);
-  g_return_if_fail(!dl->dlthread);
-  // Ignore this if we already have the TTHL data. Currently, this situation
-  // can't happen, but it may be possible with segmented downloading.
-  g_return_if_fail(!dl->hastthl);
+  // We accidentally downloaded the TTHL from multiple users. Just discard this data.
+  if(dl->hastthl)
+    return;
 
   g_debug("dl:%016"G_GINT64_MODIFIER"x: Received TTHL data for %s (len = %d, bs = %"G_GUINT64_FORMAT")", uid, dl->dest, len, tth_blocksize(dl->size, len/24));
 

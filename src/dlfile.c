@@ -48,8 +48,7 @@
  * Some other fields are shared, too, but those are never modified while a
  * downloading thread is active and thus do not need synchronisation.
  * These include dl_t.{size,islist,hash_block,incfd} and possibly more.
- *
- * TODO: Fix complete/abort/removal of dl_t items */
+ */
 
 
 #if INTERFACE
@@ -238,6 +237,24 @@ void dlfile_load(dl_t *dl) {
 }
 
 
+/* Called from dl.c when a dl item is being deleted, either from
+ * dlfile_finished() or when the item is removed from the UI. */
+void dlfile_rm(dl_t *dl) {
+  g_return_if_fail(!dl->active_threads);
+
+  if(dl->incfd > 0)
+    g_warn_if_fail(close(dl->incfd) == 0);
+
+  if(dl->inc)
+    unlink(dl->inc);
+
+  GSList *l;
+  for(l=dl->threads; l; l=l->next)
+    g_slice_free(dlfile_thread_t, l->data);
+  g_slist_free(dl->threads);
+  g_free(dl->bitmap);
+}
+
 
 /* XXX: This function may block in the main thread for a while. Perhaps do it in a threadpool? */
 static void dlfile_finished(dl_t *dl) {
@@ -246,6 +263,7 @@ static void dlfile_finished(dl_t *dl) {
   if(!dl->islist)
     ftruncate(dl->incfd, dl->size);
   close(dl->incfd);
+  dl->incfd = 0;
 
   char *fdest = g_filename_from_utf8(dl->dest, -1, NULL, NULL, NULL);
   if(!fdest)
@@ -278,7 +296,7 @@ static void dlfile_finished(dl_t *dl) {
   g_free(dest);
   g_free(fdest);
 
-  /* TODO: Notify dl.c */
+  dl_finished(dl);
 }
 
 
@@ -457,6 +475,10 @@ void dlfile_recv_done(dlfile_thread_t *t) {
 
   /* TODO: If anything went wrong in dlfile_recv(), propagate the error to the dl_t object here. */
 
-  if(!dl->threads)
+  /* File has been removed from the queue but the dl struct is still in memory
+   * because this thread hadn't finished yet. Free it now. */
+  if(!dl->active_threads && g_hash_table_lookup(dl_queue, dl->hash))
+    dl_queue_rm(dl);
+  else if(!dl->threads)
     dlfile_finished(dl);
 }
