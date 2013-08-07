@@ -321,6 +321,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
     t = dl->threads->data;
     t->chunk = 0;
     t->len = 0;
+    dl->allbusy = TRUE;
     dl->active_threads++;
     return t;
   }
@@ -329,6 +330,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
    *      t = Thread with largest avail and with allocated = 0
    *   tsec = Thread with largest avail-allocated
    */
+  gboolean havefreechunk = FALSE;
   dlfile_thread_t *tsec = NULL;
   GSList *l;
   for(l=dl->threads; l; l=l->next) {
@@ -337,6 +339,8 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
       tsec = ti;
     if(!ti->allocated && (!t || ti->avail > t->avail))
       t = ti;
+    if(tsec != ti && t != ti && ti->avail > ti->allocated)
+      havefreechunk = TRUE;
   }
   g_return_val_if_fail(tsec, NULL);
 
@@ -353,7 +357,8 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
 
     tsec->avail -= t->avail;
     dl->threads = g_slist_prepend(dl->threads, t);
-  }
+  } else if(t != tsec)
+    havefreechunk = TRUE;
 
   /* Number of chunks to request as one segment. The size of a segment is
    * chosen to approximate a download time of ~5 min.
@@ -362,6 +367,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
   guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
   t->allocated = MIN(t->avail, chunks);
   dl->active_threads++;
+  dl->allbusy = !(havefreechunk || t->avail > t->allocated);
   return t;
 }
 
@@ -441,9 +447,10 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   dl_t *dl = t->dl;
   dl->active_threads--;
 
-  if(t->avail)
+  if(t->avail) {
     t->allocated = 0;
-  else {
+    dl->allbusy = FALSE;
+  } else {
     dl->threads = g_slist_remove(dl->threads, t);
     g_slice_free(dlfile_thread_t, t);
   }

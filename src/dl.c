@@ -105,6 +105,7 @@ struct dl_t {
   gboolean flmatch : 1;  // For lists: Whether to match queue after completed download
   gboolean dlthread : 1; // Whether a dl thread is active
   gboolean delete : 1;   // Pending delection
+  gboolean allbusy : 1;  // When no more unallocated chunks are available (maintained by dlfile.c)
   signed char prio;      // DLP_*
   char error;            // DLE_*
   int incfd;             // file descriptor for this file in <incoming_dir>
