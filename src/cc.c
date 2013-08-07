@@ -252,6 +252,7 @@ struct cc_t {
   char remoteaddr[64]; // xxx.xxx.xxx.xxx:ppppp or [ipv6addr]:ppppp
   char *token;    // (ADC)
   char *last_file;
+  dlfile_thread_t *dlthread;
   guint64 uid;
   guint64 last_size;
   guint64 last_offset;
@@ -515,6 +516,7 @@ void cc_download(cc_t *cc, dl_t *dl) {
   g_return_if_fail(cc->dl && cc->state == CCS_IDLE);
 
   memcpy(cc->last_hash, dl->hash, 24);
+
   // get virtual path
   char fn[45] = {};
   if(dl->islist)
@@ -530,18 +532,21 @@ void cc_download(cc_t *cc, dl_t *dl) {
       net_writef(cc->net, "CGET tthl %s 0 -1\n", fn);
     else
       net_writef(cc->net, "$ADCGET tthl %s 0 -1|", fn);
+    cc->last_offset = 0;
+
   // otherwise, send GET request
   } else {
-    // Don't download files in chunks >= 2GB, older ncdc's don't like that.
-    int len = dl->islist ? -1 : MIN(G_MAXINT-1, dl->size-dl->have);
+    cc->dlthread = dlfile_getchunk(dl, 1); /* TODO: Pass a reasonable speed indication */
+    cc->last_offset = ((guint64)cc->dlthread->chunk * DLFILE_CHUNKSIZE) + cc->dlthread->len;
+    gint64 len = dl->islist ? -1 : ((gint64)cc->dlthread->allocated * DLFILE_CHUNKSIZE) - cc->dlthread->len;
     if(cc->adc)
-      net_writef(cc->net, "CGET file %s %"G_GUINT64_FORMAT" %d\n", fn, dl->have, len);
+      net_writef(cc->net, "CGET file %s %"G_GUINT64_FORMAT" %"G_GUINT64_FORMAT"\n", fn, cc->last_offset, len);
     else
-      net_writef(cc->net, "$ADCGET file %s %"G_GUINT64_FORMAT" %d|", fn, dl->have, len);
+      net_writef(cc->net, "$ADCGET file %s %"G_GUINT64_FORMAT" %"G_GINT64_FORMAT"|", fn, cc->last_offset, len);
   }
+
   g_free(cc->last_file);
   cc->last_file = g_strdup(dl->islist ? "files.xml.bz2" : dl->dest);
-  cc->last_offset = dl->have;
   cc->last_size = dl->size;
   cc->last_length = 0; // to be filled in handle_adcsnd()
   cc->state = CCS_TRANSFER;
@@ -550,7 +555,7 @@ void cc_download(cc_t *cc, dl_t *dl) {
 
 static void handle_recvdone(net_t *n, void *dat) {
   // Notify dl
-  dl_recv_done(dat);
+  dlfile_recv_done(dat);
   // If the connection is still active, log the transfer and check for more
   // stuff to download
   if(n && net_is_connected(n)) {
@@ -584,29 +589,13 @@ static void handle_adcsnd(cc_t *cc, gboolean tthl, guint64 start, gint64 bytes) 
     cc_disconnect(cc, FALSE);
     return;
   }
-  // Some buggy clients (DCGUI) return $ADCSND with bytes = -1. They probably
-  // mean "all of the remaining bytes of the file" with that.
-  if(bytes < 0) {
-    if(tthl) {
-      g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
-      cc_disconnect(cc, TRUE);
-      return;
-    }
-    bytes = cc->last_size - cc->last_offset;
-  }
 
   cc->last_length = bytes;
   cc->last_tthl = tthl;
   if(!tthl) {
-    g_return_if_fail(dl->have == start);
     if(!dl->size)
       cc->last_size = dl->size = bytes;
-    void *ctx = dl_recv_create(cc->uid, cc->last_hash);
-    if(!ctx) {
-      g_set_error_literal(&cc->err, 1, 0, "Download interrupted.");
-      cc_disconnect(cc, FALSE);
-    } else
-      net_recvfile(cc->net, bytes, dl_recv_data, handle_recvdone, ctx);
+    net_recvfile(cc->net, bytes, dlfile_recv, handle_recvdone, cc->dlthread);
   } else {
     g_return_if_fail(start == 0 && bytes > 0 && (bytes%24) == 0 && bytes < 48*1024);
     net_readbytes(cc->net, bytes, handle_recvtth);

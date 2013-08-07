@@ -103,8 +103,8 @@ struct dl_t {
   gboolean active : 1;   // Whether it is being downloaded by someone
   gboolean flopen : 1;   // For lists: Whether to open a browse tab after completed download
   gboolean flmatch : 1;  // For lists: Whether to match queue after completed download
-  gboolean dlthread : 1; // Whether a dl thread is active
-  gboolean delete : 1;   // Pending delection
+  gboolean dlthread : 1; // Whether a dl thread is active. XXX: Remove
+  gboolean delete : 1;   // Pending deletion. XXX: Is this one necessary? Same as presence in dl_queue
   gboolean allbusy : 1;  // When no more unallocated chunks are available (maintained by dlfile.c)
   signed char prio;      // DLP_*
   char error;            // DLE_*
@@ -119,7 +119,6 @@ struct dl_t {
   char *inc;             // path to the incomplete file (<incoming_dir>/<base32-hash>)
   char *dest;            // destination path
   guint64 hash_block;    // number of bytes that each block represents
-  tth_ctx_t *hash_tth;   // TTH state of the last block that we have
   GSequenceIter *iter;   // used by ui_dl
   /* XXX: Added as part of the new dlfile.c code. Some of the above fields should be replaced/merged/removed. */
   int active_threads;
@@ -714,8 +713,6 @@ void dl_queue_rm(dl_t *dl) {
     unlink(dl->inc);
   // free and remove dl struct
   // and free
-  if(dl->hash_tth)
-    g_slice_free(tth_ctx_t, dl->hash_tth);
   g_ptr_array_unref(dl->u);
   g_free(dl->inc);
   g_free(dl->flsel);
@@ -991,185 +988,6 @@ void dl_settthl(guint64 uid, char *tth, char *tthl, int len) {
   db_dl_settthl(tth, tthl, newlen);
   dl->hastthl = TRUE;
   dl->hash_block = bs;
-}
-
-
-
-
-// Data receive background thread
-
-// The background thread access the following dl_t members:
-// - size       (read only  - not changed in an other thread, no problem)
-// - have       (read/write - also read in other threads - TODO: this could be a problem)
-// - hash_block (read only  - not changed in an other thread, no problem)
-// - hash_tth   (read/write - not used in other threads, no problem)
-// - incfd      (read/write - not used in other threads, no problem)
-// - islist     (read only  - not changed in an other thread, no problem)
-
-typedef struct recv_ctx_t {
-  dl_t *dl;
-  guint64 uid;
-  char *err_msg, *uerr_msg;
-  char err, uerr;
-  fadv_t adv;
-} recv_ctx_t;
-
-
-void *dl_recv_create(guint64 uid, const char *tth) {
-  dl_t *dl = g_hash_table_lookup(dl_queue, tth);
-  dl_user_t *du = g_hash_table_lookup(queue_users, &uid);
-  if(!dl || !du)
-    return NULL;
-  g_return_val_if_fail(!dl->dlthread, NULL);
-  g_return_val_if_fail(du->state == DLU_ACT && du->active && du->active->dl == dl, NULL);
-  g_return_val_if_fail(dl->islist || dl->hastthl, NULL);
-
-  // open dl->incfd, if it's not open yet
-  if(dl->incfd <= 0) {
-    dl->incfd = open(dl->inc, O_WRONLY|O_CREAT, 0666);
-    if(dl->incfd < 0 || lseek(dl->incfd, dl->have, SEEK_SET) == (off_t)-1) {
-      g_warning("Error opening %s: %s", dl->inc, g_strerror(errno));
-      dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
-      return NULL;
-    }
-  }
-
-  // Create context and mark the dl item als being active
-  dl->dlthread = TRUE;
-  recv_ctx_t *c = g_slice_new0(recv_ctx_t);
-  c->uid = uid;
-  c->dl = dl;
-  fadv_init(&c->adv, dl->incfd, dl->have, VAR_FFC_DOWNLOAD);
-
-  return c;
-}
-
-
-void dl_recv_done(void *dat) {
-  recv_ctx_t *c = dat;
-
-  fadv_close(&c->adv);
-
-  // Indicate that the dl thread has stopped
-  c->dl->dlthread = FALSE;
-
-  if(c->dl->delete)
-    dl_queue_rm(c->dl);
-
-  else {
-    // Set error status if necessary
-    if(c->err)
-      dl_queue_seterr(c->dl, c->err, c->err_msg);
-    if(c->uerr)
-      dl_queue_setuerr(c->uid, c->dl->hash, c->uerr, c->uerr_msg);
-
-    if(c->dl->have >= c->dl->size) {
-      g_warn_if_fail(c->dl->have == c->dl->size);
-      dl_finished(c->dl);
-    }
-  }
-
-  // Clean up
-  g_free(c->uerr_msg);
-  g_free(c->err_msg);
-  g_slice_free(recv_ctx_t, c);
-}
-
-
-static gboolean dl_recv_check(dl_t *dl, int num, char *tth) {
-  // We don't have TTHL data for small files, so check against the root hash instead.
-  if(dl->size < dl->hash_block) {
-    g_return_val_if_fail(num == 0, FALSE);
-    return memcmp(tth, dl->hash, 24) == 0 ? TRUE : FALSE;
-  }
-  // Otherwise, check against the TTHL data in the database.
-  return db_dl_checkhash(dl->hash, num, tth);
-}
-
-
-// (Incrementally) hashes the incoming data and checks that what we have is
-// still correct. When this function is called, dl->length should refer to the
-// point where the newly received data will be written to.
-// Returns -1 if nothing went wrong, any other number to indicate which block
-// failed the hash check.
-static int dl_recv_update(dl_t *dl, const char *buf, int length) {
-  int block = dl->have / dl->hash_block;
-  guint64 cur = dl->have % dl->hash_block;
-
-  if(!dl->hash_tth) {
-    g_return_val_if_fail(!cur, FALSE);
-    dl->hash_tth = g_slice_new(tth_ctx_t);
-    tth_init(dl->hash_tth);
-  }
-
-  char tth[24];
-  while(length > 0) {
-    int w = MIN(dl->hash_block - cur, length);
-    tth_update(dl->hash_tth, buf, w);
-    length -= w;
-    cur += w;
-    buf += w;
-    // we have a complete block, validate it.
-    if(cur == dl->hash_block || (!length && dl->size == (block*dl->hash_block)+cur)) {
-      tth_final(dl->hash_tth, tth);
-      tth_init(dl->hash_tth);
-      if(!dl_recv_check(dl, block, tth))
-        return block;
-      cur = 0;
-      block++;
-    }
-  }
-
-  return -1;
-}
-
-
-// Called directly from net.c.
-gboolean dl_recv_data(void *dat, const char *buf, int length) {
-  recv_ctx_t *c = dat;
-
-  while(length > 0) {
-    // write
-    int r = write(c->dl->incfd, buf, length);
-    if(r < 0) {
-      c->err = DLE_IO_INC;
-      c->err_msg = g_strdup(g_strerror(errno));
-      return FALSE;
-    }
-    fadv_purge(&c->adv, r);
-
-    // check hash
-    int fail = c->dl->islist ? -1 : dl_recv_update(c->dl, buf, r);
-    if(fail >= 0) {
-      c->uerr = DLE_HASH;
-      c->uerr_msg = g_strdup_printf("Hash for block %d does not match.", fail);
-      // Delete the failed block and everything after it, so that a resume is possible.
-      c->dl->have = fail*c->dl->hash_block;
-      // I have no idea what to do when these functions fail. Resuming the
-      // download without an ncdc restart won't work if lseek() fails, resuming
-      // the download after an ncdc restart may result in a corrupted download
-      // if the ftruncate() fails. Either way, resuming isn't possible in a
-      // reliable fashion, so perhaps we should throw away the entire inc file?
-      off_t rs = lseek(c->dl->incfd, c->dl->have, SEEK_SET);
-      int rt = ftruncate(c->dl->incfd, c->dl->have);
-      if(rs == (off_t)-1 || rt == -1) {
-        g_warning("Error recovering from hash failure: %s", g_strerror(errno));
-        c->err = DLE_IO_INC;
-        c->err_msg = g_strdup(g_strerror(errno));
-      }
-      return FALSE;
-    }
-
-    // update vars
-    length -= r;
-    buf += r;
-    c->dl->have += r;
-  }
-
-  // TODO: if dl->have == d->size, close() the file here? Since close() may
-  // actually flush the data to disk and thus block for a while.
-
-  return TRUE;
 }
 
 

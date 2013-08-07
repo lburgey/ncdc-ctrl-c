@@ -344,12 +344,11 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
   }
   g_return_val_if_fail(tsec, NULL);
 
-  /* XXX: Should creating a new thread be attempted if t->avail < chunks? */
   if(!t) {
     guint32 chunksinblock = dl->hash_block/DLFILE_CHUNKSIZE;
     guint32 chunk = ((tsec->chunk + tsec->allocated + (tsec->avail - tsec->allocated)/2) / chunksinblock) * chunksinblock;
     if(chunk < tsec->chunk + tsec->allocated)
-      return NULL;
+      chunk = tsec->chunk + tsec->allocated;
     t = g_slice_new0(dlfile_thread_t);
     t->chunk = chunk;
     t->avail = tsec->avail - (chunk - tsec->chunk);
@@ -407,7 +406,8 @@ static gboolean dlfile_recv_write(dlfile_thread_t *t, const char *buf, int len) 
  * DB, and the bitmap is updated.
  * This function may be called from another OS thread.
  * Returns TRUE to indicate success, FALSE on failure. */
-gboolean dlfile_recv(dlfile_thread_t *t, const char *buf, int len) {
+gboolean dlfile_recv(void *vt, const char *buf, int len) {
+  dlfile_thread_t *t = vt;
   dlfile_recv_write(t, buf, len);
 
   while(len > 0) {
