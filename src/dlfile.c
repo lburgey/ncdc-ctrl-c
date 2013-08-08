@@ -42,7 +42,7 @@
 
 /* TODO: The following fields may be accessed from multiple threads
  * simultaneously and should be protected by a mutex:
- *   dl_t.{have,bitmap}
+ *   dl_t.{have,bitmap,bitmap_src}
  *   dlfile_thread_t.{allocated,avail,chunk}
  *
  * Some other fields are shared, too, but those are never modified while a
@@ -122,6 +122,21 @@ static void dlfile_save_bitmap(dl_t *dl, int fd) {
     off += r;
     buf += r;
   }
+}
+
+
+static gboolean dlfile_save_bitmap_timeout(gpointer dat) {
+  dl_t *dl = dat;
+  if(dl->incfd > 0)
+    dlfile_save_bitmap(dl, dl->incfd);
+  dl->bitmap_src = 0;
+  return FALSE;
+}
+
+
+static void dlfile_save_bitmap_defer(dl_t *dl) {
+  if(!dl->bitmap_src)
+    dl->bitmap_src = g_timeout_add_seconds(5, dlfile_save_bitmap_timeout, dl);
 }
 
 
@@ -242,6 +257,9 @@ void dlfile_load(dl_t *dl) {
  * dlfile_finished() or when the item is removed from the UI. */
 void dlfile_rm(dl_t *dl) {
   g_return_if_fail(!dl->active_threads);
+
+  if(dl->bitmap_src)
+    g_source_remove(dl->bitmap_src);
 
   if(dl->incfd > 0)
     g_warn_if_fail(close(dl->incfd) == 0);
@@ -446,8 +464,10 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
     if(!islast && t->len < DLFILE_CHUNKSIZE)
       continue;
 
-    if(!t->dl->islist)
+    if(!t->dl->islist) {
       bita_set(t->dl->bitmap, t->chunk);
+      dlfile_save_bitmap_defer(t->dl);
+    }
     t->chunk++;
     t->allocated--;
     t->avail--;
@@ -461,8 +481,6 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
         return FALSE; /* TODO: Error handling */
     }
   }
-
-  /* TODO: Flush bitmap if it has been changed (needs to be synchronized with other threads?) */
   return TRUE;
 }
 

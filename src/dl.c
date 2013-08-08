@@ -121,6 +121,7 @@ struct dl_t {
   GSequenceIter *iter;   // used by ui_dl
   GSList *threads;       // maintained by dlfile.c
   guint8 *bitmap;        // Only used if hastthl, maintained by dlfile.c
+  guint bitmap_src;      // timeout source for flushing the bitmap, maintained by dlfile.c
 };
 
 #endif
