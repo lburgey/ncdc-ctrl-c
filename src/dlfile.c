@@ -69,6 +69,10 @@ struct dlfile_thread_t {
   guint32 avail;     /* Number of undownloaded chunks in and after this thread (including current & allocated) */
   guint32 chunk;     /* Current chunk number */
   guint32 len;       /* Number of bytes downloaded into this chunk */
+  /* Fields for deferred error reporting */
+  guint64 uid;
+  char *err_msg, *uerr_msg;
+  char err, uerr;
 };
 
 #endif
@@ -321,14 +325,18 @@ static void dlfile_finished(dl_t *dl) {
 
 /* Create the inc file and initialize the necessary structs to prepare for
  * handling downloaded data. */
-static void dlfile_open(dl_t *dl) {
-  /* TODO: Error handling */
+static gboolean dlfile_open(dl_t *dl) {
   if(dl->incfd <= 0)
     dl->incfd = open(dl->inc, O_WRONLY|O_CREAT, 0666);
+  if(dl->incfd < 0) {
+    g_warning("Error opening %s: %s", dl->inc, g_strerror(errno));
+    dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
+    return FALSE;
+  }
 
   /* Everything else has already been initialized if we have a thread */
   if(dl->threads)
-    return;
+    return TRUE;
 
   if(!dl->islist) {
     dl->bitmap = bita_new(dlfile_chunks(dl->size));
@@ -343,15 +351,17 @@ static void dlfile_open(dl_t *dl) {
     t->avail = dlfile_chunks(dl->size);
   tth_init(&t->hash_tth);
   dl->threads = g_slist_prepend(dl->threads, t);
+  return TRUE;
 }
 
 
 /* The 'speed' argument should be a pessimistic estimate of the peers' speed,
  * in bytes/s. I think this is best obtained from a 30 second average.
  * Returns the thread pointer. */
-dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
+dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   dlfile_thread_t *t = NULL;
-  dlfile_open(dl);
+  if(!dlfile_open(dl))
+    return NULL;
 
   /* File lists should always be downloaded in a single GET request because
    * their contents may be modified between subsequent requests. */
@@ -430,7 +440,8 @@ static gboolean dlfile_recv_check(dlfile_thread_t *t, char *leaf) {
     bita_set(t->dl->bitmap, i);
   dlfile_save_bitmap_defer(t->dl);
 
-  /* TODO: Deferred call to dl_queue_setuerr() */
+  t->uerr = DLE_HASH;
+  t->uerr_msg = g_strdup_printf("Hash for block %u (chunk %u-%u) does not match.", num, startchunk, startchunk+chunksinblock);
   return FALSE;
 }
 
@@ -442,8 +453,11 @@ static gboolean dlfile_recv_write(dlfile_thread_t *t, const char *buf, int len) 
   const char *bufi = buf;
   while(rem > 0) {
     ssize_t r = pwrite(t->dl->incfd, bufi, rem, offi);
-    if(r <= 0)
-      return FALSE; /* TODO: Error handling */
+    if(r <= 0) {
+      t->err = DLE_IO_INC;
+      t->err_msg = g_strdup(g_strerror(errno));
+      return FALSE;
+    }
     offi += r;
     rem -= r;
     bufi += r;
@@ -460,7 +474,8 @@ static gboolean dlfile_recv_write(dlfile_thread_t *t, const char *buf, int len) 
  * Returns TRUE to indicate success, FALSE on failure. */
 gboolean dlfile_recv(void *vt, const char *buf, int len) {
   dlfile_thread_t *t = vt;
-  dlfile_recv_write(t, buf, len);
+  if(!dlfile_recv_write(t, buf, len))
+    return FALSE;
 
   t->dl->have += len;
 
@@ -505,6 +520,7 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   dl->active_threads--;
 
   if(dl->islist ? dl->have == dl->size : !t->avail) {
+    g_return_if_fail(!(t->err || t->uerr)); /* A failed thread can't be complete */
     dl->threads = g_slist_remove(dl->threads, t);
     g_slice_free(dlfile_thread_t, t);
   } else {
@@ -512,12 +528,19 @@ void dlfile_recv_done(dlfile_thread_t *t) {
     dl->allbusy = FALSE;
   }
 
-  /* TODO: If anything went wrong in dlfile_recv(), propagate the error to the dl_t object here. */
-
   /* File has been removed from the queue but the dl struct is still in memory
    * because this thread hadn't finished yet. Free it now. */
   if(!dl->active_threads && !g_hash_table_lookup(dl_queue, dl->hash))
     dl_queue_rm(dl);
+  else if(t->err)
+    dl_queue_seterr(t->dl, t->err, t->err_msg);
+  else if(t->uerr)
+    dl_queue_setuerr(t->uid, t->dl->hash, t->uerr, t->uerr_msg);
   else if(!dl->threads)
     dlfile_finished(dl);
+
+  g_free(t->err_msg);
+  g_free(t->uerr_msg);
+  t->err = t->uerr = 0;
+  t->err_msg = t->uerr_msg = NULL;
 }

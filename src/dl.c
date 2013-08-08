@@ -711,17 +711,18 @@ void dl_queue_setprio(dl_t *dl, signed char prio) {
   // Start the download if it is enabled
   if(enabled)
     dl_queue_start();
+  /* TODO: Disconnect active users if the dl item is disabled */
 }
 
 
-#define dl_queue_seterr(dl, e, sub) do {\
-    (dl)->error = e;\
-    g_free((dl)->error_msg);\
-    (dl)->error_msg = (sub) ? g_strdup(sub) : NULL;\
-    dl_queue_setprio(dl, DLP_ERR);\
-    g_debug("Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
-    ui_mf(uit_main_tab, 0, "Download of `%s' failed: %s", (dl)->dest, dl_strerror(e, sub));\
-  } while(0)
+void dl_queue_seterr(dl_t *dl, char e, const char *sub) {
+  dl->error = e;
+  g_free(dl->error_msg);
+  dl->error_msg = sub ? g_strdup(sub) : NULL;
+  dl_queue_setprio(dl, DLP_ERR);
+  g_debug("Download of `%s' failed: %s", dl->dest, dl_strerror(e, sub));
+  ui_mf(uit_main_tab, 0, "Download of `%s' failed: %s", dl->dest, dl_strerror(e, sub));
+}
 
 
 // Set a user-specific error. If tth = NULL, the error will be set for all
