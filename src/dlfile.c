@@ -410,15 +410,28 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 speed) {
 }
 
 
-static gboolean dlfile_recv_check(dlfile_thread_t *t, int num, char *leaf) {
-  /* We don't have TTHL data for small files, so check against the root hash
-   * instead. */
-  if(t->dl->size < t->dl->hash_block) {
-    g_return_val_if_fail(num == 0, FALSE);
-    return memcmp(leaf, t->dl->hash, 24) == 0 ? TRUE : FALSE;
-  }
-  /* Otherwise, check against the TTHL data in the database. */
-  return db_dl_checkhash(t->dl->hash, num, leaf);
+static gboolean dlfile_recv_check(dlfile_thread_t *t, char *leaf) {
+  guint32 num = (t->chunk-1)/(t->dl->hash_block / DLFILE_CHUNKSIZE);
+  if(t->dl->size < t->dl->hash_block ? memcmp(leaf, t->dl->hash, 24) == 0 : db_dl_checkhash(t->dl->hash, num, leaf))
+    return TRUE;
+
+  /* Hash failure, remove the failed block from the bitmap and dl->have, and
+   * reset this thread so that the block can be re-downloaded. */
+  guint32 startchunk = num * (t->dl->hash_block / DLFILE_CHUNKSIZE);
+  // Or: chunksinblock = MIN(t->dl->hash_block / DLFILE_CHUNKSIZE, dlfile_chunks(t->dl->size) - startchunk);
+  guint32 chunksinblock = t->chunk - startchunk;
+  t->chunk = startchunk;
+  t->avail += chunksinblock;
+  t->allocated += chunksinblock;
+  t->dl->have -= MIN(t->dl->hash_block / DLFILE_CHUNKSIZE, t->dl->size - (guint64)startchunk * DLFILE_CHUNKSIZE);
+
+  guint32 i;
+  for(i=startchunk; i<startchunk+chunksinblock; i++)
+    bita_set(t->dl->bitmap, i);
+  dlfile_save_bitmap_defer(t->dl);
+
+  /* TODO: Deferred call to dl_queue_setuerr() */
+  return FALSE;
 }
 
 
@@ -477,8 +490,10 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
       char leaf[24];
       tth_final(&t->hash_tth, leaf);
       tth_init(&t->hash_tth);
-      if(!dlfile_recv_check(t, (t->chunk-1)/(t->dl->hash_block / DLFILE_CHUNKSIZE), leaf))
-        return FALSE; /* TODO: Error handling */
+      if(!dlfile_recv_check(t, leaf)) {
+        t->dl->have -= len;
+        return FALSE;
+      }
     }
   }
   return TRUE;
