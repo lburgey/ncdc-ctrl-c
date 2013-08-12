@@ -136,11 +136,18 @@ static gboolean dlfile_save_bitmap(dl_t *dl, int fd) {
 
 static gboolean dlfile_save_bitmap_timeout(gpointer dat) {
   dl_t *dl = dat;
-  if(dl->incfd > 0 && !dlfile_save_bitmap(dl, dl->incfd)) {
+  dl->bitmap_src = 0;
+  if(dl->incfd <= 0)
+    return FALSE;
+
+  if(!dlfile_save_bitmap(dl, dl->incfd)) {
     g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
     dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
   }
-  dl->bitmap_src = 0;
+  if(!dl->active_threads) {
+    close(dl->incfd);
+    dl->incfd = 0;
+  }
   return FALSE;
 }
 
@@ -530,14 +537,23 @@ void dlfile_recv_done(dlfile_thread_t *t) {
 
   /* File has been removed from the queue but the dl struct is still in memory
    * because this thread hadn't finished yet. Free it now. */
-  if(!dl->active_threads && !g_hash_table_lookup(dl_queue, dl->hash))
+  gboolean doclose = !dl->bitmap_src && !dl->active_threads;
+  if(!dl->active_threads && !g_hash_table_lookup(dl_queue, dl->hash)) {
     dl_queue_rm(dl);
-  else if(t->err)
+    doclose = FALSE;
+  } else if(t->err)
     dl_queue_seterr(t->dl, t->err, t->err_msg);
   else if(t->uerr)
     dl_queue_setuerr(t->uid, t->dl->hash, t->uerr, t->uerr_msg);
-  else if(!dl->threads)
+  else if(!dl->threads) {
     dlfile_finished(dl);
+    doclose = FALSE;
+  }
+
+  if(doclose) {
+    close(dl->incfd);
+    dl->incfd = 0;
+  }
 
   g_free(t->err_msg);
   g_free(t->uerr_msg);

@@ -107,7 +107,7 @@ struct dl_t {
   signed char prio;      // DLP_*
   char error;            // DLE_*
   unsigned char active_threads; // number of active downloading threads (maintained by dlfile.c)
-  int incfd;             // file descriptor for this file in <incoming_dir>
+  int incfd;             // file descriptor for this file in <incoming_dir> (maintained by dlfile.c)
   char *error_msg;       // if error != DLE_NONE
   char *flsel;           // path to file/dir to select for filelists
   ui_tab_t *flpar;       // parent of the file list browser tab for filelists (might be a dangling pointer!)
