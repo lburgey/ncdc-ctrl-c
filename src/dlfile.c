@@ -83,7 +83,14 @@ static guint32 dlfile_chunks(guint64 size) {
 }
 
 
-static gboolean dlfile_load_bitmap(dl_t *dl, int fd) {
+static void dlfile_fatal_load_error(dl_t *dl, const char *op) {
+  g_error("Unable to %s incoming file `%s', (%s; incoming file for `%s').\n"
+    "Delete the incoming file or otherwise repair it before restarting ncdc.",
+    op, dl->inc, g_strerror(errno), dl->dest);
+}
+
+
+static void dlfile_load_bitmap(dl_t *dl, int fd) {
   guint32 chunks = dlfile_chunks(dl->size);
   guint8 *bitmap = bita_new(chunks);
   guint8 *dest = bitmap;
@@ -92,13 +99,14 @@ static gboolean dlfile_load_bitmap(dl_t *dl, int fd) {
   size_t left = bita_size(chunks);
   while(left > 0) {
     int r = pread(fd, dest, left, off);
-    if(r <= 0) {
-      if(r)
-        g_warning("Error reading bitmap for `%s': %s.", dl->dest, g_strerror(errno));
-      else
-        g_warning("Unexpected EOF while reading bitmap for `%s'.", dl->dest);
+    if(r < 0)
+      dlfile_fatal_load_error(dl, "read bitmap from");
+    if(!r) {
+      /* TODO: EOF, which likely means that this file has been created by a
+       * pre-bitmap ncdc. Create a bitmap in that case. */
+      g_warning("Unexpected EOF while reading bitmap for `%s'.", dl->dest);
       bita_free(bitmap);
-      return FALSE;
+      return;
     }
     left -= r;
     off += r;
@@ -107,32 +115,31 @@ static gboolean dlfile_load_bitmap(dl_t *dl, int fd) {
 
   bita_free(dl->bitmap);
   dl->bitmap = bitmap;
-  return TRUE;
 }
 
 
-/* TODO: Set dl error on failure. */
-static void dlfile_save_bitmap(dl_t *dl, int fd) {
+static gboolean dlfile_save_bitmap(dl_t *dl, int fd) {
   guint8 *buf = dl->bitmap;
   off_t off = dl->size;
   size_t left = bita_size(dlfile_chunks(dl->size));
   while(left > 0) {
     int r = pwrite(fd, buf, left, off);
-    if(r < 0) {
-      g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
-      return;
-    }
+    if(r < 0)
+      return FALSE;
     left -= r;
     off += r;
     buf += r;
   }
+  return TRUE;
 }
 
 
 static gboolean dlfile_save_bitmap_timeout(gpointer dat) {
   dl_t *dl = dat;
-  if(dl->incfd > 0)
-    dlfile_save_bitmap(dl, dl->incfd);
+  if(dl->incfd > 0 && !dlfile_save_bitmap(dl, dl->incfd)) {
+    g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
+    dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
+  }
   dl->bitmap_src = 0;
   return FALSE;
 }
@@ -160,10 +167,8 @@ static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint
     size_t left = DLFILE_CHUNKSIZE;
     while(left > 0) {
       int r = pread(fd, buf, left, off);
-      if(r <= 0) {
-        /* TODO: Handle error */
-        return FALSE;
-      }
+      if(r <= 0)
+        dlfile_fatal_load_error(dl, "read from");
       off -= r;
       left -= r;
       buf += r;
@@ -217,23 +222,17 @@ static void dlfile_load_threads(dl_t *dl, int fd) {
       }
   }
 
-  if(needsave)
-    dlfile_save_bitmap(dl, fd);
+  if(needsave && !dlfile_save_bitmap(dl, fd))
+    dlfile_fatal_load_error(dl, "save bitmap to");
 }
 
 
-/* TODO: This function will delete the existing incoming file when loading it
- * failed. This is not necessarily a good idea. A better solution is to use
- * dl_queue_seterr() and allow the user to try again.
- * TODO: Load pre-bitmap incoming files and convert them to the new format? */
 void dlfile_load(dl_t *dl) {
   dl->have = 0;
   int fd = open(dl->inc, O_RDONLY);
   if(fd < 0) {
-    if(errno != ENOENT) {
-      g_warning("Unable to open incoming file for `%s' (%s), trying to delete it.", dl->dest, g_strerror(errno));
-      unlink(dl->inc);
-    }
+    if(errno != ENOENT)
+      dlfile_fatal_load_error(dl, "open");
     return;
   }
 
@@ -246,12 +245,7 @@ void dlfile_load(dl_t *dl) {
     return;
   }
 
-  if(!dlfile_load_bitmap(dl, fd)) {
-    close(fd);
-    unlink(dl->inc);
-    return;
-  }
-
+  dlfile_load_bitmap(dl, fd);
   dlfile_load_threads(dl, fd);
   close(fd);
 }
@@ -340,7 +334,13 @@ static gboolean dlfile_open(dl_t *dl) {
 
   if(!dl->islist) {
     dl->bitmap = bita_new(dlfile_chunks(dl->size));
-    dlfile_save_bitmap(dl, dl->incfd);
+    if(!dlfile_save_bitmap(dl, dl->incfd)) {
+      g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
+      dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
+      free(dl->bitmap);
+      dl->bitmap = NULL;
+      return FALSE;
+    }
   }
 
   dlfile_thread_t *t = g_slice_new0(dlfile_thread_t);
