@@ -40,16 +40,6 @@
  *          size. Segments are allocated at the start of a thread.
  */
 
-/* TODO: The following fields may be accessed from multiple threads
- * simultaneously and should be protected by a mutex:
- *   dl_t.{have,bitmap,bitmap_src}
- *   dlfile_thread_t.{allocated,avail,chunk}
- *
- * Some other fields are shared, too, but those are never modified while a
- * downloading thread is active and thus do not need synchronisation.
- * These include dl_t.{size,islist,hash_block,incfd} and possibly more.
- */
-
 
 #if INTERFACE
 
@@ -118,6 +108,7 @@ static void dlfile_load_bitmap(dl_t *dl, int fd) {
 }
 
 
+/* Must be called while the lock is held when dl->active_threads may be >0 */
 static gboolean dlfile_save_bitmap(dl_t *dl, int fd) {
   guint8 *buf = dl->bitmap;
   off_t off = dl->size;
@@ -136,22 +127,22 @@ static gboolean dlfile_save_bitmap(dl_t *dl, int fd) {
 
 static gboolean dlfile_save_bitmap_timeout(gpointer dat) {
   dl_t *dl = dat;
+  g_static_mutex_lock(&dl->lock);
   dl->bitmap_src = 0;
-  if(dl->incfd <= 0)
-    return FALSE;
-
-  if(!dlfile_save_bitmap(dl, dl->incfd)) {
+  if(dl->incfd >= 0 && !dlfile_save_bitmap(dl, dl->incfd)) {
     g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
     dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
   }
-  if(!dl->active_threads) {
+  if(dl->incfd >= 0 && !dl->active_threads) {
     close(dl->incfd);
     dl->incfd = 0;
   }
+  g_static_mutex_unlock(&dl->lock);
   return FALSE;
 }
 
 
+/* Must be called while dl->lock is held. */
 static void dlfile_save_bitmap_defer(dl_t *dl) {
   if(!dl->bitmap_src)
     dl->bitmap_src = g_timeout_add_seconds(5, dlfile_save_bitmap_timeout, dl);
@@ -388,6 +379,8 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   gboolean havefreechunk = FALSE;
   dlfile_thread_t *tsec = NULL;
   GSList *l;
+
+  g_static_mutex_lock(&dl->lock);
   for(l=dl->threads; l; l=l->next) {
     dlfile_thread_t *ti = l->data;
     if(!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated)
@@ -397,7 +390,6 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     if(tsec != ti && t != ti && ti->avail > ti->allocated)
       havefreechunk = TRUE;
   }
-  g_return_val_if_fail(tsec, NULL);
 
   if(!t) {
     guint32 chunksinblock = dl->hash_block/DLFILE_CHUNKSIZE;
@@ -414,6 +406,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     dl->threads = g_slist_prepend(dl->threads, t);
   } else if(t != tsec)
     havefreechunk = TRUE;
+  g_static_mutex_unlock(&dl->lock);
 
   /* Number of chunks to request as one segment. The size of a segment is
    * chosen to approximate a download time of ~5 min.
@@ -423,6 +416,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   t->allocated = MIN(t->avail, chunks);
   dl->active_threads++;
   dl->allbusy = !(havefreechunk || t->avail > t->allocated);
+
   return t;
 }
 
@@ -431,6 +425,8 @@ static gboolean dlfile_recv_check(dlfile_thread_t *t, char *leaf) {
   guint32 num = (t->chunk-1)/(t->dl->hash_block / DLFILE_CHUNKSIZE);
   if(t->dl->size < t->dl->hash_block ? memcmp(leaf, t->dl->hash, 24) == 0 : db_dl_checkhash(t->dl->hash, num, leaf))
     return TRUE;
+
+  g_static_mutex_lock(&t->dl->lock);
 
   /* Hash failure, remove the failed block from the bitmap and dl->have, and
    * reset this thread so that the block can be re-downloaded. */
@@ -446,6 +442,8 @@ static gboolean dlfile_recv_check(dlfile_thread_t *t, char *leaf) {
   for(i=startchunk; i<startchunk+chunksinblock; i++)
     bita_set(t->dl->bitmap, i);
   dlfile_save_bitmap_defer(t->dl);
+
+  g_static_mutex_unlock(&t->dl->lock);
 
   t->uerr = DLE_HASH;
   t->uerr_msg = g_strdup_printf("Hash for block %u (chunk %u-%u) does not match.", num, startchunk, startchunk+chunksinblock);
@@ -484,8 +482,6 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
   if(!dlfile_recv_write(t, buf, len))
     return FALSE;
 
-  t->dl->have += len;
-
   while(len > 0) {
     guint32 inchunk = MIN((guint32)len, DLFILE_CHUNKSIZE - t->len);
     t->len += inchunk;
@@ -496,8 +492,13 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
     buf += inchunk;
     len -= inchunk;
 
-    if(!islast && t->len < DLFILE_CHUNKSIZE)
+    g_static_mutex_lock(&t->dl->lock);
+    t->dl->have += inchunk;
+
+    if(!islast && t->len < DLFILE_CHUNKSIZE) {
+      g_static_mutex_unlock(&t->dl->lock);
       continue;
+    }
 
     if(!t->dl->islist) {
       bita_set(t->dl->bitmap, t->chunk);
@@ -507,15 +508,14 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
     t->allocated--;
     t->avail--;
     t->len = 0;
+    g_static_mutex_unlock(&t->dl->lock);
 
     if(!t->dl->islist && (islast || t->chunk % (t->dl->hash_block / DLFILE_CHUNKSIZE) == 0)) {
       char leaf[24];
       tth_final(&t->hash_tth, leaf);
       tth_init(&t->hash_tth);
-      if(!dlfile_recv_check(t, leaf)) {
-        t->dl->have -= len;
+      if(!dlfile_recv_check(t, leaf))
         return FALSE;
-      }
     }
   }
   return TRUE;
