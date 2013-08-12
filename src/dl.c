@@ -100,7 +100,6 @@ struct dl_user_t {
 struct dl_t {
   gboolean islist : 1;
   gboolean hastthl : 1;
-  gboolean active : 1;   // Whether it is being downloaded by someone
   gboolean flopen : 1;   // For lists: Whether to open a browse tab after completed download
   gboolean flmatch : 1;  // For lists: Whether to match queue after completed download
   gboolean allbusy : 1;  // When no more unallocated chunks are available (maintained by dlfile.c)

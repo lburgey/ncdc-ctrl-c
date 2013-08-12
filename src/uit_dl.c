@@ -303,9 +303,10 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     }
     break;
   case INPT_CHAR('c'): // c - find connection
+    /* XXX: If the file is downloaded from multiple users, this'll only select one (obviously) */
     if(!sel)
       ui_m(NULL, 0, "Nothing selected.");
-    else if(!sel->active)
+    else if(!sel->active_threads)
       ui_m(NULL, 0, "Download not in progress.");
     else {
       cc_t *cc = NULL;
