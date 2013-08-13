@@ -73,6 +73,12 @@ static guint32 dlfile_chunks(guint64 size) {
 }
 
 
+static gboolean dlfile_hasfreeblock(dlfile_thread_t *t) {
+  return t->avail - t->allocated > t->dl->hash_block / DLFILE_CHUNKSIZE
+    || (!t->allocated && t->chunk + t->avail >= dlfile_chunks(t->dl->size));
+}
+
+
 static void dlfile_fatal_load_error(dl_t *dl, const char *op) {
   g_error("Unable to %s incoming file `%s', (%s; incoming file for `%s').\n"
     "Delete the incoming file or otherwise repair it before restarting ncdc.",
@@ -377,26 +383,25 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
    *      t = Thread with largest avail and with allocated = 0
    *   tsec = Thread with largest avail-allocated
    */
-  gboolean havefreechunk = FALSE;
+  gboolean havefreeblock = FALSE;
   dlfile_thread_t *tsec = NULL;
   GSList *l;
 
   g_static_mutex_lock(&dl->lock);
   for(l=dl->threads; l; l=l->next) {
     dlfile_thread_t *ti = l->data;
-    if(!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated)
+    if(dlfile_hasfreeblock(ti) && (!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated))
       tsec = ti;
     if(!ti->allocated && (!t || ti->avail > t->avail))
       t = ti;
     if(tsec != ti && t != ti && ti->avail > ti->allocated)
-      havefreechunk = TRUE;
+      havefreeblock = TRUE;
   }
 
   if(!t) {
     guint32 chunksinblock = dl->hash_block/DLFILE_CHUNKSIZE;
     guint32 chunk = ((tsec->chunk + tsec->allocated + (tsec->avail - tsec->allocated)/2) / chunksinblock) * chunksinblock;
-    if(chunk < tsec->chunk + tsec->allocated)
-      chunk = tsec->chunk + tsec->allocated;
+    g_return_val_if_fail(chunk >= tsec->chunk + tsec->allocated, NULL);
     t = g_slice_new0(dlfile_thread_t);
     t->dl = dl;
     t->chunk = chunk;
@@ -407,7 +412,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     tsec->avail -= t->avail;
     dl->threads = g_slist_prepend(dl->threads, t);
   } else if(t != tsec)
-    havefreechunk = TRUE;
+    havefreeblock = TRUE;
   g_static_mutex_unlock(&dl->lock);
 
   /* Number of chunks to request as one segment. The size of a segment is
@@ -417,8 +422,9 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
   t->allocated = MIN(t->avail, chunks);
   dl->active_threads++;
-  dl->allbusy = !(havefreechunk || t->avail > t->allocated);
+  dl->allbusy = !(havefreeblock || dlfile_hasfreeblock(t));
 
+  //g_debug("Allocating: allbusy = %d, chunk = %u, allocated = %u, avail = %u", dl->allbusy, t->chunk, t->allocated, t->avail);
   return t;
 }
 
@@ -534,7 +540,8 @@ void dlfile_recv_done(dlfile_thread_t *t) {
     g_slice_free(dlfile_thread_t, t);
   } else {
     t->allocated = 0;
-    dl->allbusy = FALSE;
+    if(dl->allbusy && dlfile_hasfreeblock(t))
+      dl->allbusy = FALSE;
   }
 
   /* File has been removed from the queue but the dl struct is still in memory
