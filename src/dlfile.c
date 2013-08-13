@@ -177,7 +177,7 @@ static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint
       left -= r;
       buf += r;
     }
-    tth_update(&t->hash_tth, buf, DLFILE_CHUNKSIZE);
+    tth_update(&t->hash_tth, bufp, DLFILE_CHUNKSIZE);
     t->chunk++;
     t->avail--;
     dl->have += DLFILE_CHUNKSIZE;
