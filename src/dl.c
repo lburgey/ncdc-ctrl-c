@@ -223,9 +223,7 @@ static dl_user_dl_t *dl_user_getdl(const dl_user_t *du) {
   GSequenceIter *i = g_sequence_get_begin_iter(du->queue);
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
     dl_user_dl_t *dud = g_sequence_get(i);
-    if(!dl_user_dl_enabled(dud))
-      break;
-    if(!dud->dl->allbusy)
+    if(dl_user_dl_enabled(dud) && !dud->dl->allbusy)
       return dud;
   }
   return NULL;
