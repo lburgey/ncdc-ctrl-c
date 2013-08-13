@@ -367,6 +367,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     t = dl->threads->data;
     t->chunk = 0;
     t->len = 0;
+    t->uid = uid;
     dl->allbusy = TRUE;
     dl->active_threads++;
     return t;
@@ -400,6 +401,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     t->dl = dl;
     t->chunk = chunk;
     t->avail = tsec->avail - (chunk - tsec->chunk);
+    t->uid = uid;
     tth_init(&t->hash_tth);
 
     tsec->avail -= t->avail;
@@ -436,7 +438,7 @@ static gboolean dlfile_recv_check(dlfile_thread_t *t, char *leaf) {
   t->chunk = startchunk;
   t->avail += chunksinblock;
   t->allocated += chunksinblock;
-  t->dl->have -= MIN(t->dl->hash_block / DLFILE_CHUNKSIZE, t->dl->size - (guint64)startchunk * DLFILE_CHUNKSIZE);
+  t->dl->have -= MIN(t->dl->hash_block, t->dl->size - (guint64)startchunk * DLFILE_CHUNKSIZE);
 
   guint32 i;
   for(i=startchunk; i<startchunk+chunksinblock; i++)
