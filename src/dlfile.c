@@ -79,38 +79,10 @@ static gboolean dlfile_hasfreeblock(dlfile_thread_t *t) {
 }
 
 
-static void dlfile_fatal_load_error(dl_t *dl, const char *op) {
+static void dlfile_fatal_load_error(dl_t *dl, const char *op, const char *err) {
   g_error("Unable to %s incoming file `%s', (%s; incoming file for `%s').\n"
     "Delete the incoming file or otherwise repair it before restarting ncdc.",
-    op, dl->inc, g_strerror(errno), dl->dest);
-}
-
-
-static void dlfile_load_bitmap(dl_t *dl, int fd) {
-  guint32 chunks = dlfile_chunks(dl->size);
-  guint8 *bitmap = bita_new(chunks);
-  guint8 *dest = bitmap;
-
-  off_t off = dl->size;
-  size_t left = bita_size(chunks);
-  while(left > 0) {
-    int r = pread(fd, dest, left, off);
-    if(r < 0)
-      dlfile_fatal_load_error(dl, "read bitmap from");
-    if(!r) {
-      /* TODO: EOF, which likely means that this file has been created by a
-       * pre-bitmap ncdc. Create a bitmap in that case. */
-      g_warning("Unexpected EOF while reading bitmap for `%s'.", dl->dest);
-      bita_free(bitmap);
-      return;
-    }
-    left -= r;
-    off += r;
-    dest += r;
-  }
-
-  bita_free(dl->bitmap);
-  dl->bitmap = bitmap;
+    op, dl->inc, err ? err : g_strerror(errno), dl->dest);
 }
 
 
@@ -155,6 +127,80 @@ static void dlfile_save_bitmap_defer(dl_t *dl) {
 }
 
 
+static void dlfile_load_canconvert(dl_t *dl) {
+  static gboolean canconvert = FALSE;
+  if(canconvert)
+    return;
+  printf(
+    "I found a partially downloaded file without a bitmap. This probably\n"
+    "means that you are upgrading from ncdc 1.17 or earlier, which did not\n"
+    "yet support segmented downloading.\n\n"
+    "To convert your partially downloaded files to the new format and to\n"
+    "continue with starting up ncdc, press enter. To abort, hit Ctrl+C.\n\n"
+    "Note: After this conversion, you should NOT downgrade ncdc. If you\n"
+    " wish to do that, backup or delete your inc/ directory first.\n\n"
+    "Note#2: If you get this message when you haven't upgraded ncdc, then\n"
+    " your partially downloaded file is likely corrupt, and continuing\n"
+    " this conversion will not help. In that case, the best you can do is\n"
+    " delete the corrupted file and restart ncdc.\n\n"
+    "The file that triggered this warning is:\n"
+    "  %s\n"
+    "Which is the incoming file for:\n"
+    "  %s\n"
+    "(But there are possibly more affected files)\n",
+    dl->inc, dl->dest);
+  getchar();
+  canconvert = TRUE;
+}
+
+
+static void dlfile_load_nonbitmap(dl_t *dl, int fd, guint8 *bitmap) {
+  struct stat st;
+  if(fstat(fd, &st) < 0)
+    dlfile_fatal_load_error(dl, "stat", NULL);
+  if((guint64)st.st_size >= dl->size)
+    dlfile_fatal_load_error(dl, "load", "File too large");
+
+  dlfile_load_canconvert(dl);
+
+  guint64 left = st.st_size;
+  guint32 chunk = 0;
+  while(left > DLFILE_CHUNKSIZE) {
+    bita_set(bitmap, chunk);
+    chunk++;
+    left -= DLFILE_CHUNKSIZE;
+  }
+}
+
+
+static gboolean dlfile_load_bitmap(dl_t *dl, int fd) {
+  gboolean needsave = FALSE;
+  guint32 chunks = dlfile_chunks(dl->size);
+  guint8 *bitmap = bita_new(chunks);
+  guint8 *dest = bitmap;
+
+  off_t off = dl->size;
+  size_t left = bita_size(chunks);
+  while(left > 0) {
+    int r = pread(fd, dest, left, off);
+    if(r < 0)
+      dlfile_fatal_load_error(dl, "read bitmap from", NULL);
+    if(!r) {
+      dlfile_load_nonbitmap(dl, fd, bitmap);
+      needsave = TRUE;
+      break;
+    }
+    left -= r;
+    off += r;
+    dest += r;
+  }
+
+  bita_free(dl->bitmap);
+  dl->bitmap = bitmap;
+  return needsave;
+}
+
+
 static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint32 chunksinblock, guint32 *reset) {
   dlfile_thread_t *t = g_slice_new0(dlfile_thread_t);
   t->dl = dl;
@@ -172,7 +218,7 @@ static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint
     while(left > 0) {
       int r = pread(fd, buf, left, off);
       if(r <= 0)
-        dlfile_fatal_load_error(dl, "read from");
+        dlfile_fatal_load_error(dl, "read from", NULL);
       off -= r;
       left -= r;
       buf += r;
@@ -194,7 +240,7 @@ static dlfile_thread_t *dlfile_load_block(dl_t *dl, int fd, guint32 chunk, guint
  * chunks. Threads are created in a TTHL-block-aligned fashion to ensure that
  * the downloading progress can continue from the threads while keeping the
  * integrity checks. */
-static void dlfile_load_threads(dl_t *dl, int fd) {
+static gboolean dlfile_load_threads(dl_t *dl, int fd) {
   guint32 chunknum = dlfile_chunks(dl->size);
   guint32 chunksperblock = dl->hash_block / DLFILE_CHUNKSIZE;
   gboolean needsave = FALSE;
@@ -225,18 +271,16 @@ static void dlfile_load_threads(dl_t *dl, int fd) {
         needsave = TRUE;
       }
   }
-
-  if(needsave && !dlfile_save_bitmap(dl, fd))
-    dlfile_fatal_load_error(dl, "save bitmap to");
+  return needsave;
 }
 
 
 void dlfile_load(dl_t *dl) {
   dl->have = 0;
-  int fd = open(dl->inc, O_RDONLY);
+  int fd = open(dl->inc, O_RDWR);
   if(fd < 0) {
     if(errno != ENOENT)
-      dlfile_fatal_load_error(dl, "open");
+      dlfile_fatal_load_error(dl, "open", NULL);
     return;
   }
 
@@ -249,8 +293,13 @@ void dlfile_load(dl_t *dl) {
     return;
   }
 
-  dlfile_load_bitmap(dl, fd);
-  dlfile_load_threads(dl, fd);
+  gboolean needsave = dlfile_load_bitmap(dl, fd);
+  if(dlfile_load_threads(dl, fd))
+    needsave = TRUE;
+
+  if(needsave && !dlfile_save_bitmap(dl, fd))
+    dlfile_fatal_load_error(dl, "save bitmap to", NULL);
+
   close(fd);
 }
 
