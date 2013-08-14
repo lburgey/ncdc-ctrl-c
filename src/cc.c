@@ -536,7 +536,8 @@ void cc_download(cc_t *cc, dl_t *dl) {
 
   // otherwise, send GET request
   } else {
-    cc->dlthread = dlfile_getchunk(dl, cc->uid, 1); /* TODO: Pass a reasonable speed indication */
+    /* TODO: A more long-term rate calculation algorithm might be more suitable here */
+    cc->dlthread = dlfile_getchunk(dl, cc->uid, ratecalc_rate(net_rate_in(cc->net)));
     cc->last_offset = ((guint64)cc->dlthread->chunk * DLFILE_CHUNKSIZE) + cc->dlthread->len;
     gint64 len = dl->islist ? -1 :
       MIN(((gint64)cc->dlthread->allocated * DLFILE_CHUNKSIZE) - cc->dlthread->len, (gint64)(dl->size - cc->last_offset));
