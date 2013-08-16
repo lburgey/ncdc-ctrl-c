@@ -74,8 +74,21 @@ static guint32 dlfile_chunks(guint64 size) {
 
 
 static gboolean dlfile_hasfreeblock(dlfile_thread_t *t) {
-  return t->avail - t->allocated > t->dl->hash_block / DLFILE_CHUNKSIZE
-    || (!t->allocated && t->chunk + t->avail >= dlfile_chunks(t->dl->size));
+  guint32 chunksinblock = t->dl->hash_block / DLFILE_CHUNKSIZE;
+  return t->avail - t->allocated > chunksinblock
+    || (t->chunk + t->avail == dlfile_chunks(t->dl->size) && t->chunk + t->allocated <= ((dlfile_chunks(t->dl->size)/chunksinblock)*chunksinblock));
+}
+
+
+/* Highly verbose debugging function. Prints out a list of threads for a particular dl item. */
+static void dlfile_threaddump(dl_t *dl, int n) {
+#if 0
+  GSList *l;
+  for(l=dl->threads; l; l=l->next) {
+    dlfile_thread_t *ti = l->data;
+    g_debug("THREAD DUMP#%p.%d: chunk = %u, allocated = %u, avail = %u", dl, n, ti->chunk, ti->allocated, ti->avail);
+  }
+#endif
 }
 
 
@@ -300,6 +313,7 @@ void dlfile_load(dl_t *dl) {
   if(needsave && !dlfile_save_bitmap(dl, fd))
     dlfile_fatal_load_error(dl, "save bitmap to", NULL);
 
+  dlfile_threaddump(dl, 0);
   close(fd);
 }
 
@@ -432,19 +446,19 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
    *      t = Thread with largest avail and with allocated = 0
    *   tsec = Thread with an unallocated block and largest avail-allocated
    */
-  gboolean havefreeblock = FALSE;
   dlfile_thread_t *tsec = NULL;
   GSList *l;
 
   g_static_mutex_lock(&dl->lock);
+  dlfile_threaddump(dl, 1);
   for(l=dl->threads; l; l=l->next) {
     dlfile_thread_t *ti = l->data;
-    if(dlfile_hasfreeblock(ti) && (!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated))
+    if(!ti->avail) /* This is possible when it just finished its last chunk and is waiting for recv_done */
+      continue;
+    if((!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated) && dlfile_hasfreeblock(ti))
       tsec = ti;
     if(!ti->allocated && (!t || ti->avail > t->avail))
       t = ti;
-    if(tsec != ti && t != ti && dlfile_hasfreeblock(ti))
-      havefreeblock = TRUE;
   }
 
   if(!t) {
@@ -456,14 +470,13 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     t->dl = dl;
     t->chunk = chunk;
     t->avail = tsec->avail - (chunk - tsec->chunk);
+    g_return_val_if_fail(t->avail > 0, NULL);
     t->uid = uid;
     tth_init(&t->hash_tth);
 
     tsec->avail -= t->avail;
     dl->threads = g_slist_prepend(dl->threads, t);
-  } else if(tsec && t != tsec)
-    havefreeblock = TRUE;
-  g_static_mutex_unlock(&dl->lock);
+  }
 
   /* Number of chunks to request as one segment. The size of a segment is
    * chosen to approximate a download time of ~5 min.
@@ -472,8 +485,17 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
   t->allocated = MIN(t->avail, chunks);
   dl->active_threads++;
-  dl->allbusy = !(havefreeblock || dlfile_hasfreeblock(t));
 
+  /* Go through the list again to update dl->allbusy */
+  for(l=dl->threads; l; l=l->next) {
+    dlfile_thread_t *ti = l->data;
+    if(ti->avail && (!ti->allocated || dlfile_hasfreeblock(ti)))
+      break;
+  }
+  dl->allbusy = !l;
+
+  dlfile_threaddump(dl, 2);
+  g_static_mutex_unlock(&dl->lock);
   g_debug("Allocating: allbusy = %d, chunk = %u, allocated = %u, avail = %u, chunksinblock = %u, chunksinfile = %u",
       dl->allbusy, t->chunk, t->allocated, t->avail, (guint32)dl->hash_block/DLFILE_CHUNKSIZE, dlfile_chunks(dl->size));
   return t;
@@ -593,6 +615,7 @@ void dlfile_recv_done(dlfile_thread_t *t) {
     t->allocated = 0;
     dl->allbusy = FALSE;
   }
+  dlfile_threaddump(dl, 3);
 
   /* File has been removed from the queue but the dl struct is still in memory
    * because this thread hadn't finished yet. Free it now. */
