@@ -587,7 +587,7 @@ static void handle_recvtth(net_t *n, char *buf, int read) {
 
 static void handle_adcsnd(cc_t *cc, gboolean tthl, guint64 start, gint64 bytes) {
   dl_t *dl = g_hash_table_lookup(dl_queue, cc->last_hash);
-  if(!dl) {
+  if(!dl || (!tthl && !cc->dlthread)) {
     g_set_error_literal(&cc->err, 1, 0, "Download interrupted.");
     cc_disconnect(cc, FALSE);
     return;
@@ -599,6 +599,7 @@ static void handle_adcsnd(cc_t *cc, gboolean tthl, guint64 start, gint64 bytes) 
     if(!dl->size)
       cc->last_size = dl->size = bytes;
     net_recvfile(cc->net, bytes, dlfile_recv, handle_recvdone, cc->dlthread);
+    cc->dlthread = NULL;
   } else {
     g_return_if_fail(start == 0 && bytes > 0 && (bytes%24) == 0 && bytes < 48*1024);
     net_readbytes(cc->net, bytes, handle_recvtth);
@@ -1033,6 +1034,10 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         dl_queue_setuerr(cc->uid, cc->last_hash, DLE_NOFILE, NULL);
         cc->state = CCS_IDLE;
         dl_user_cc(cc->uid, cc);
+        if(cc->dlthread) {
+          dlfile_recv_done(cc->dlthread);
+          cc->dlthread = NULL;
+        }
       }
 
     // Other message
@@ -1289,6 +1294,10 @@ static void nmdc_handle(net_t *net, char *cmd, int _len) {
       g_free(msg);
       cc->state = CCS_IDLE;
       dl_user_cc(cc->uid, cc);
+      if(cc->dlthread) {
+        dlfile_recv_done(cc->dlthread);
+        cc->dlthread = NULL;
+      }
     }
   }
   g_match_info_free(nfo);
@@ -1463,6 +1472,10 @@ void cc_disconnect(cc_t *cc, gboolean force) {
   g_return_if_fail(cc->state != CCS_DISCONN);
   if(cc->dl && cc->uid)
     dl_user_cc(cc->uid, NULL);
+  if(cc->dlthread) {
+    dlfile_recv_done(cc->dlthread);
+    cc->dlthread = NULL;
+  }
   if(cc->state == CCS_TRANSFER)
     xfer_log_add(cc);
   if(force || !net_is_asy(cc->net))
