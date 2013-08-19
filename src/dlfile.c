@@ -437,6 +437,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     t->chunk = 0;
     t->len = 0;
     t->uid = uid;
+    dl->have = 0;
     dl->allbusy = TRUE;
     dl->active_threads++;
     return t;
