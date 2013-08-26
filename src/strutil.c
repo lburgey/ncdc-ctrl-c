@@ -402,7 +402,7 @@ guint64 str_connection_to_speed(const char *conn) {
     return 0;
   // raw number, assume mbit/s
   if(!*end)
-    return (val*1024.0*1024.0)/8.0;
+    return (val*1000.0*1000.0)/8.0;
   // KiB/s, assume KiB/s (heh)
   if(strcasecmp(end, "KiB/s") == 0 || strcasecmp(end, " KiB/s") == 0)
     return val*1024.0;
