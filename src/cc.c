@@ -596,7 +596,7 @@ static void handle_adcsnd(cc_t *cc, gboolean tthl, guint64 start, gint64 bytes) 
   cc->last_length = bytes;
   cc->last_tthl = tthl;
   if(!tthl) {
-    if(!dl->size)
+    if(dl->islist)
       cc->last_size = dl->size = bytes;
     net_recvfile(cc->net, bytes, dlfile_recv, handle_recvdone, cc->dlthread);
     cc->dlthread = NULL;
