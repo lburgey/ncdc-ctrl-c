@@ -82,7 +82,7 @@ ui_tab_t *uit_conn_create() {
   t->s_conn = t->s_idle = t->s_upload = t->s_download = t->s_discon = TRUE;
   // sort the connection list
   g_sequence_sort(cc_list, sort_func, NULL);
-  t->list = ui_listing_create(cc_list, skip_func, t);
+  t->list = ui_listing_create(cc_list, skip_func, t, NULL);
   return (ui_tab_t *)t;
 }
 

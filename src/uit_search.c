@@ -157,7 +157,7 @@ ui_tab_t *uit_search_create(hub_t *hub, search_q_t *q, GError **err) {
   while(t->tab.name[strlen(t->tab.name)-1] == ' ')
     t->tab.name[strlen(t->tab.name)-1] = 0;
 
-  t->list = ui_listing_create(g_sequence_new(search_r_free), NULL, t);
+  t->list = ui_listing_create(g_sequence_new(search_r_free), NULL, t, NULL);
   return (ui_tab_t *)t;
 }
 

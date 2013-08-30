@@ -87,7 +87,7 @@ static void setusers(dl_t *dl) {
   int i;
   for(i=0; i<dl->u->len; i++)
     g_sequence_insert_sorted(l, g_sequence_get(g_ptr_array_index(dl->u, i)), dud_sort_func, NULL);
-  dltab->users = ui_listing_create(l, NULL, NULL);
+  dltab->users = ui_listing_create(l, NULL, NULL, NULL);
   dltab->cur = dl;
 }
 
@@ -106,7 +106,7 @@ ui_tab_t *uit_dl_create() {
   dl_t *dl;
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&dl))
     dl->iter = g_sequence_insert_sorted(l, dl, sort_func, NULL);
-  dltab->list = ui_listing_create(l, NULL, NULL);
+  dltab->list = ui_listing_create(l, NULL, NULL, NULL);
 
   return (ui_tab_t *)dltab;
 }
