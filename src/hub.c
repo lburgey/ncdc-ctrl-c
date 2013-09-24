@@ -239,7 +239,7 @@ void hub_user_suggest(hub_t *hub, char *str, char **sug) {
   int i=0, len = strlen(str);
   g_hash_table_iter_init(&iter, hub->users);
   while(i<20 && g_hash_table_iter_next(&iter, NULL, (gpointer *)&u))
-    if(g_ascii_strncasecmp(u->name, str, len) == 0 && strlen(u->name) != len)
+    if(g_ascii_strncasecmp(u->name, str, len) == 0)
       sug[i++] = g_strdup(u->name);
   qsort(sug, i, sizeof(char *), cmpstringp);
 }
