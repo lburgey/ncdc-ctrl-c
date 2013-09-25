@@ -1,3 +1,11 @@
+1.18 - 2013-09-25
+	- Add support for segmented downloading
+	- Support $MyINFO without flags byte on NMDC hubs
+	- Don't require pod2man on build
+	- Fix tab-completion of nick names when full nick is specified
+	- Fix cursor position on selected line in listings
+	- Fix bug with schema-less /connect
+
 1.17 - 2013-06-15
 	- Add 'q' key to user list for matching a users' files with download queue
 	- Add transfers.log format documentation to manual page
