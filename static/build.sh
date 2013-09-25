@@ -23,15 +23,15 @@
 # - Cross-compile to platforms other than Linux?
 
 
-MUSL_VERSION=0.9.9
+MUSL_VERSION=0.9.14
 ZLIB_VERSION=1.2.8
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3071700
+SQLITE_VERSION=3080002
 GMP_VERSION=5.1.2
 NETTLE_VERSION=2.7.1
-GNUTLS_VERSION=3.1.12
+GNUTLS_VERSION=3.2.4
 NCURSES_VERSION=5.9
-GLIB_VERSION=2.36.3
+GLIB_VERSION=2.38.0
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -41,6 +41,8 @@ GLIB_VERSION=2.36.3
 export PKG_CONFIG=true 
 
 export CFLAGS="-O3 -g -static"
+
+export HOST_CC=gcc
 
 # (The variables below are automatically set by the functions, they're defined
 # here to make sure they have global scope and for documentation purposes.)
@@ -107,7 +109,7 @@ getmusl() {
     i486)   DIR=i486-linux-musl ;;
     x86_64) DIR=x86_64-linux-musl ;;
   esac
-  fem https://bitbucket.org/GregorR/musl-cross/downloads/ crossx86-$DIR-$MUSL_VERSION.tar.xz "musl-$TARGET" $DIR
+  fem https://googledrive.com/host/0BwnS5DMB0YQ6bDhPZkpOYVFhbk0/musl-$MUSL_VERSION/ crossx86-$DIR-$MUSL_VERSION.tar.xz "musl-$TARGET" $DIR
 
   # Configure scripts don't like 'mipsel-sf-musl-linux', so rename the links in
   # the bin/ dir to remove the '-sf' flag.
@@ -224,7 +226,7 @@ getglib() {
   $srcdir/configure --prefix=$PREFIX --enable-static --disable-shared\
     --disable-gtk-doc-html --disable-xattr --disable-fam --disable-dtrace\
     --disable-gcov --disable-modular-tests --with-pcre=internal --disable-silent-rules\
-    --host=$HOST CPPFLAGS=-D_GNU_SOURCE || exit
+    --disable-compile-warnings --host=$HOST CPPFLAGS=-D_GNU_SOURCE || exit
   perl -pi -e 's{(#define GLIB_LOCALE_DIR).+}{$1 "/usr/share/locale"}' config.h
   make -C glib/libcharset install
   make -C glib/gnulib install
@@ -239,7 +241,7 @@ getncdc() {
   prebuild ncdc || return
   srcdir=../../..
   $srcdir/configure --host=$HOST --disable-silent-rules\
-    CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -lz -lbz2"\
+    CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -L$PREFIX/lib64 -lz -lbz2"\
     SQLITE_LIBS=-lsqlite3 GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp"\
     GLIB_LIBS="-pthread -lglib-2.0 -lgthread-2.0"\
     GLIB_CFLAGS="-I$PREFIX/include/glib-2.0 -I$PREFIX/lib/glib-2.0/include" || exit
