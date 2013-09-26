@@ -1,7 +1,7 @@
 EXTRA_DIST=ChangeLog
 noinst_PROGRAMS=
 AM_CFLAGS=$(GLIB_CFLAGS) $(GNUTLS_CFLAGS) $(SQLITE_CFLAGS)
-AM_CPPFLAGS=-I$(builddir)/src -I$(srcdir)/deps/ylib
+AM_CPPFLAGS=-I$(builddir)/src -I$(srcdir)/deps -I$(srcdir)/deps/ylib
 
 
 
@@ -37,8 +37,8 @@ makeheaders_SOURCES=deps/makeheaders.c
 
 
 noinst_LIBRARIES=libdeps.a
-libdeps_a_SOURCES=deps/ylib/yuri.c
-EXTRA_DIST+=deps/ylib/yuri.h
+libdeps_a_SOURCES=deps/ylib/yuri.c deps/yxml.c
+EXTRA_DIST+=deps/ylib/yuri.h deps/yxml.h
 
 
 bin_PROGRAMS=ncdc
@@ -72,8 +72,7 @@ ncdc_SOURCES=\
 	src/uit_userlist.c\
 	src/ui_util.c\
 	src/util.c\
-	src/vars.c\
-	src/xmlread.c
+	src/vars.c
 
 auto_headers=$(ncdc_SOURCES:.c=.h)
 noinst_HEADERS=src/doc.h src/ncdc.h
@@ -138,4 +137,3 @@ src/uit_userlist.$(OBJEXT): src/uit_userlist.h
 src/ui_util.$(OBJEXT): src/ui_util.h
 src/util.$(OBJEXT): src/util.h
 src/vars.$(OBJEXT): src/vars.h
-src/xmlread.$(OBJEXT): src/xmlread.h

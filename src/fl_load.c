@@ -26,6 +26,16 @@
 
 #include "ncdc.h"
 #include "fl_load.h"
+#include <yxml.h>
+
+
+#define STACKSIZE (8*1024)
+#define READBUFSIZE (32*1024)
+
+// Only used for attributes that we care about, and those tend to be short,
+// file names being the longest possible values. I am unaware of a filesystem
+// that allows filenames longer than 256 bytes, so this should be a safe value.
+#define MAXATTRVAL 1024
 
 
 #define S_START    0 // waiting for <FileListing>
@@ -34,97 +44,42 @@
 #define S_INDIR    3 // In a <Directory>..</Directory> or <FileListing>..</FileListing>
 #define S_FILEOPEN 4 // In a <File ..>
 #define S_INFILE   5 // In a <File>..</File>
-#define S_UNKNOWN  6 // In some tag we didn't recognize
-#define S_END      7 // Received </FileListing>
+
 
 typedef struct ctx_t {
-  BZFILE *fh_bz;
-  FILE   *fh_f;
-  gboolean eof;
-
   gboolean local;
   int state;
-  char *name;
   char filetth[24];
   gboolean filehastth;
   guint64 filesize;
-  gboolean dirincomplete;
+  char *name;
   fl_list_t *root;
   fl_list_t *cur;
   int unknown_level;
+
+  int consume;
+  char *attrp;
+  char attr[MAXATTRVAL];
+
+  yxml_t x;
+  char stack[STACKSIZE];
+  char buf[READBUFSIZE];
 } ctx_t;
 
-
-static int readcb(void *context, char *buf, int len, GError **err) {
-  ctx_t *x = context;
-
-  if(x->fh_bz) {
-    if(x->eof)
-      return 0;
-    int bzerr;
-    int r = BZ2_bzRead(&bzerr, x->fh_bz, buf, len);
-    if(bzerr != BZ_OK && bzerr != BZ_STREAM_END) {
-      g_set_error(err, 1, 0, "bzip2 decompression error (%d): %s", bzerr, g_strerror(errno));
-      return -1;
-    }
-    if(bzerr == BZ_STREAM_END)
-      x->eof = TRUE;
-    return r;
-
-  }
-
-  int r = fread(buf, 1, len, x->fh_f);
-  if(r < 0 && feof(x->fh_f))
-    r = 0;
-  if(r < 0)
-    g_set_error(err, 1, 0, "Read error: %s", g_strerror(errno));
-  return r;
-}
 
 
 #define isvalidfilename(x) (\
     !(((x)[0] == '.' && (!(x)[1] || ((x)[1] == '.' && !(x)[2])))) && !strchr((x), '/'))
 
 
-static int entitycb(void *context, int type, const char *arg1, const char *arg2, GError **err) {
-  ctx_t *x = context;
-  //printf("%d,%d: %s, %s\n", x->state, type, arg1, arg2);
-  switch(x->state) {
-
-  // The first token must always be a <FileListing>
-  case S_START:
-    if(type == XMLT_OPEN && g_ascii_strcasecmp(arg1, "FileListing") == 0) {
-      x->state = S_FLOPEN;
-      return 0;
-    }
-    break;
-
-  // Any attributes in a <FileListing> are currently ignored.
-  case S_FLOPEN:
-    if(type == XMLT_ATTR)
-      return 0;
-    if(type == XMLT_ATTDONE) {
-      x->state = S_INDIR;
-      return 0;
-    }
-    break;
-
-  // Handling the attributes of a Directory element.
-  case S_DIROPEN:
-    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
-      x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
-      if(!isvalidfilename(x->name)) {
-        g_set_error(err, 1, 0, "Invalid directory name");
-        return -1;
-      }
-      return 0;
-    }
-    if(type == XMLT_ATTDONE) {
+static void fl_load_token(ctx_t *x, yxml_ret_t r, GError **err) {
+  // Detect the end of the attributes for an open XML element.
+  if(r != YXML_ATTRSTART && r != YXML_ATTRVAL && r != YXML_ATTREND) {
+    if(x->state == S_DIROPEN) {
       if(!x->name) {
-        g_set_error(err, 1, 0, "Missing Name attribute in Directory element");
-        return -1;
+        g_set_error_literal(err, 1, 0, "Missing Name attribute in Directory element");
+        return;
       }
-      // Create the directory entry
       fl_list_t *new = fl_list_create(x->name, FALSE);
       new->isfile = FALSE;
       new->sub = g_ptr_array_new_with_free_func(fl_list_free);
@@ -134,77 +89,12 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
       g_free(x->name);
       x->name = NULL;
       x->state = S_INDIR;
-      return 0;
-    }
-    // Ignore unknown or duplicate attributes.
-    if(type == XMLT_ATTR)
-      return 0;
-    break;
 
-  // In a directory listing.
-  case S_INDIR:
-    if(type == XMLT_OPEN && g_ascii_strcasecmp(arg1, "Directory") == 0) {
-      x->state = S_DIROPEN;
-      return 0;
-    }
-    if(type == XMLT_OPEN && g_ascii_strcasecmp(arg1, "File") == 0) {
-      x->state = S_FILEOPEN;
-      return 0;
-    }
-    if(type == XMLT_OPEN) {
-      x->state = S_UNKNOWN;
-      x->unknown_level = 1;
-      return 0;
-    }
-    if(type == XMLT_CLOSE) {
-      char *expect = x->root == x->cur ? "FileListing" : "Directory";
-      if(arg1 && g_ascii_strcasecmp(arg1, expect) != 0) {
-        g_set_error(err, 1, 0, "Invalid close tag, expected </%s> but got </%s>", expect, arg1);
-        return -1;
-      }
-      fl_list_sort(x->cur);
-      if(x->cur == x->root)
-        x->state = S_END;
-      else
-        x->cur = x->cur->parent;
-      return 0;
-    }
-    break;
-
-  // Handling the attributes of a File element. (If there are multiple
-  // attributes with the same name, only the first is used.)
-  case S_FILEOPEN:
-    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Name") == 0 && !x->name) {
-      x->name = g_utf8_validate(arg2, -1, NULL) ? g_strdup(arg2) : str_convert("UTF-8", "UTF-8", arg2);
-      if(!isvalidfilename(x->name)) {
-        g_set_error(err, 1, 0, "Invalid file name");
-        return -1;
-      }
-      return 0;
-    }
-    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "TTH") == 0 && !x->filehastth) {
-      if(!istth(arg2)) {
-        g_set_error(err, 1, 0, "Invalid TTH");
-        return -1;
-      }
-      base32_decode(arg2, x->filetth);
-      x->filehastth = TRUE;
-      return 0;
-    }
-    if(type == XMLT_ATTR && g_ascii_strcasecmp(arg1, "Size") == 0 && x->filesize == G_MAXUINT64) {
-      char *end = NULL;
-      x->filesize = g_ascii_strtoull(arg2, &end, 10);
-      if(!end || *end) {
-        g_set_error(err, 1, 0, "Invalid file size");
-        return -1;
-      }
-      return 0;
-    }
-    if(type == XMLT_ATTDONE) {
+    } else if(x->state == S_FILEOPEN) {
       if(!x->name || !x->filehastth || x->filesize == G_MAXUINT64) {
         g_set_error(err, 1, 0, "Missing %s attribute in File element",
           !x->name ? "Name" : !x->filehastth ? "TTH" : "Size");
-        return -1;
+        return;
       }
       // Create the file entry
       fl_list_t *new = fl_list_create(x->name, x->local);
@@ -219,115 +109,209 @@ static int entitycb(void *context, int type, const char *arg1, const char *arg2,
       g_free(x->name);
       x->name = NULL;
       x->state = S_INFILE;
-      return 0;
-    }
-    // Ignore unknown or duplicate attributes.
-    if(type == XMLT_ATTR)
-      return 0;
-    break;
 
-  // In a File element. Nothing is allowed here exept a close of the File
-  // element. (Really?)
-  case S_INFILE:
-    if(type == XMLT_CLOSE && (!arg1 || g_ascii_strcasecmp(arg1, "File") == 0)) {
+    } else if(x->state == S_FLOPEN)
       x->state = S_INDIR;
-      return 0;
-    }
-    break;
+  }
 
-  // No idea in what kind of tag we are, just count start/end tags so we can
-  // continue parsing when we're out of this unknown tag.
-  case S_UNKNOWN:
-    if(type == XMLT_OPEN)
+  switch(r) {
+  case YXML_ELEMSTART:
+    if(x->unknown_level)
       x->unknown_level++;
-    else if(type == XMLT_CLOSE && !--x->unknown_level)
-      x->state = S_INDIR;
-    return 0;
-  }
+    else if(x->state == S_START) {
+      if(g_ascii_strcasecmp(x->x.elem, "FileListing") == 0)
+        x->state = S_FLOPEN;
+      else
+        g_set_error_literal(err, 1, 0, "XML root element is not <FileListing>");
+    } else {
+      if(g_ascii_strcasecmp(x->x.elem, "File") == 0)
+        x->state = S_FILEOPEN;
+      else if(g_ascii_strcasecmp(x->x.elem, "Directory") == 0)
+        x->state = S_DIROPEN;
+      else
+        x->unknown_level++;
+    }
+    break;
 
-  g_set_error(err, 1, 0, "Unexpected token in state %s: %s, %s",
-    x->state == S_START    ? "START"    :
-    x->state == S_FLOPEN   ? "FLOPEN"   :
-    x->state == S_DIROPEN  ? "DIROPEN"  :
-    x->state == S_INDIR    ? "INDIR"    :
-    x->state == S_FILEOPEN ? "FILEOPEN" :
-    x->state == S_INFILE   ? "INFILE"   :
-    x->state == S_END      ? "END"      : "UNKNOWN",
-    type == XMLT_OPEN    ? "OPEN"    :
-    type == XMLT_CLOSE   ? "CLOSE"   :
-    type == XMLT_ATTR    ? "ATTR"    :
-    type == XMLT_ATTDONE ? "ATTDONE" : "???",
-    arg1 ? arg1 : "<NULL>");
-  return -1;
+  case YXML_ELEMEND:
+    if(x->unknown_level)
+      x->unknown_level--;
+    else if(x->state == S_INFILE)
+      x->state = S_INDIR;
+    else {
+      fl_list_sort(x->cur);
+      x->cur = x->cur->parent;
+    }
+    break;
+
+  case YXML_ATTRSTART:
+    x->consume = !x->unknown_level && (
+      (x->state == S_DIROPEN && g_ascii_strcasecmp(x->x.attr, "Name") == 0) ||
+      (x->state == S_FILEOPEN && (
+        g_ascii_strcasecmp(x->x.attr, "Name") == 0 ||
+        g_ascii_strcasecmp(x->x.attr, "Size") == 0 ||
+        g_ascii_strcasecmp(x->x.attr, "TTH") == 0
+      ))
+    );
+    x->attrp = x->attr;
+    break;
+
+  case YXML_ATTRVAL:
+    if(!x->consume)
+      break;
+    if(x->attrp-x->attr > sizeof(x->attr)-5) {
+      g_set_error_literal(err, 1, 0, "Too long XML attribute");
+      return;
+    }
+    char *v = x->x.data;
+    while(*v)
+      *(x->attrp++) = *(v++);
+    break;
+
+  case YXML_ATTREND:
+    if(!x->consume)
+      break;
+    *x->attrp = 0;
+    // Name, for either file or directory
+    if((*x->x.attr|32) == 'n' && !x->name) {
+      x->name = g_utf8_validate(x->attr, -1, NULL) ? g_strdup(x->attr) : str_convert("UTF-8", "UTF-8", x->attr);
+      if(!isvalidfilename(x->name))
+        g_set_error_literal(err, 1, 0, "Invalid file name");
+    }
+    // TTH, for files
+    if((*x->x.attr|32) == 't' && !x->filehastth) {
+      if(!istth(x->attr))
+        g_set_error_literal(err, 1, 0, "Invalid TTH");
+      else {
+        base32_decode(x->attr, x->filetth);
+        x->filehastth = TRUE;
+      }
+    }
+    // Size, for files
+    if((*x->x.attr|32) == 's' && x->filesize == G_MAXUINT64) {
+      char *end = NULL;
+      x->filesize = g_ascii_strtoull(x->attr, &end, 10);
+      if(!end || *end)
+        g_set_error_literal(err, 1, 0, "Invalid file size");
+    }
+    break;
+
+  default:
+    break;
+  }
 }
 
 
-static int ctx_open(ctx_t *x, const char *file, GError **err) {
-  memset(x, 0, sizeof(ctx_t));
+static fl_list_t *fl_load_parse(FILE *fh, BZFILE *bzfh, gboolean local, GError **err) {
+  ctx_t *x = g_new(ctx_t, 1);
+  x->state = S_START;
+  x->root = fl_list_create("", FALSE);
+  x->root->sub = g_ptr_array_new_with_free_func(fl_list_free);
+  x->cur = x->root;
+  x->filesize = G_MAXUINT64;
+  x->local = local;
+  x->unknown_level = 0;
+  x->filehastth = FALSE;
+  x->name = NULL;
 
-  // open file
-  x->fh_f = fopen(file, "r");
-  if(!x->fh_f) {
-    g_set_error_literal(err, 1, 0, g_strerror(errno));
-    return -1;
-  }
+  yxml_init(&x->x, x->stack, STACKSIZE);
+  int buflen = 0;
+  int bzeof = 0;
 
-  // open BZ2 decompression
-  if(strlen(file) > 4 && strcmp(file+(strlen(file)-4), ".bz2") == 0) {
-    int bzerr;
-    x->fh_bz = BZ2_bzReadOpen(&bzerr, x->fh_f, 0, 0, NULL, 0);
-    if(bzerr != BZ_OK) {
-      g_set_error(err, 1, 0, "Unable to open bzip2 file (%d): %s", bzerr, g_strerror(errno));
-      return -1;
+  while(1) {
+    // Fill buffer
+    if(bzfh) {
+      if(bzeof)
+        break;
+      int bzerr;
+      buflen = BZ2_bzRead(&bzerr, bzfh, x->buf, READBUFSIZE);
+      if(bzerr == BZ_STREAM_END)
+        bzeof = 1;
+      else if(bzerr != BZ_OK) {
+        g_set_error(err, 1, 0, "bzip2 decompression error (%d): %s", bzerr, g_strerror(errno));
+        break;
+      }
+    } else {
+      buflen = fread(x->buf, 1, READBUFSIZE, fh);
+      if(buflen < 0 && feof(fh))
+        break;
+      if(buflen < 0) {
+        g_set_error(err, 1, 0, "Read error: %s", g_strerror(errno));
+        break;
+      }
+    }
+
+    // And parse
+    char *pbuf = x->buf;
+    while(!*err && buflen > 0) {
+      yxml_ret_t r = yxml_parse(&x->x, *pbuf);
+      pbuf++;
+      buflen--;
+      if(r == YXML_OK)
+        continue;
+      if(r < 0) {
+        g_set_error_literal(err, 1, 0, "XML parsing error");
+        break;
+      }
+      fl_load_token(x, r, err);
+    }
+    if(*err) {
+      g_prefix_error(err, "Line %"G_GUINT32_FORMAT":%"G_GUINT64_FORMAT": ", x->x.line, x->x.byte);
+      break;
     }
   }
 
-  return 0;
-}
+  if(!*err && yxml_eof(&x->x) < 0)
+    g_set_error_literal(err, 1, 0, "XML document did not end correctly");
 
-
-static void ctx_close(ctx_t *x) {
-  if(x->fh_bz) {
-    int bzerr;
-    BZ2_bzReadClose(&bzerr, x->fh_bz);
-  }
-
-  if(x->fh_f)
-    fclose(x->fh_f);
-
-  if(x->name)
-    g_free(x->name);
+  fl_list_t *root = x->root;
+  g_free(x->name);
+  g_free(x);
+  return root;
 }
 
 
 fl_list_t *fl_load(const char *file, GError **err, gboolean local) {
   g_return_val_if_fail(err == NULL || *err == NULL, NULL);
 
-  ctx_t x;
+  fl_list_t *root = NULL;
+  FILE *fh;
+  BZFILE *bzfh = NULL;
   GError *ierr = NULL;
-  if(ctx_open(&x, file, &ierr))
-    goto end;
 
-  x.state = S_START;
-  x.root = fl_list_create("", FALSE);
-  x.root->sub = g_ptr_array_new_with_free_func(fl_list_free);
-  x.cur = x.root;
-  x.filesize = G_MAXUINT64;
-  x.local = local;
-
-  if(xml_parse(entitycb, readcb, &x, &ierr))
+  // open file
+  fh = fopen(file, "r");
+  if(!fh) {
+    g_set_error_literal(&ierr, 1, 0, g_strerror(errno));
     goto end;
+  }
+
+  // open BZ2 decompression
+  if(strlen(file) > 4 && strcmp(file+(strlen(file)-4), ".bz2") == 0) {
+    int bzerr;
+    bzfh = BZ2_bzReadOpen(&bzerr, fh, 0, 0, NULL, 0);
+    if(bzerr != BZ_OK) {
+      g_set_error(&ierr, 1, 0, "Unable to open bzip2 file (%d): %s", bzerr, g_strerror(errno));
+      goto end;
+    }
+  }
+
+  root = fl_load_parse(fh, bzfh, local, &ierr);
 
 end:
-  g_return_val_if_fail(ierr || x.state == S_END, NULL);
-  ctx_close(&x);
+  if(bzfh) {
+    int bzerr;
+    BZ2_bzReadClose(&bzerr, bzfh);
+  }
+  if(fh)
+    fclose(fh);
   if(ierr) {
     g_propagate_error(err, ierr);
-    if(x.root)
-      fl_list_free(x.root);
-    x.root = NULL;
+    if(root)
+      fl_list_free(root);
+    root = NULL;
   }
-  return x.root;
+  return root;
 }
 
 
