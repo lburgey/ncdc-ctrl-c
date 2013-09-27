@@ -126,9 +126,12 @@ static void fl_load_token(ctx_t *x, yxml_ret_t r, GError **err) {
     } else {
       if(g_ascii_strcasecmp(x->x.elem, "File") == 0)
         x->state = S_FILEOPEN;
-      else if(g_ascii_strcasecmp(x->x.elem, "Directory") == 0)
-        x->state = S_DIROPEN;
-      else
+      else if(g_ascii_strcasecmp(x->x.elem, "Directory") == 0) {
+        if(x->state == S_INFILE)
+          g_set_error_literal(err, 1, 0, "Invalid <Directory> inside a <File>");
+        else
+          x->state = S_DIROPEN;
+      } else
         x->unknown_level++;
     }
     break;
