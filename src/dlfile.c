@@ -342,10 +342,11 @@ void dlfile_rm(dl_t *dl) {
 
 /* XXX: This function may block in the main thread for a while. Perhaps do it in a threadpool? */
 static void dlfile_finished(dl_t *dl) {
-  /* Remove bitmap from the file */
+  /* Regular files: Remove bitmap from the file
+   * File lists: Ensure that the file size is correct after we've downloaded a
+   *   longer file list before that got interrupted. */
   /* TODO: Error handling */
-  if(!dl->islist)
-    ftruncate(dl->incfd, dl->size);
+  ftruncate(dl->incfd, dl->size);
   close(dl->incfd);
   dl->incfd = 0;
 
