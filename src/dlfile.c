@@ -76,7 +76,7 @@ static guint32 dlfile_chunks(guint64 size) {
 static gboolean dlfile_hasfreeblock(dlfile_thread_t *t) {
   guint32 chunksinblock = t->dl->hash_block / DLFILE_CHUNKSIZE;
   return t->avail - t->allocated > chunksinblock
-    || (t->chunk + t->avail == dlfile_chunks(t->dl->size) && t->chunk + t->allocated <= ((dlfile_chunks(t->dl->size)/chunksinblock)*chunksinblock));
+    || (t->chunk + t->avail == dlfile_chunks(t->dl->size) && t->chunk + t->allocated <= (((dlfile_chunks(t->dl->size)-1)/chunksinblock)*chunksinblock));
 }
 
 
