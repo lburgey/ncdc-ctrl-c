@@ -457,11 +457,9 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   dlfile_threaddump(dl, 1);
   for(l=dl->threads; l; l=l->next) {
     dlfile_thread_t *ti = l->data;
-    if(ti->busy)
-      continue;
-    if((!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated) && dlfile_hasfreeblock(ti))
+    if(ti->avail && (!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated) && dlfile_hasfreeblock(ti))
       tsec = ti;
-    if(!ti->allocated && (!t || ti->avail > t->avail))
+    if(!ti->busy && (!t || ti->avail > t->avail))
       t = ti;
   }
 
