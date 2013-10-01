@@ -59,6 +59,7 @@ struct dlfile_thread_t {
   guint32 avail;     /* Number of undownloaded chunks in and after this thread (including current & allocated) */
   guint32 chunk;     /* Current chunk number */
   guint32 len;       /* Number of bytes downloaded into this chunk */
+  gboolean busy;     /* Whether this thread is being used */
   /* Fields for deferred error reporting */
   guint64 uid;
   char *err_msg, *uerr_msg;
@@ -86,7 +87,7 @@ static void dlfile_threaddump(dl_t *dl, int n) {
   GSList *l;
   for(l=dl->threads; l; l=l->next) {
     dlfile_thread_t *ti = l->data;
-    g_debug("THREAD DUMP#%p.%d: chunk = %u, allocated = %u, avail = %u", dl, n, ti->chunk, ti->allocated, ti->avail);
+    g_debug("THREAD DUMP#%p.%d: busy = %d, chunk = %u, allocated = %u, avail = %u", dl, n, ti->busy, ti->chunk, ti->allocated, ti->avail);
   }
 #endif
 }
@@ -438,6 +439,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     t->chunk = 0;
     t->len = 0;
     t->uid = uid;
+    t->busy = TRUE;
     dl->have = 0;
     dl->allbusy = TRUE;
     dl->active_threads++;
@@ -455,7 +457,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   dlfile_threaddump(dl, 1);
   for(l=dl->threads; l; l=l->next) {
     dlfile_thread_t *ti = l->data;
-    if(!ti->avail) /* This is possible when it just finished its last chunk and is waiting for recv_done */
+    if(ti->busy)
       continue;
     if((!tsec || ti->avail-ti->allocated > tsec->avail-tsec->allocated) && dlfile_hasfreeblock(ti))
       tsec = ti;
@@ -486,12 +488,13 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
    * segmented downloading (still at least DLFILE_CHUNKSIZE). */
   guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
   t->allocated = MIN(t->avail, chunks);
+  t->busy = TRUE;
   dl->active_threads++;
 
   /* Go through the list again to update dl->allbusy */
   for(l=dl->threads; l; l=l->next) {
     dlfile_thread_t *ti = l->data;
-    if(ti->avail && (!ti->allocated || dlfile_hasfreeblock(ti)))
+    if(ti->avail && (!ti->busy || dlfile_hasfreeblock(ti)))
       break;
   }
   dl->allbusy = !l;
@@ -608,6 +611,7 @@ gboolean dlfile_recv(void *vt, const char *buf, int len) {
 void dlfile_recv_done(dlfile_thread_t *t) {
   dl_t *dl = t->dl;
   dl->active_threads--;
+  t->busy = FALSE;
 
   if(dl->islist ? dl->have == dl->size : !t->avail) {
     g_return_if_fail(!(t->err || t->uerr)); /* A failed thread can't be complete */
