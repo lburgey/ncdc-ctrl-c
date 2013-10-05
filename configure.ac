@@ -1,5 +1,5 @@
 
-AC_INIT([ncdc], [1.18], [projects@yorhel.nl])
+AC_INIT([ncdc], [1.18.1], [projects@yorhel.nl])
 AC_CONFIG_SRCDIR([src/ncdc.h])
 AC_CONFIG_HEADER([config.h])
 m4_include([deps/lean.m4])

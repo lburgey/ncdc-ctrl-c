@@ -1,3 +1,8 @@
+1.18.1 - 2013-10-05
+	- Fix crash when downloading files from multiple sources
+	- Use the yxml library to parse files.xml.bz2 files
+	- Fix various XML conformance bugs in parsing files.xml.bz2 files
+
 1.18 - 2013-09-25
 	- Add support for segmented downloading
 	- Support $MyINFO without flags byte on NMDC hubs
