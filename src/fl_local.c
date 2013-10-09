@@ -648,6 +648,7 @@ static void fl_hash_process() {
   g_free(tmp);
   args->filesize = file->size;
   args->lastreset = fl_hash_reset;
+  g_message("Start hashing %s", args->path);
   g_thread_pool_push(fl_hash_pool, args, NULL);
 }
 
@@ -667,6 +668,7 @@ static gboolean fl_hash_done(gpointer dat) {
     ui_mf(uit_main_tab, UIP_MED, "Error hashing \"%s\": %s", args->path, args->err->message);
     goto fl_hash_done_f;
   }
+  g_message("Completed hashing %s in %.2fs", args->path, args->time);
 
   // update file and hash info
   memcpy(fl->tth, args->root, 24);
