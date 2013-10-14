@@ -481,11 +481,14 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   }
 
   /* Number of chunks to request as one segment. The size of a segment is
-   * chosen to approximate a download time of ~5 min.
-   * XXX: Make the minimum segment size configurable to allow users to disable
-   * segmented downloading (still at least DLFILE_CHUNKSIZE). */
-  guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
-  t->allocated = MIN(t->avail, chunks);
+   * chosen to approximate a download time of ~5 min. */
+  guint32 minsegment = var_get_int64(0, VAR_download_segment);
+  if(minsegment) {
+    guint32 chunks = MIN(G_MAXUINT32, 1 + ((speed * 300) / DLFILE_CHUNKSIZE));
+    chunks = MAX(chunks, (minsegment+DLFILE_CHUNKSIZE-1) / DLFILE_CHUNKSIZE);
+    t->allocated = MIN(t->avail, chunks);
+  } else
+    t->allocated = t->avail;
   t->busy = TRUE;
   dl->active_threads++;
 

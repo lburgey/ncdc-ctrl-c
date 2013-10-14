@@ -308,6 +308,24 @@ static char *p_backlog(const char *val, GError **err) {
 }
 
 
+// download_segment
+
+static char *f_download_segment(const char *var) {
+  return g_strdup(strcmp(var, "0") == 0 ? "0 (disable segmented downloading)" : str_formatsize(int_raw(var)));
+}
+
+static char *p_download_segment(const char *val, GError **err) {
+  guint64 size = str_parsesize(val);
+  if(size == G_MAXUINT64) {
+    g_set_error_literal(err, 1, 0, "Invalid speed.");
+    return NULL;
+  }
+  if(size && size < DLFILE_CHUNKSIZE)
+    size = DLFILE_CHUNKSIZE;
+  return g_strdup_printf("%"G_GUINT64_FORMAT, size);
+}
+
+
 // nick
 
 static char *p_nick(const char *val, GError **err) {
@@ -922,6 +940,7 @@ struct var_t {
   V(download_dir,     1,0, f_id,           p_id,            su_path,       NULL,         s_dl_inc_dir,    i_dl_inc_dir(TRUE))\
   V(download_exclude, 1,0, f_id,           p_regex,         su_old,        NULL,         NULL,            NULL)\
   V(download_rate,    1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)\
+  V(download_segment, 1,0, f_download_segment,p_download_segment,NULL,     NULL,         NULL,            g_strdup_printf("%"G_GUINT64_FORMAT, (guint64)DLFILE_CHUNKSIZE))\
   V(download_slots,   1,0, f_int,          p_int,           NULL,          NULL,         s_download_slots,"3")\
   V(email,            1,1, f_id,           p_id,            su_old,        NULL,         s_hubinfo,       NULL)\
   V(encoding,         1,1, f_id,           p_encoding,      su_encoding,   NULL,         NULL,            "UTF-8")\
@@ -1029,6 +1048,11 @@ gboolean var_get_bool(guint64 h, var_type n) {
 }
 
 int var_get_int(guint64 h, var_type n) {
+  char *r = var_get(h, n);
+  return int_raw(r);
+}
+
+gint64 var_get_int64(guint64 h, var_type n) {
   char *r = var_get(h, n);
   return int_raw(r);
 }
