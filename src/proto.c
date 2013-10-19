@@ -245,7 +245,8 @@ gboolean adc_parse(const char *str, adc_cmd_t *c, int *feats, GError **err) {
     g_set_error_literal(err, 1, 0, "Invalid characters after command.");
     return FALSE;
   }
-  off++;
+  if(off[0])
+    off++;
 
   // type = U, first argument is source CID. But we don't handle that here.
 
