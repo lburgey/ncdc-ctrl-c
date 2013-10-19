@@ -625,10 +625,13 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   dlfile_threaddump(dl, 3);
 
   /* File has been removed from the queue but the dl struct is still in memory
-   * because this thread hadn't finished yet. Free it now. */
+   * because this thread hadn't finished yet. Free it now. Note that the actual
+   * call to dl_queue_rm() is deferred, because we can't access *t after
+   * calling it. */
   gboolean doclose = !dl->bitmap_src && !dl->active_threads;
+  gboolean dorm = FALSE;
   if(!dl->active_threads && !g_hash_table_lookup(dl_queue, dl->hash)) {
-    dl_queue_rm(dl);
+    dorm = TRUE;
     doclose = FALSE;
   } else if(t->err)
     dl_queue_seterr(t->dl, t->err, t->err_msg);
@@ -648,4 +651,7 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   g_free(t->uerr_msg);
   t->err = t->uerr = 0;
   t->err_msg = t->uerr_msg = NULL;
+
+  if(dorm)
+    dl_queue_rm(dl);
 }
