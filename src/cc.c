@@ -538,6 +538,11 @@ void cc_download(cc_t *cc, dl_t *dl) {
   } else {
     /* TODO: A more long-term rate calculation algorithm might be more suitable here */
     cc->dlthread = dlfile_getchunk(dl, cc->uid, ratecalc_rate(net_rate_in(cc->net)));
+    if(!cc->dlthread) {
+      g_set_error_literal(&cc->err, 1, 0, "Download interrupted.");
+      cc_disconnect(cc, FALSE);
+      return;
+    }
     cc->last_offset = ((guint64)cc->dlthread->chunk * DLFILE_CHUNKSIZE) + cc->dlthread->len;
     gint64 len = dl->islist ? -1 :
       MIN(((gint64)cc->dlthread->allocated * DLFILE_CHUNKSIZE) - cc->dlthread->len, (gint64)(dl->size - cc->last_offset));
