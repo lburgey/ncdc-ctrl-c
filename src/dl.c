@@ -859,7 +859,6 @@ void dl_settthl(guint64 uid, char *tth, char *tthl, int len) {
     return;
   g_return_if_fail(du->state == DLU_ACT);
   g_return_if_fail(!dl->islist);
-  g_return_if_fail(!dl->have);
   // We accidentally downloaded the TTHL from multiple users. Just discard this data.
   if(dl->hastthl)
     return;
