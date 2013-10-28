@@ -614,10 +614,11 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   dl->active_threads--;
   t->busy = FALSE;
 
+  gboolean freet = FALSE;
   if(dl->islist ? dl->have == dl->size : !t->avail) {
     g_return_if_fail(!(t->err || t->uerr)); /* A failed thread can't be complete */
     dl->threads = g_slist_remove(dl->threads, t);
-    g_slice_free(dlfile_thread_t, t);
+    freet = TRUE;
   } else {
     t->allocated = 0;
     dl->allbusy = FALSE;
@@ -651,6 +652,8 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   g_free(t->uerr_msg);
   t->err = t->uerr = 0;
   t->err_msg = t->uerr_msg = NULL;
+  if(freet)
+    g_slice_free(dlfile_thread_t, t);
 
   if(dorm)
     dl_queue_rm(dl);
