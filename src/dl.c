@@ -838,10 +838,11 @@ void dl_finished(dl_t *dl) {
 
   gboolean opentab = dl->islist && dl->prio != DLP_ERR;
   guint64 uid = opentab ? ((dl_user_dl_t *)g_sequence_get(g_ptr_array_index(dl->u, 0)))->u->uid : 0;
-  const char *flsel = dl->flsel;
+  char *flsel = dl->flsel;
   ui_tab_t *flpar = dl->flpar;
   gboolean flopen = dl->flopen;
   gboolean flmatch = dl->flmatch;
+  dl->flsel = NULL;
 
   dl_queue_rm(dl);
 
@@ -852,6 +853,7 @@ void dl_finished(dl_t *dl) {
     uit_fl_queue(uid, FALSE, flsel, flpar, flopen, flmatch);
     ui_tab_cur = cur;
   }
+  g_free(flsel);
 }
 
 
