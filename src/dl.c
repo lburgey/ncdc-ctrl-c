@@ -836,17 +836,22 @@ void dl_queue_rmuser(guint64 uid, char *tth) {
 void dl_finished(dl_t *dl) {
   g_debug("dl: download of `%s' finished, removing from queue", dl->dest);
 
-  // open the file list
-  if(dl->islist && dl->prio != DLP_ERR) {
-    g_return_if_fail(dl->u->len == 1);
-    // Ugly hack: make sure to not select the browse tab, if one is opened
-    GList *cur = ui_tab_cur;
-    uit_fl_queue(((dl_user_dl_t *)g_sequence_get(g_ptr_array_index(dl->u, 0)))->u->uid,
-        FALSE, dl->flsel, dl->flpar, dl->flopen, dl->flmatch);
-    ui_tab_cur = cur;
-  }
+  gboolean opentab = dl->islist && dl->prio != DLP_ERR;
+  guint64 uid = opentab ? ((dl_user_dl_t *)g_sequence_get(g_ptr_array_index(dl->u, 0)))->u->uid : 0;
+  const char *flsel = dl->flsel;
+  ui_tab_t *flpar = dl->flpar;
+  gboolean flopen = dl->flopen;
+  gboolean flmatch = dl->flmatch;
 
   dl_queue_rm(dl);
+
+  // open the file list (after dl_queue_rm(), since the file list should be truncated/closed first)
+  if(opentab) {
+    // Ugly hack: make sure to not select the browse tab, if one is opened
+    GList *cur = ui_tab_cur;
+    uit_fl_queue(uid, FALSE, flsel, flpar, flopen, flmatch);
+    ui_tab_cur = cur;
+  }
 }
 
 
