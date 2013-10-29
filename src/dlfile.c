@@ -440,6 +440,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     t->len = 0;
     t->uid = uid;
     t->busy = TRUE;
+    dl->hassize = FALSE;
     dl->have = 0;
     dl->allbusy = TRUE;
     dl->active_threads++;
@@ -615,7 +616,7 @@ void dlfile_recv_done(dlfile_thread_t *t) {
   t->busy = FALSE;
 
   gboolean freet = FALSE;
-  if(dl->islist ? dl->have == dl->size : !t->avail) {
+  if(dl->islist ? dl->hassize && dl->have == dl->size : !t->avail) {
     g_return_if_fail(!(t->err || t->uerr)); /* A failed thread can't be complete */
     dl->threads = g_slist_remove(dl->threads, t);
     freet = TRUE;

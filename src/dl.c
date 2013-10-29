@@ -102,6 +102,7 @@ struct dl_t {
   gboolean hastthl : 1;
   gboolean flopen : 1;   // For lists: Whether to open a browse tab after completed download
   gboolean flmatch : 1;  // For lists: Whether to match queue after completed download
+  gboolean hassize : 1;  // For lists: Whether the size of the file list is known and validated
   gboolean allbusy : 1;  // When no more unallocated blocks are available (maintained by dlfile.c)
   signed char prio;      // DLP_*
   char error;            // DLE_*
