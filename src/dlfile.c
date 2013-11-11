@@ -474,7 +474,6 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
     t->chunk = chunk;
     t->avail = tsec->avail - (chunk - tsec->chunk);
     g_return_val_if_fail(t->avail > 0, NULL);
-    t->uid = uid;
     tth_init(&t->hash_tth);
 
     tsec->avail -= t->avail;
@@ -491,6 +490,7 @@ dlfile_thread_t *dlfile_getchunk(dl_t *dl, guint64 uid, guint64 speed) {
   } else
     t->allocated = t->avail;
   t->busy = TRUE;
+  t->uid = uid;
   dl->active_threads++;
 
   /* Go through the list again to update dl->allbusy */
