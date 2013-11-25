@@ -1184,7 +1184,8 @@ gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
 
   switch(key) {
   case INPT_CHAR('/'):
-    ul->query = ui_textinput_create(FALSE, NULL);
+    if (ul->search_func)
+      ul->query = ui_textinput_create(FALSE, NULL);
     break;
   case INPT_KEY(KEY_NPAGE): { // page down
     int i = page;
