@@ -75,6 +75,11 @@ struct ui_attr_t {
   int attr;
 }
 
+struct ui_cursor_t {
+  int x;
+  int y;
+}
+
 #define UIC(n) (ui_colors[(ui_coltype)UIC_##n].a)
 
 #endif // INTERFACE
@@ -834,7 +839,7 @@ char *ui_textinput_reset(ui_textinput_t *ti) {
 
 // must be drawn last, to keep the cursor position correct
 // also not the most efficient function ever, but probably fast enough.
-void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col) {
+void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col, struct ui_cursor_t *cur) {
   //       |              |
   // "Some random string etc etc"
   //       f         #    l
@@ -877,8 +882,13 @@ void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col) {
     }
     i++;
   }
-  move(y, x+pos);
+  x += pos;
+  move(y, x);
   curs_set(1);
+  if (cur) {
+    cur->x = x;
+    cur->y = y;
+  }
 }
 
 
@@ -1264,26 +1274,28 @@ static void ui_listing_fixtop(ui_listing_t *ul, int height) {
 // TODO: The return value is only correct if no skip function is used or if
 // there are otherwise no hidden rows. It'll give a blatantly wrong number if
 // there are.
-int ui_listing_draw(ui_listing_t *ul, int top, int bottom, int *cur, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
+int ui_listing_draw(ui_listing_t *ul, int top, int bottom, struct ui_cursor_t *cur, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
   int query_height = !!ul->query;
   int listing_height = 1 + bottom - top - query_height;
   ui_listing_fixtop(ul, listing_height);
 
-  if(cur)
-    *cur = top;
+  if(cur) {
+    cur->x = 0;
+    cur->y = top;
+  }
 
   // draw
   GSequenceIter *n = ul->top;
   while(top <= bottom - query_height && !g_sequence_iter_is_end(n)) {
     if(cur && n == ul->sel)
-      *cur = top;
+      cur->y = top;
     cb(ul, n, top, ul->dat);
     n = ui_listing_next(ul, n);
     top++;
   }
   if (ul->query) {
     mvaddstr(bottom, 0, "search>");
-    ui_textinput_draw(ul->query, bottom, 8, wincols-8);
+    ui_textinput_draw(ul->query, bottom, 8, wincols-8, cur);
   }
 
   ui_listing_updateisbegin(ul);

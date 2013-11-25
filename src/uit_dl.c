@@ -213,7 +213,7 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = dltab->details ? winrows-14 : winrows-4;
-  int cursor;
+  struct ui_cursor_t cursor;
   int pos = ui_listing_draw(dltab->list, 2, bottom-1, &cursor, draw_row);
 
   dl_t *sel = g_sequence_iter_is_end(dltab->list->sel) ? NULL : g_sequence_get(dltab->list->sel);
@@ -247,7 +247,7 @@ static void t_draw(ui_tab_t *tab) {
     else
       ui_listing_draw(dltab->users, bottom+2, winrows-3, &cursor, dud_draw_row);
   }
-  move(cursor, 0);
+  move(cursor.y, cursor.x);
 }
 
 

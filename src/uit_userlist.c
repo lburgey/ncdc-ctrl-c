@@ -257,7 +257,7 @@ static void t_draw(ui_tab_t *tab) {
 
   // rows
   int bottom = t->details ? winrows-7 : winrows-3;
-  int cursor;
+  struct ui_cursor_t cursor;
   int pos = ui_listing_draw(t->list, 2, bottom-1, &cursor, draw_row);
 
   // footer
@@ -301,7 +301,7 @@ static void t_draw(ui_tab_t *tab) {
     // TODO: CID?
   }
 
-  move(cursor, 0);
+  move(cursor.y, cursor.x);
 }
 #undef DRAW_COL
 

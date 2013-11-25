@@ -141,7 +141,7 @@ static void t_draw(ui_tab_t *tab) {
   mvaddstr(winrows-3, 0, tab->name);
   addstr("> ");
   int pos = str_columns(tab->name)+2;
-  ui_textinput_draw(ui_global_textinput, winrows-3, pos, wincols-pos);
+  ui_textinput_draw(ui_global_textinput, winrows-3, pos, wincols-pos, NULL);
 }
 
 

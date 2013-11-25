@@ -360,7 +360,7 @@ static void t_draw(ui_tab_t *tab) {
 
   // rows
   int pos = -1;
-  int cursor = 2;
+  struct ui_cursor_t cursor = { 0, 2 };
   if(t->loading)
     mvaddstr(3, 2, "Loading filelist...");
   else if(t->err)
@@ -394,7 +394,7 @@ static void t_draw(ui_tab_t *tab) {
       mvprintw(winrows-3, 0, " %d items, %s bytes", num, str_fullsize(sel->size));
   }
   attroff(UIC(separator));
-  move(cursor, 0);
+  move(cursor.y, cursor.x);
 }
 
 

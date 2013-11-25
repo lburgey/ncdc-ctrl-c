@@ -61,7 +61,7 @@ static void t_draw(ui_tab_t *t) {
   ui_logwindow_draw(t->log, 1, 0, winrows-4, wincols);
 
   mvaddstr(winrows-3, 0, "main>");
-  ui_textinput_draw(ui_global_textinput, winrows-3, 6, wincols-6);
+  ui_textinput_draw(ui_global_textinput, winrows-3, 6, wincols-6, NULL);
 }
 
 
