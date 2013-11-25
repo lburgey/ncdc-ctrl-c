@@ -1265,26 +1265,31 @@ static void ui_listing_fixtop(ui_listing_t *ul, int height) {
 // there are otherwise no hidden rows. It'll give a blatantly wrong number if
 // there are.
 int ui_listing_draw(ui_listing_t *ul, int top, int bottom, int *cur, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
-  int height = 1 + bottom - top;
-  ui_listing_fixtop(ul, height);
+  int query_height = !!ul->query;
+  int listing_height = 1 + bottom - top - query_height;
+  ui_listing_fixtop(ul, listing_height);
 
   if(cur)
     *cur = top;
 
   // draw
   GSequenceIter *n = ul->top;
-  while(top <= bottom && !g_sequence_iter_is_end(n)) {
+  while(top <= bottom - query_height && !g_sequence_iter_is_end(n)) {
     if(cur && n == ul->sel)
       *cur = top;
     cb(ul, n, top, ul->dat);
     n = ui_listing_next(ul, n);
     top++;
   }
+  if (ul->query) {
+    mvaddstr(bottom, 0, "search>");
+    ui_textinput_draw(ul->query, bottom, 8, wincols-8);
+  }
 
   ui_listing_updateisbegin(ul);
 
   int last = g_sequence_iter_get_position(g_sequence_get_end_iter(ul->list));
-  return MIN(100, last ? (g_sequence_iter_get_position(ul->top)+height)*100/last : 0);
+  return MIN(100, last ? (g_sequence_iter_get_position(ul->top)+listing_height)*100/last : 0);
 }
 
 
