@@ -246,7 +246,7 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = t->details ? winrows-11 : winrows-3;
-  struct ui_cursor_t cursor;
+  ui_cursor_t cursor;
   ui_listing_draw(t->list, 2, bottom-1, &cursor, t_draw_row);
 
   // footer

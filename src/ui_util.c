@@ -839,7 +839,7 @@ char *ui_textinput_reset(ui_textinput_t *ti) {
 
 // must be drawn last, to keep the cursor position correct
 // also not the most efficient function ever, but probably fast enough.
-void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col, struct ui_cursor_t *cur) {
+void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col, ui_cursor_t *cur) {
   //       |              |
   // "Some random string etc etc"
   //       f         #    l
@@ -1274,7 +1274,7 @@ static void ui_listing_fixtop(ui_listing_t *ul, int height) {
 // TODO: The return value is only correct if no skip function is used or if
 // there are otherwise no hidden rows. It'll give a blatantly wrong number if
 // there are.
-int ui_listing_draw(ui_listing_t *ul, int top, int bottom, struct ui_cursor_t *cur, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
+int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
   int query_height = !!ul->query;
   int listing_height = 1 + bottom - top - query_height;
   ui_listing_fixtop(ul, listing_height);

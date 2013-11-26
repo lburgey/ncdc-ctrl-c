@@ -241,7 +241,7 @@ static void t_draw(ui_tab_t *tab) {
   attroff(UIC(list_header));
 
   int bottom = winrows-4;
-  struct ui_cursor_t cursor;
+  ui_cursor_t cursor;
   int pos = ui_listing_draw(t->list, 2, bottom-1, &cursor, draw_row);
 
   search_r_t *sel = g_sequence_iter_is_end(t->list->sel) ? NULL : g_sequence_get(t->list->sel);

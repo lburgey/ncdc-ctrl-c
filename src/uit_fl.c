@@ -360,7 +360,7 @@ static void t_draw(ui_tab_t *tab) {
 
   // rows
   int pos = -1;
-  struct ui_cursor_t cursor = { 0, 2 };
+  ui_cursor_t cursor = { 0, 2 };
   if(t->loading)
     mvaddstr(3, 2, "Loading filelist...");
   else if(t->err)
