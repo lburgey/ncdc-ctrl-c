@@ -885,7 +885,7 @@ void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col, ui_cursor_t *c
   x += pos;
   move(y, x);
   curs_set(1);
-  if (cur) {
+  if(cur) {
     cur->x = x;
     cur->y = y;
   }
@@ -1184,7 +1184,7 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
   GSequenceIter *pos = g_sequence_get_begin_iter(ul->list);
   while(!g_sequence_iter_is_end(pos)) {
     const char *candidate = ul->to_string(pos);
-    if (g_regex_match(regex, candidate, 0, NULL))
+    if(g_regex_match(regex, candidate, 0, NULL))
       break;
     pos = ui_listing_next(ul, pos);
   }
@@ -1302,7 +1302,7 @@ int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, voi
     n = ui_listing_next(ul, n);
     top++;
   }
-  if (ul->query) {
+  if(ul->query) {
     mvaddstr(bottom, 0, "search>");
     ui_textinput_draw(ul->query, bottom, 8, wincols-8, cur);
   }
