@@ -1057,7 +1057,7 @@ struct ui_listing_t {
   gboolean (*skip)(ui_listing_t *, GSequenceIter *, void *);
   void *dat;
   ui_textinput_t *query;
-  gboolean (*search_func)(GSequenceIter *, const char *, size_t);
+  const char *(*to_string)(GSequenceIter *);
 }
 
 // does not free the GSequence (we don't control the list, after all)
@@ -1154,7 +1154,7 @@ void ui_listing_skipchanged(ui_listing_t *ul) {
 }
 
 
-ui_listing_t *ui_listing_create(GSequence *list, gboolean (*skip)(ui_listing_t *, GSequenceIter *, void *), void *dat, gboolean (*search_func)(GSequenceIter *, const char *, size_t)) {
+ui_listing_t *ui_listing_create(GSequence *list, gboolean (*skip)(ui_listing_t *, GSequenceIter *, void *), void *dat, const char *(*to_string)(GSequenceIter *)) {
   ui_listing_t *ul = g_slice_new0(ui_listing_t);
   ul->list = list;
   ul->sel = ul->top = ui_listing_getbegin(ul);
@@ -1162,39 +1162,49 @@ ui_listing_t *ui_listing_create(GSequence *list, gboolean (*skip)(ui_listing_t *
   ul->skip = skip;
   ul->dat = dat;
   ul->query = NULL;
-  ul->search_func = search_func;
+  ul->to_string = to_string;
   return ul;
 }
 
 
+static void ui_listing_search(ui_listing_t *ul, guint64 key) {
+  char *complete_query = NULL;
+  ui_textinput_key(ul->query, key, &complete_query);
+  if(complete_query) {
+    // enter pressed -> exit search mode
+    g_free(complete_query);
+    ui_textinput_free(ul->query);
+    ul->query = NULL;
+    return;
+  }
+  char *pattern = ui_textinput_get(ul->query);
+  GRegex *regex = g_regex_new(pattern, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, G_REGEX_MATCH_PARTIAL_HARD, NULL);
+  if (!regex)
+    return;
+  GSequenceIter *pos = g_sequence_get_begin_iter(ul->list);
+  while(!g_sequence_iter_is_end(pos)) {
+    const char *candidate = ul->to_string(pos);
+    if (g_regex_match(regex, candidate, 0, NULL))
+      break;
+    pos = ui_listing_next(ul, pos);
+  }
+  g_regex_unref(regex);
+  g_free(pattern);
+  if(!g_sequence_iter_is_end(pos)) {
+    ul->sel = pos;
+  }
+}
+
+
 gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
-  if(ul->query && ul->search_func) {
-    char *complete_query = NULL;
-    ui_textinput_key(ul->query, key, &complete_query);
-    GSequenceIter *pos = ul->sel;
-    char *str = ui_textinput_get(ul->query);
-    size_t str_len = strlen(str);
-    while(ul->search_func(pos, str, str_len)) {
-      pos = ui_listing_next(ul, pos);
-      if(g_sequence_iter_is_end(pos))
-        break;
-    }
-    g_free(str);
-    if(!g_sequence_iter_is_end(pos)) {
-      ul->sel = pos;
-    }
-    if(complete_query) {
-      // enter pressed -> exit search mode
-      g_free(complete_query);
-      ui_textinput_free(ul->query);
-      ul->query = NULL;
-    }
+  if(ul->query) {
+    ui_listing_search(ul, key);
     return TRUE;
   }
 
   switch(key) {
   case INPT_CHAR('/'):
-    if (ul->search_func)
+    if (ul->to_string)
       ul->query = ui_textinput_create(FALSE, NULL);
     break;
   case INPT_KEY(KEY_NPAGE): { // page down

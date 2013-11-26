@@ -87,9 +87,9 @@ static gint sort_func(gconstpointer da, gconstpointer db, gpointer dat) {
 }
 
 
-static gboolean search_func(GSequenceIter *iter, const char *query, size_t str_len) {
+static const char *get_name(GSequenceIter *iter) {
   hub_user_t *u = g_sequence_get(iter);
-  return !!strncasecmp(u->name, query, str_len);
+  return u->name;
 }
 
 
@@ -114,7 +114,7 @@ ui_tab_t *uit_userlist_create(hub_t *hub) {
   hub_user_t *u;
   while(g_hash_table_iter_next(&iter, NULL, (gpointer *)&u))
     u->iter = g_sequence_insert_sorted(users, u, sort_func, t);
-  t->list = ui_listing_create(users, NULL, t, search_func);
+  t->list = ui_listing_create(users, NULL, t, get_name);
 
   return (ui_tab_t *)t;
 }
@@ -426,7 +426,7 @@ void uit_userlist_disconnect(ui_tab_t *tab) {
 
   g_sequence_free(t->list->list);
   ui_listing_free(t->list);
-  t->list = ui_listing_create(g_sequence_new(NULL), NULL, t, search_func);
+  t->list = ui_listing_create(g_sequence_new(NULL), NULL, t, get_name);
 }
 
 

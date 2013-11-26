@@ -68,9 +68,9 @@ static gint sort_func(gconstpointer a, gconstpointer b, gpointer dat) {
 }
 
 
-static gboolean search_func(GSequenceIter *iter, const char *query, size_t str_len) {
+static const char *get_name(GSequenceIter *iter) {
   fl_list_t *fl = g_sequence_get(iter);
-  return !!strncasecmp(fl->name, query, str_len);
+  return fl->name;
 }
 
 
@@ -91,7 +91,7 @@ static void setdir(tab_t *t, fl_list_t *fl, fl_list_t *sel) {
     if(sel == g_ptr_array_index(fl->sub, i))
       seli = iter;
   }
-  t->list = ui_listing_create(seq, NULL, NULL, search_func);
+  t->list = ui_listing_create(seq, NULL, NULL, get_name);
   if(seli)
     t->list->sel = seli;
 }
