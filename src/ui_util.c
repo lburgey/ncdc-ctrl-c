@@ -1178,8 +1178,8 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
     return;
   }
   char *pattern = ui_textinput_get(ul->query);
-  GRegex *regex = g_regex_new(pattern, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, G_REGEX_MATCH_PARTIAL_HARD, NULL);
-  if (!regex)
+  GRegex *regex = g_regex_new(pattern, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
+  if(!regex)
     return;
   GSequenceIter *pos = g_sequence_get_begin_iter(ul->list);
   while(!g_sequence_iter_is_end(pos)) {
@@ -1190,9 +1190,8 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
   }
   g_regex_unref(regex);
   g_free(pattern);
-  if(!g_sequence_iter_is_end(pos)) {
+  if(!g_sequence_iter_is_end(pos))
     ul->sel = pos;
-  }
 }
 
 
@@ -1204,7 +1203,7 @@ gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
 
   switch(key) {
   case INPT_CHAR('/'):
-    if (ul->to_string)
+    if(ul->to_string)
       ul->query = ui_textinput_create(FALSE, NULL);
     break;
   case INPT_KEY(KEY_NPAGE): { // page down
