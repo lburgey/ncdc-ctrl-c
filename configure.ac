@@ -133,6 +133,10 @@ PKG_CHECK_EXISTS([sqlite3],[
 # Check for modules
 PKG_CHECK_MODULES([GLIB],   [glib-2.0 >= 2.24 gthread-2.0])
 PKG_CHECK_MODULES([GNUTLS], [gnutls >= 2.4])
+# FIXME: add option to force or ignore this
+PKG_CHECK_MODULES([GEOIP],  [geoip >= 1.2.0],
+                  [AC_DEFINE([USE_GEOIP], [1], [Use GeoIP])],
+                  [AC_MSG_WARN(GeoIP library not found or too old, building without it)])
 
 
 # Note that GnuTLS 2.12 also supports the nettle backend, and already provides

@@ -93,6 +93,12 @@ static const char *get_name(GSequenceIter *iter) {
 }
 
 
+#ifdef USE_GEOIP
+static GeoIP *geoip4 = NULL;
+static GeoIP *geoip6 = NULL;
+#endif
+
+
 ui_tab_t *uit_userlist_create(hub_t *hub) {
   tab_t *t = g_new0(tab_t, 1);
   t->tab.name = g_strdup_printf("@%s", hub->tab->name+1);
@@ -102,6 +108,14 @@ ui_tab_t *uit_userlist_create(hub_t *hub) {
   t->hide_conn = TRUE;
   t->hide_mail = TRUE;
   t->hide_ip = TRUE;
+
+#ifdef USE_GEOIP
+  // init these when the first userlist tab is opened
+  if (!geoip4) {
+    geoip4 = GeoIP_open_type(GEOIP_COUNTRY_EDITION,    GEOIP_MEMORY_CACHE);
+    geoip6 = GeoIP_open_type(GEOIP_COUNTRY_EDITION_V6, GEOIP_MEMORY_CACHE);
+  }
+#endif
 
   GSequence *users = g_sequence_new(NULL);
   // populate the list
@@ -152,12 +166,11 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
 
   char *tag = hub_user_tag(user);
   char *conn = hub_user_conn(user);
-  int j=6;
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
   if(iter == list->sel)
-    mvaddstr(row, 0, ">");
+    mvaddch(row, 0, '>');
 
   if(user->isop)
     mvaddch(row, 2, 'o');
@@ -165,6 +178,20 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
     mvaddch(row, 3, 'p');
   if(user->hastls)
     mvaddch(row, 4, 't');
+
+#ifdef USE_GEOIP
+  const char *country = NULL;
+  if(!ip4_isany(user->ip4))
+    country = GeoIP_country_code_by_addr(geoip4, ip4_unpack(user->ip4));
+  else if(!ip6_isany(user->ip6))
+    country = GeoIP_country_code_by_addr_v6(geoip6, ip6_unpack(user->ip6));
+  if(country)
+    mvaddstr(row, 6, country);
+  int j=9;
+#else
+  int j=6;
+#endif
+
   DRAW_COL(row, j, t->cw_user,  user->name);
   DRAW_COL(row, j, t->cw_share, user->hasinfo ? str_formatsize(user->sharesize) : "");
   DRAW_COL(row, j, t->cw_desc,  user->desc?user->desc:"");
@@ -195,7 +222,11 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
  */
 static void calc_widths(tab_t *t) {
   // available width
+#ifdef USE_GEOIP
+  int w = wincols-9;
+#else
   int w = wincols-6;
+#endif
 
   // share has a fixed size
   t->cw_share = 12;
@@ -242,10 +273,15 @@ static void t_draw(ui_tab_t *tab) {
   calc_widths(t);
 
   // header
-  int i = 6;
   attron(UIC(list_header));
   mvhline(1, 0, ' ', wincols);
+#ifdef USE_GEOIP
+  mvaddstr(1, 2, "opt CC");
+  int i = 9;
+#else
   mvaddstr(1, 2, "opt");
+  int i = 6;
+#endif
   DRAW_COL(1, i, t->cw_user,  "Username");
   DRAW_COL(1, i, t->cw_share, "Share");
   DRAW_COL(1, i, t->cw_desc,  "Description");

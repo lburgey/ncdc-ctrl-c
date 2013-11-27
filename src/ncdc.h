@@ -78,6 +78,10 @@
 #include <ncurses.h>
 #endif
 
+#ifdef USE_GEOIP
+#include <GeoIP.h>
+#endif
+
 
 // GnuTLS / libgcrypt functions
 // crypt_aes128cbc() uses a 16-byte zero'd IV. Data is encrypted or decrypted in-place.
