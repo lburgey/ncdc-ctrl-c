@@ -111,7 +111,7 @@ ui_tab_t *uit_userlist_create(hub_t *hub) {
 
 #ifdef USE_GEOIP
   // init these when the first userlist tab is opened
-  if (!geoip4) {
+  if(!geoip4) {
     geoip4 = GeoIP_open_type(GEOIP_COUNTRY_EDITION,    GEOIP_MEMORY_CACHE);
     geoip6 = GeoIP_open_type(GEOIP_COUNTRY_EDITION_V6, GEOIP_MEMORY_CACHE);
   }
