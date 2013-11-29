@@ -154,7 +154,7 @@ static void t_draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *d
       file++;
     else
       file = cc->last_file;
-      mvaddnstr(row, 58, file, str_offset_from_columns(file, wincols-58));
+    mvaddnstr(row, 58, file, str_offset_from_columns(file, wincols-58));
   }
 
   attroff(iter == list->sel ? UIC(list_select) : UIC(list_default));
