@@ -1048,6 +1048,12 @@ gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
 
 #if INTERFACE
 
+enum regex_status_t {
+    REGEX_MATCH,
+    REGEX_NO_MATCH,
+    REGEX_ERROR
+}
+
 struct ui_listing_t {
   GSequence *list;
   GSequenceIter *sel;
@@ -1057,6 +1063,7 @@ struct ui_listing_t {
   gboolean (*skip)(ui_listing_t *, GSequenceIter *, void *);
   void *dat;
   ui_textinput_t *query;
+  regex_status_t regex_status;
   const char *(*to_string)(GSequenceIter *);
 }
 
@@ -1161,7 +1168,6 @@ ui_listing_t *ui_listing_create(GSequence *list, gboolean (*skip)(ui_listing_t *
   ul->topisbegin = ul->selisbegin = TRUE;
   ul->skip = skip;
   ul->dat = dat;
-  ul->query = NULL;
   ul->to_string = to_string;
   return ul;
 }
@@ -1179,19 +1185,25 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
   }
   char *pattern = ui_textinput_get(ul->query);
   GRegex *regex = g_regex_new(pattern, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
-  if(!regex)
+  if(!regex) {
+    ul->regex_status = REGEX_ERROR;
     return;
+  }
   GSequenceIter *pos = g_sequence_get_begin_iter(ul->list);
   while(!g_sequence_iter_is_end(pos)) {
     const char *candidate = ul->to_string(pos);
-    if(g_regex_match(regex, candidate, 0, NULL))
+    if(g_regex_match(regex, candidate, 0, NULL)) {
+      ul->regex_status = REGEX_MATCH;
       break;
+    }
     pos = ui_listing_next(ul, pos);
   }
   g_regex_unref(regex);
   g_free(pattern);
   if(!g_sequence_iter_is_end(pos))
     ul->sel = pos;
+  else
+    ul->regex_status = REGEX_NO_MATCH;
 }
 
 
@@ -1203,8 +1215,10 @@ gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
 
   switch(key) {
   case INPT_CHAR('/'):
-    if(ul->to_string)
+    if(ul->to_string) {
       ul->query = ui_textinput_create(FALSE, NULL);
+      ul->regex_status = REGEX_MATCH;
+    }
     break;
   case INPT_KEY(KEY_NPAGE): { // page down
     int i = page;
@@ -1303,8 +1317,11 @@ int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, voi
     top++;
   }
   if(ul->query) {
-    mvaddstr(bottom, 0, "search>");
-    ui_textinput_draw(ul->query, bottom, 8, wincols-8, cur);
+    const char *status[] = { "  search>",
+                             "no match>",
+                             " invalid>" };
+    mvaddstr(bottom, 0, status[ul->regex_status]);
+    ui_textinput_draw(ul->query, bottom, strlen(status[0]) + 1, wincols - strlen(status[0]) - 1, cur);
   }
 
   ui_listing_updateisbegin(ul);
