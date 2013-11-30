@@ -1346,19 +1346,18 @@ int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, voi
 void ui_listing_draw_match(ui_listing_t *ul, GSequenceIter *iter, int y, int x, int max) {
   const char *str = ul->to_string(iter);
   if(ul->query && ul->sel == iter && ul->regex_status == REGEX_MATCH && ul->match_start != -1) {
-    int start = ul->match_start,
-        end = ul->match_end,
-        byte_len2 = end - start,
-        char_len1 = g_utf8_strlen(str, start),
-        char_len2 = g_utf8_strlen(&str[start], byte_len2),
-        char_len3 = g_utf8_strlen(&str[end], -1);
-    mvaddnstr(y, x, str, start < max ? start : max);
-    max -= char_len1;
+    int ofs1 = 0,
+        ofs2 = ul->match_start,
+        ofs3 = ul->match_end,
+        width1 = substr_columns(str + ofs1, ofs2 - ofs1),
+        width2 = substr_columns(str + ofs2, ofs3 - ofs2);
+    mvaddnstr(y, x, str + ofs1, str_offset_from_columns(str + ofs1, MIN(width1, max)));
+    x += width1, max -= width1;
     attron(A_REVERSE);
-    mvaddnstr(y, x + char_len1, &str[start], byte_len2 < max ? byte_len2 : max);
-    max -= char_len2;
+    mvaddnstr(y, x, str + ofs2, str_offset_from_columns(str + ofs2, MIN(width2, max)));
+    x += width2, max -= width2;
     attroff(A_REVERSE);
-    mvaddnstr(y, x + char_len1 + char_len2, &str[end], max);
+    mvaddnstr(y, x, str + ofs3, str_offset_from_columns(str + ofs3, max));
   } else {
     mvaddnstr(y, x, str, max);
   }

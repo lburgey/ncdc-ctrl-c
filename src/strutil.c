@@ -137,6 +137,21 @@ int str_columns(const char *str) {
 }
 
 
+// calculate width in columns of str but only up to byte_len
+int substr_columns(const char *str, int byte_len) {
+  const char *ostr = str;
+  int w = 0;
+  while(*str) {
+    int c = gunichar_width(g_utf8_get_char(str));
+    str = g_utf8_next_char(str);
+    if(str - ostr > byte_len)
+      break;
+    w += c;
+  }
+  return w;
+}
+
+
 // returns the byte offset to the last character in str (UTF-8) that does not
 // fit within col columns.
 int str_offset_from_columns(const char *str, int col) {
