@@ -1064,6 +1064,8 @@ struct ui_listing_t {
   void *dat;
   ui_textinput_t *query;
   regex_status_t regex_status;
+  gint match_start;
+  gint match_end;
   const char *(*to_string)(GSequenceIter *);
 }
 
@@ -1168,6 +1170,10 @@ ui_listing_t *ui_listing_create(GSequence *list, gboolean (*skip)(ui_listing_t *
   ul->topisbegin = ul->selisbegin = TRUE;
   ul->skip = skip;
   ul->dat = dat;
+  ul->query = NULL;
+  ul->regex_status = REGEX_MATCH;
+  ul->match_start = -1;
+  ul->match_end = -1;
   ul->to_string = to_string;
   return ul;
 }
@@ -1181,6 +1187,8 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
     g_free(complete_query);
     ui_textinput_free(ul->query);
     ul->query = NULL;
+    ul->match_start = -1;
+    ul->match_end = -1;
     return;
   }
   char *pattern = ui_textinput_get(ul->query);
@@ -1192,10 +1200,14 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
   GSequenceIter *pos = g_sequence_get_begin_iter(ul->list);
   while(!g_sequence_iter_is_end(pos)) {
     const char *candidate = ul->to_string(pos);
-    if(g_regex_match(regex, candidate, 0, NULL)) {
+    GMatchInfo *match_info;
+    if(g_regex_match(regex, candidate, 0, &match_info)) {
+      g_match_info_fetch_pos(match_info, 0, &ul->match_start, &ul->match_end);
+      g_match_info_free(match_info);
       ul->regex_status = REGEX_MATCH;
       break;
     }
+    g_match_info_free(match_info);
     pos = ui_listing_next(ul, pos);
   }
   g_regex_unref(regex);
@@ -1331,3 +1343,23 @@ int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, voi
 }
 
 
+void ui_listing_draw_match(ui_listing_t *ul, GSequenceIter *iter, int y, int x, int max) {
+  const char *str = ul->to_string(iter);
+  if(ul->query && ul->sel == iter && ul->regex_status == REGEX_MATCH && ul->match_start != -1) {
+    int start = ul->match_start,
+        end = ul->match_end,
+        byte_len2 = end - start,
+        char_len1 = g_utf8_strlen(str, start),
+        char_len2 = g_utf8_strlen(&str[start], byte_len2),
+        char_len3 = g_utf8_strlen(&str[end], -1);
+    mvaddnstr(y, x, str, start < max ? start : max);
+    max -= char_len1;
+    attron(A_REVERSE);
+    mvaddnstr(y, x + char_len1, &str[start], byte_len2 < max ? byte_len2 : max);
+    max -= char_len2;
+    attroff(A_REVERSE);
+    mvaddnstr(y, x + char_len1 + char_len2, &str[end], max);
+  } else {
+    mvaddnstr(y, x, str, max);
+  }
+}

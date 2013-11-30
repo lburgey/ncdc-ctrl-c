@@ -340,7 +340,7 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
   mvaddstr(row, 4, str_formatsize(fl->size));
   if(!fl->isfile)
     mvaddch(row, 17, '/');
-  mvaddnstr(row, 18, fl->name, str_offset_from_columns(fl->name, wincols-19));
+  ui_listing_draw_match(list, iter, row, 18, str_offset_from_columns(fl->name, wincols-19));
 
   attroff(iter == list->sel ? UIC(list_select) : UIC(list_default));
 }

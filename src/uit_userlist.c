@@ -192,7 +192,9 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
   int j=6;
 #endif
 
-  DRAW_COL(row, j, t->cw_user,  user->name);
+  if (t->cw_user > 1)
+    ui_listing_draw_match(list, iter, row, j, str_offset_from_columns(user->name, t->cw_user-1));
+  j += t->cw_user;
   DRAW_COL(row, j, t->cw_share, user->hasinfo ? str_formatsize(user->sharesize) : "");
   DRAW_COL(row, j, t->cw_desc,  user->desc?user->desc:"");
   DRAW_COL(row, j, t->cw_tag,   tag?tag:"");
