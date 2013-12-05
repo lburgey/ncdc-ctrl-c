@@ -1069,9 +1069,6 @@ struct ui_listing_t {
   const char *(*to_string)(GSequenceIter *);
 }
 
-// does not free the GSequence (we don't control the list, after all)
-#define ui_listing_free(ul) g_slice_free(ui_listing_t, ul)
-
 #endif
 
 
@@ -1179,6 +1176,13 @@ ui_listing_t *ui_listing_create(GSequence *list, gboolean (*skip)(ui_listing_t *
 }
 
 
+void ui_listing_free(ui_listing_t *ul) {
+  if(ul->query)
+    ui_textinput_free(ul->query);
+  g_slice_free(ui_listing_t, ul);
+}
+
+
 static void ui_listing_search(ui_listing_t *ul, guint64 key) {
   char *complete_query = NULL;
   ui_textinput_key(ul->query, key, &complete_query);
@@ -1226,7 +1230,7 @@ gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
   }
 
   switch(key) {
-  case INPT_CHAR('/'):
+  case INPT_CHAR('/'): // go into search mode
     if(ul->to_string) {
       ul->query = ui_textinput_create(FALSE, NULL);
       ul->regex_status = REGEX_MATCH;
