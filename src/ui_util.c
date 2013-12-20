@@ -1048,12 +1048,6 @@ gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
 
 #if INTERFACE
 
-enum regex_status_t {
-    REGEX_MATCH,
-    REGEX_NO_MATCH,
-    REGEX_ERROR
-}
-
 struct ui_listing_t {
   GSequence *list;
   GSequenceIter *sel;
@@ -1062,12 +1056,25 @@ struct ui_listing_t {
   gboolean selisbegin;
   gboolean (*skip)(ui_listing_t *, GSequenceIter *, void *);
   void *dat;
-  ui_textinput_t *query;
-  regex_status_t regex_status;
+
+  // fields needed for searching
+  ui_textinput_t *search_box;
+  gchar *query;
   gint match_start;
   gint match_end;
   const char *(*to_string)(GSequenceIter *);
 }
+
+// error values for ui_listing_t.match_start
+enum regex_status_t {
+    REGEX_NO_MATCH = -1,
+    REGEX_ERROR = -2
+};
+
+enum search_direction_t {
+    SEARCH_NEXT,
+    SEARCH_PREV
+};
 
 #endif
 
@@ -1167,74 +1174,113 @@ ui_listing_t *ui_listing_create(GSequence *list, gboolean (*skip)(ui_listing_t *
   ul->topisbegin = ul->selisbegin = TRUE;
   ul->skip = skip;
   ul->dat = dat;
+
+  ul->search_box = NULL;
   ul->query = NULL;
-  ul->regex_status = REGEX_MATCH;
-  ul->match_start = -1;
-  ul->match_end = -1;
+  ul->match_start = REGEX_NO_MATCH;
   ul->to_string = to_string;
+
   return ul;
 }
 
 
 void ui_listing_free(ui_listing_t *ul) {
+  if(ul->search_box)
+    ui_textinput_free(ul->search_box);
   if(ul->query)
-    ui_textinput_free(ul->query);
+    g_free(ul->query);
   g_slice_free(ui_listing_t, ul);
 }
 
 
-static void ui_listing_search(ui_listing_t *ul, guint64 key) {
-  char *complete_query = NULL;
-  ui_textinput_key(ul->query, key, &complete_query);
-  if(complete_query) {
-    // enter pressed -> exit search mode
-    g_free(complete_query);
-    ui_textinput_free(ul->query);
-    ul->query = NULL;
-    ul->match_start = -1;
-    ul->match_end = -1;
-    return;
-  }
-  char *pattern = ui_textinput_get(ul->query);
-  GRegex *regex = g_regex_new(pattern, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
+// search next/previous
+static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, search_direction_t direction) {
+  GRegex *regex = g_regex_new(ul->query, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
   if(!regex) {
-    ul->regex_status = REGEX_ERROR;
+    ul->match_start = REGEX_ERROR;
     return;
   }
-  GSequenceIter *pos = g_sequence_get_begin_iter(ul->list);
-  while(!g_sequence_iter_is_end(pos)) {
+  ul->match_start = REGEX_NO_MATCH;
+
+  typedef GSequenceIter *(*search_advance_t)(ui_listing_t *, GSequenceIter *);
+  typedef gboolean (*should_stop_t)(GSequenceIter *);
+  search_advance_t search_advance_lut[] = {
+    ui_listing_next,
+    ui_listing_prev
+  };
+  should_stop_t should_stop_lut[] = {
+    g_sequence_iter_is_end,
+    g_sequence_iter_is_begin
+  };
+  search_advance_t search_advance = search_advance_lut[direction];
+  should_stop_t should_stop = should_stop_lut[direction];
+
+  while(!should_stop(pos)) {
     const char *candidate = ul->to_string(pos);
     GMatchInfo *match_info;
     if(g_regex_match(regex, candidate, 0, &match_info)) {
       g_match_info_fetch_pos(match_info, 0, &ul->match_start, &ul->match_end);
       g_match_info_free(match_info);
-      ul->regex_status = REGEX_MATCH;
+      ul->sel = pos;
       break;
     }
     g_match_info_free(match_info);
-    pos = ui_listing_next(ul, pos);
+    pos = search_advance(ul, pos);
   }
   g_regex_unref(regex);
-  g_free(pattern);
-  if(!g_sequence_iter_is_end(pos))
-    ul->sel = pos;
-  else
-    ul->regex_status = REGEX_NO_MATCH;
+}
+
+
+// handle keys in search mode
+static void ui_listing_search(ui_listing_t *ul, guint64 key) {
+  char *complete_query = NULL;
+  if(ul->query)
+    g_free(ul->query);
+  ui_textinput_key(ul->search_box, key, &complete_query);
+  if(complete_query) {
+    // enter pressed -> exit search mode
+    if(ul->match_start < 0)
+      g_free(complete_query);
+    else
+      // we still need this for searching next/prev
+      ul->query = complete_query;
+    ui_textinput_free(ul->search_box);
+    ul->search_box = NULL;
+    ul->match_start = -1;
+    ul->match_end = -1;
+  } else {
+    // some other key pressed -> update search
+    ul->query = ui_textinput_get(ul->search_box);
+    ui_listing_search_advance(ul, ui_listing_getbegin(ul), SEARCH_NEXT);
+  }
 }
 
 
 gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
-  if(ul->query) {
+  if(ul->search_box) {
     ui_listing_search(ul, key);
     return TRUE;
   }
 
+  // stop highlighting
+  ul->match_start = REGEX_NO_MATCH;
+
   switch(key) {
-  case INPT_CHAR('/'): // go into search mode
+  case INPT_CHAR('/'): // start search mode
     if(ul->to_string) {
-      ul->query = ui_textinput_create(FALSE, NULL);
-      ul->regex_status = REGEX_MATCH;
+      if(ul->query) {
+        g_free(ul->query);
+        ul->query = NULL;
+      }
+      g_assert(!ul->search_box);
+      ul->search_box = ui_textinput_create(FALSE, NULL);
     }
+    break;
+  case INPT_CHAR(','): // find previous
+    ui_listing_search_advance(ul, ui_listing_prev(ul, ul->sel), SEARCH_PREV);
+    break;
+  case INPT_CHAR('.'): // find next
+    ui_listing_search_advance(ul, ui_listing_next(ul, ul->sel), SEARCH_NEXT);
     break;
   case INPT_KEY(KEY_NPAGE): { // page down
     int i = page;
@@ -1270,6 +1316,7 @@ gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
   default:
     return FALSE;
   }
+
   ui_listing_updateisbegin(ul);
   return TRUE;
 }
@@ -1314,8 +1361,8 @@ static void ui_listing_fixtop(ui_listing_t *ul, int height) {
 // there are otherwise no hidden rows. It'll give a blatantly wrong number if
 // there are.
 int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, void (*cb)(ui_listing_t *, GSequenceIter *, int, void *)) {
-  int query_height = !!ul->query;
-  int listing_height = 1 + bottom - top - query_height;
+  int search_box_height = !!ul->search_box;
+  int listing_height = 1 + bottom - top - search_box_height;
   ui_listing_fixtop(ul, listing_height);
 
   if(cur) {
@@ -1325,19 +1372,27 @@ int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, voi
 
   // draw
   GSequenceIter *n = ul->top;
-  while(top <= bottom - query_height && !g_sequence_iter_is_end(n)) {
+  while(top <= bottom - search_box_height && !g_sequence_iter_is_end(n)) {
     if(cur && n == ul->sel)
       cur->y = top;
     cb(ul, n, top, ul->dat);
     n = ui_listing_next(ul, n);
     top++;
   }
-  if(ul->query) {
-    const char *status[] = { "  search>",
-                             "no match>",
-                             " invalid>" };
-    mvaddstr(bottom, 0, status[ul->regex_status]);
-    ui_textinput_draw(ul->query, bottom, strlen(status[0]) + 1, wincols - strlen(status[0]) - 1, cur);
+  if(ul->search_box) {
+    const char *status;
+    switch(ul->match_start) {
+    case REGEX_NO_MATCH:
+      status = "no match>";
+      break;
+    case REGEX_ERROR:
+      status = " invalid>";
+      break;
+    default:
+      status = "  search>";
+    }
+    mvaddstr(bottom, 0, status);
+    ui_textinput_draw(ul->search_box, bottom, 10, wincols - 10, cur);
   }
 
   ui_listing_updateisbegin(ul);
@@ -1349,7 +1404,7 @@ int ui_listing_draw(ui_listing_t *ul, int top, int bottom, ui_cursor_t *cur, voi
 
 void ui_listing_draw_match(ui_listing_t *ul, GSequenceIter *iter, int y, int x, int max) {
   const char *str = ul->to_string(iter);
-  if(ul->query && ul->sel == iter && ul->regex_status == REGEX_MATCH && ul->match_start != -1) {
+  if(ul->sel == iter && ul->match_start >= 0) {
     int ofs1 = 0,
         ofs2 = ul->match_start,
         ofs3 = ul->match_end,
