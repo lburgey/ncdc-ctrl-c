@@ -17,7 +17,7 @@
 #
 # Usage:
 #   ./build.sh $arch
-#   Where $arch = 'arm', 'mipsel', 'i486' or 'x86_64'
+#   Where $arch = 'arm', 'mipsel', 'ppc', 'i486' or 'x86_64'
 #
 # TODO:
 # - Cross-compile to platforms other than Linux?
@@ -104,6 +104,7 @@ postbuild() {
 getmusl() {
   # Order of $HOST is different than the tar/dir names, so we need this case.
   case $TARGET in
+    ppc)    DIR=powerpc-linux-musl ;;
     arm)    DIR=arm-linux-musleabi ;;
     mipsel) DIR=mipsel-sf-linux-musl ;;
     i486)   DIR=i486-linux-musl ;;
@@ -278,6 +279,7 @@ allncdc() {
 buildarch() {
   TARGET=$1
   case $TARGET in
+    ppc)    HOST=powerpc-musl-linux ;;
     arm)    HOST=arm-musl-linuxeabi ;;
     mipsel) HOST=mipsel-musl-linux ;;
     i486)   HOST=i486-musl-linux ;;
