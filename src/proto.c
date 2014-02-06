@@ -200,7 +200,7 @@ struct adc_cmd_t {
   int source;       // Only when type = B|D|E|F
   int dest;         // Only when type = D|E
   char **argv;
-  char argc;
+  int argc;
 };
 
 
