@@ -1188,6 +1188,8 @@ void ui_listing_free(ui_listing_t *ul) {
 
 // search next/previous
 static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *startpos, gboolean prev) {
+  if(g_sequence_iter_is_end(startpos) && g_sequence_iter_is_end((startpos = ui_listing_getbegin(ul))))
+    return;
   GRegex *regex = ul->query ? g_regex_new(ul->query, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL) : NULL;
   if(!regex) {
     ul->match_start = REGEX_ERROR;
