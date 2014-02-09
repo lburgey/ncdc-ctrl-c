@@ -1231,7 +1231,7 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
   } else {
     // some other key pressed -> update search
     ul->query = ui_textinput_get(ul->search_box);
-    ui_listing_search_advance(ul, ui_listing_getbegin(ul), FALSE);
+    ui_listing_search_advance(ul, ul->sel, FALSE);
   }
 }
 
