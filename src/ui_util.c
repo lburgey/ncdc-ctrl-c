@@ -1188,7 +1188,7 @@ void ui_listing_free(ui_listing_t *ul) {
 
 // search next/previous
 static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *startpos, gboolean prev) {
-  GRegex *regex = g_regex_new(ul->query, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
+  GRegex *regex = ul->query ? g_regex_new(ul->query, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL) : NULL;
   if(!regex) {
     ul->match_start = REGEX_ERROR;
     return;
@@ -1220,26 +1220,23 @@ static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *startpos,
 
 // handle keys in search mode
 static void ui_listing_search(ui_listing_t *ul, guint64 key) {
-  char *complete_query = NULL;
-  if(ul->query)
-    g_free(ul->query);
-  ui_textinput_key(ul->search_box, key, &complete_query);
-  if(complete_query) {
-    // enter pressed -> exit search mode
-    if(ul->match_start < 0)
-      g_free(complete_query);
-    else
-      // we still need this for searching next/prev
-      ul->query = complete_query;
+  char *completed = NULL;
+  ui_textinput_key(ul->search_box, key, &completed);
+
+  g_free(ul->query);
+  ul->query = completed ? completed : ui_textinput_get(ul->search_box);
+
+  if(completed) {
+    if(ul->match_start < 0) {
+      g_free(ul->query);
+      ul->query = NULL;
+    }
     ui_textinput_free(ul->search_box);
     ul->search_box = NULL;
     ul->match_start = -1;
     ul->match_end = -1;
-  } else {
-    // some other key pressed -> update search
-    ul->query = ui_textinput_get(ul->search_box);
+  } else
     ui_listing_search_advance(ul, ul->sel, FALSE);
-  }
 }
 
 
