@@ -1187,7 +1187,7 @@ void ui_listing_free(ui_listing_t *ul) {
 
 
 // search next/previous
-static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, gboolean prev) {
+static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *startpos, gboolean prev) {
   GRegex *regex = g_regex_new(ul->query, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
   if(!regex) {
     ul->match_start = REGEX_ERROR;
@@ -1195,7 +1195,8 @@ static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, gboo
   }
   ul->match_start = REGEX_NO_MATCH;
 
-  while(!(prev ? g_sequence_iter_is_begin : g_sequence_iter_is_end)(pos)) {
+  GSequenceIter *pos = startpos;
+  do {
     const char *candidate = ul->to_string(pos);
     GMatchInfo *match_info;
     if(g_regex_match(regex, candidate, 0, &match_info)) {
@@ -1205,8 +1206,14 @@ static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, gboo
       break;
     }
     g_match_info_free(match_info);
+
     pos = (prev ? ui_listing_prev : ui_listing_next)(ul, pos);
-  }
+    if(g_sequence_iter_is_begin(pos))
+      pos = ui_listing_prev(ul, g_sequence_get_end_iter(ul->list));
+    else if(g_sequence_iter_is_end(pos))
+      pos = ui_listing_getbegin(ul);
+  } while(ul->match_start == REGEX_NO_MATCH && pos != startpos);
+
   g_regex_unref(regex);
 }
 
