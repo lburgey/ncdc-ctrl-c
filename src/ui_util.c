@@ -1065,18 +1065,11 @@ struct ui_listing_t {
   const char *(*to_string)(GSequenceIter *);
 }
 
-// error values for ui_listing_t.match_start
-enum regex_status_t {
-    REGEX_NO_MATCH = -1,
-    REGEX_ERROR = -2
-};
-
-enum search_direction_t {
-    SEARCH_NEXT,
-    SEARCH_PREV
-};
-
 #endif
+
+// error values for ui_listing_t.match_start
+#define REGEX_NO_MATCH -1
+#define REGEX_ERROR    -2
 
 
 // TODO: This can be relatively slow (linear search), is used often but rarely
@@ -1194,7 +1187,7 @@ void ui_listing_free(ui_listing_t *ul) {
 
 
 // search next/previous
-static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, search_direction_t direction) {
+static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, gboolean prev) {
   GRegex *regex = g_regex_new(ul->query, G_REGEX_CASELESS | G_REGEX_OPTIMIZE, 0, NULL);
   if(!regex) {
     ul->match_start = REGEX_ERROR;
@@ -1202,20 +1195,7 @@ static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, sear
   }
   ul->match_start = REGEX_NO_MATCH;
 
-  typedef GSequenceIter *(*search_advance_t)(ui_listing_t *, GSequenceIter *);
-  typedef gboolean (*should_stop_t)(GSequenceIter *);
-  search_advance_t search_advance_lut[] = {
-    ui_listing_next,
-    ui_listing_prev
-  };
-  should_stop_t should_stop_lut[] = {
-    g_sequence_iter_is_end,
-    g_sequence_iter_is_begin
-  };
-  search_advance_t search_advance = search_advance_lut[direction];
-  should_stop_t should_stop = should_stop_lut[direction];
-
-  while(!should_stop(pos)) {
+  while(!(prev ? g_sequence_iter_is_begin : g_sequence_iter_is_end)(pos)) {
     const char *candidate = ul->to_string(pos);
     GMatchInfo *match_info;
     if(g_regex_match(regex, candidate, 0, &match_info)) {
@@ -1225,7 +1205,7 @@ static void ui_listing_search_advance(ui_listing_t *ul, GSequenceIter *pos, sear
       break;
     }
     g_match_info_free(match_info);
-    pos = search_advance(ul, pos);
+    pos = (prev ? ui_listing_prev : ui_listing_next)(ul, pos);
   }
   g_regex_unref(regex);
 }
@@ -1251,7 +1231,7 @@ static void ui_listing_search(ui_listing_t *ul, guint64 key) {
   } else {
     // some other key pressed -> update search
     ul->query = ui_textinput_get(ul->search_box);
-    ui_listing_search_advance(ul, ui_listing_getbegin(ul), SEARCH_NEXT);
+    ui_listing_search_advance(ul, ui_listing_getbegin(ul), FALSE);
   }
 }
 
@@ -1276,11 +1256,11 @@ gboolean ui_listing_key(ui_listing_t *ul, guint64 key, int page) {
       ul->search_box = ui_textinput_create(FALSE, NULL);
     }
     break;
-  case INPT_CHAR(','): // find previous
-    ui_listing_search_advance(ul, ui_listing_prev(ul, ul->sel), SEARCH_PREV);
+  case INPT_CHAR(','): // find next
+    ui_listing_search_advance(ul, ui_listing_next(ul, ul->sel), FALSE);
     break;
-  case INPT_CHAR('.'): // find next
-    ui_listing_search_advance(ul, ui_listing_next(ul, ul->sel), SEARCH_NEXT);
+  case INPT_CHAR('.'): // find previous
+    ui_listing_search_advance(ul, ui_listing_prev(ul, ul->sel), TRUE);
     break;
   case INPT_KEY(KEY_NPAGE): { // page down
     int i = page;
