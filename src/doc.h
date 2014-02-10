@@ -616,7 +616,10 @@ static const doc_set_t doc_sets[] = {
   "Up/Down      Select one item up/down.\n"\
   "k/j          Select one item up/down.\n"\
   "PgUp/PgDown  Select one page of items up/down.\n"\
-  "End/Home     Select last/first item in the list.\n"
+  "End/Home     Select last/first item in the list.\n"\
+  "/            Start incremental regex search (press Return to stop editing).\n"\
+  ",            Search next.\n"\
+  ".            Search previous.\n"
 
 typedef struct doc_key_t {
   char const *sect, *title, *desc;
