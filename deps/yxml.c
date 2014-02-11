@@ -109,6 +109,8 @@ typedef enum {
  * this parser doesn't understand entities with '.', ':', etc, anwyay.  */
 #define yxml_isRef(c) (yxml_isNum(c) || yxml_isAlpha(c) || c == '#')
 
+#define INTFROM5CHARS(a, b, c, d, e) ((((uint64_t)(a))<<32) | (((uint64_t)(b))<<24) | (((uint64_t)(c))<<16) | (((uint64_t)(d))<<8) | (uint64_t)(e))
+
 
 /* Set the given char value to ch (0<=ch<=255).
  * This can't be done with simple assignment because char may be signed, and
@@ -298,16 +300,13 @@ static int yxml_refend(yxml_t *x, int ret) {
 		if(*r)
 			ch = 0;
 	} else {
-		if(r[0] == 'l' && r[1] == 't' && !r[2])
-			ch = '<';
-		else if(r[0] == 'g' && r[1] == 't' && !r[2])
-			ch = '>';
-		else if(r[0] == 'a' && r[1] == 'm' && r[2] == 'p' && !r[3])
-			ch = '&';
-		else if(r[0] == 'a' && r[1] == 'p' && r[2] == 'o' && r[3] == 's' && !r[4])
-			ch = '\'';
-		else if(r[0] == 'q' && r[1] == 'u' && r[2] == 'o' && r[3] == 't' && !r[4])
-			ch = '"';
+		uint64_t i = INTFROM5CHARS(r[0], r[1], r[2], r[3], r[4]);
+		ch =
+			i == INTFROM5CHARS('l','t', 0,  0, 0) ? '<' :
+			i == INTFROM5CHARS('g','t', 0,  0, 0) ? '>' :
+			i == INTFROM5CHARS('a','m','p', 0, 0) ? '&' :
+			i == INTFROM5CHARS('a','p','o','s',0) ? '\'':
+			i == INTFROM5CHARS('q','u','o','t',0) ? '"' : 0;
 	}
 
 	/* Codepoints not allowed in the XML 1.1 definition of a Char */
@@ -322,10 +321,10 @@ static inline int yxml_refcontent(yxml_t *x, unsigned ch) { return yxml_refend(x
 static inline int yxml_refattrval(yxml_t *x, unsigned ch) { return yxml_refend(x, YXML_ATTRVAL); }
 
 
-void yxml_init(yxml_t *x, char *stack, size_t stacksize) {
+void yxml_init(yxml_t *x, void *stack, size_t stacksize) {
 	memset(x, 0, sizeof(*x));
 	x->line = 1;
-	x->stack = (unsigned char *)stack;
+	x->stack = stack;
 	x->stacksize = stacksize;
 	*x->stack = 0;
 	x->elem = x->pi = (char *)x->stack;

@@ -20,16 +20,20 @@
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+#ifndef YXML_H
+#define YXML_H
+
 #include <stdint.h>
 #include <stddef.h>
 
+/* Full API documentation for this library can be found in the "yxml.pod" file
+ * in the yxml git repository, or online at http://dev.yorhel.nl/yxml/man */
 
 typedef enum {
-	YXML_EEOF        = -6, /* Unexpected EOF                             */
-	YXML_EREF        = -5, /* Invalid character or entity reference (&whatever;) */
-	YXML_ECLOSE      = -4, /* Close tag does not match open tag (<Tag> .. </OtherTag>) */
-	YXML_ESTACK      = -3, /* Stack overflow (too deeply nested tags or too long element/attribute name) */
-	YXML_EATTR       = -2, /* Too long attribute name                    */
+	YXML_EEOF        = -5, /* Unexpected EOF                             */
+	YXML_EREF        = -4, /* Invalid character or entity reference (&whatever;) */
+	YXML_ECLOSE      = -3, /* Close tag does not match open tag (<Tag> .. </OtherTag>) */
+	YXML_ESTACK      = -2, /* Stack overflow (too deeply nested tags or too long element/attribute name) */
 	YXML_ESYN        = -1, /* Syntax error (unexpected byte)             */
 	YXML_OK          =  0, /* Character consumed, no new token present   */
 	YXML_ELEMSTART   =  1, /* Start of an element:   '<Tag ..'           */
@@ -116,10 +120,10 @@ typedef struct {
 } yxml_t;
 
 
-void yxml_init(yxml_t *x, char *stack, size_t stacksize);
+void yxml_init(yxml_t *, void *, size_t);
 
 
-yxml_ret_t yxml_parse(yxml_t *x, int ch);
+yxml_ret_t yxml_parse(yxml_t *, int);
 
 
 /* May be called after the last character has been given to yxml_parse().
@@ -128,7 +132,8 @@ yxml_ret_t yxml_parse(yxml_t *x, int ch);
  * that don't end correctly. In particular, an error is returned when the XML
  * document did not contain a (complete) root element, or when the document
  * ended while in a comment or processing instruction. */
-yxml_ret_t yxml_eof(yxml_t *x);
+yxml_ret_t yxml_eof(yxml_t *);
 
+#endif
 
 /* vim: set noet sw=4 ts=4: */
