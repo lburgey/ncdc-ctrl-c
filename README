@@ -1,5 +1,5 @@
-ncdc 1.18.1
-===========
+ncdc 1.19
+=========
 
 DESCRIPTION
 
@@ -20,6 +20,7 @@ REQUIREMENTS
   sqlite  >= 3.3.9
   glib    >= 2.24.0
   gnutls  >= 2.4.0
+  geoip   >= 1.2.0 (optional)
 
   If your gnutls is older than 3.0, you also need libgcrypt.
 

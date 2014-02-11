@@ -1,3 +1,11 @@
+1.19 - 2014-02-11
+	- Add search functionality to the file browser and user list (/,. keys)
+	- Add geoip support (requires --with-geoip at configure)
+	- Add 'download_segment' setting to change minimum segment size
+	- Log hashing progress to stderr.log
+	- Fix three (potential) security vulnerabilities
+	- Fix downloading of file lists when other user has no free slots
+
 1.18.1 - 2013-10-05
 	- Fix crash when downloading files from multiple sources
 	- Use the yxml library to parse files.xml.bz2 files
