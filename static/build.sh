@@ -23,15 +23,15 @@
 # - Cross-compile to platforms other than Linux?
 
 
-MUSL_VERSION=0.9.14
+MUSL_VERSION=0.9.15
 ZLIB_VERSION=1.2.8
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3080002
-GMP_VERSION=5.1.2
+SQLITE_VERSION=3080300
+GMP_VERSION=5.1.3
 NETTLE_VERSION=2.7.1
-GNUTLS_VERSION=3.2.4
+GNUTLS_VERSION=3.2.10
 NCURSES_VERSION=5.9
-GLIB_VERSION=2.38.0
+GLIB_VERSION=2.38.2
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -142,7 +142,7 @@ getbzip2() {
 
 
 getsqlite() {
-  fem http://sqlite.org/2013/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
+  fem http://sqlite.org/2014/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
   prebuild sqlite || return
   $srcdir/configure --prefix=$PREFIX --disable-readline --disable-dynamic-extensions\
     --disable-shared --enable-static --host=$HOST || exit
