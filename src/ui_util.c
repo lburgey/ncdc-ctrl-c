@@ -676,6 +676,7 @@ void ui_cmdhist_init(const char *file) {
       if(g_utf8_validate(buf, -1, NULL))
         ui_cmdhist_add(buf);
     }
+    fclose(f);
   }
 }
 
