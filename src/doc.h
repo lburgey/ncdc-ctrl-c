@@ -616,10 +616,11 @@ static const doc_set_t doc_sets[] = {
   "Up/Down      Select one item up/down.\n"\
   "k/j          Select one item up/down.\n"\
   "PgUp/PgDown  Select one page of items up/down.\n"\
-  "End/Home     Select last/first item in the list.\n"\
+  "End/Home     Select last/first item in the list.\n"
+
+#define SEARCH_KEYS \
   "/            Start incremental regex search (press Return to stop editing).\n"\
-  ",            Search next.\n"\
-  ".            Search previous.\n"
+  ",/.          Search next / previous.\n"
 
 typedef struct doc_key_t {
   char const *sect, *title, *desc;
@@ -661,6 +662,7 @@ static const doc_key_t doc_keys[] = {
 },
 { "browse", "File browser",
   LISTING_KEYS
+  SEARCH_KEYS
   "Right/l      Open selected directory.\n"
   "Left/h       Open parent directory.\n"
   "t            Toggle sorting directories before files.\n"
@@ -716,6 +718,7 @@ static const doc_key_t doc_keys[] = {
 },
 { "userlist", "User list tab",
   LISTING_KEYS
+  SEARCH_KEYS
   "o            Toggle sorting OPs before others.\n"
   "s/S          Order by share size.\n"
   "u/U          Order by username.\n"
@@ -734,5 +737,6 @@ static const doc_key_t doc_keys[] = {
 };
 
 #undef LISTING_KEYS
+#undef SEARCH_KEYS
 
 #endif // DOC_KEY
