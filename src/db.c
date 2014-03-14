@@ -636,10 +636,17 @@ void db_fl_getids(void (*callback)(gint64)) {
 // Remove rows from the hashdata table that are not referenced from the
 // hashfiles table.
 void db_fl_purgedata() {
-  // Since there is no index on hashfiles(tth), one might expect this query to
-  // be extremely slow. Luckily sqlite is clever enough to create a temporary
-  // index for this query.
-  db_queue_push(0, "DELETE FROM hashdata WHERE NOT EXISTS(SELECT 1 FROM hashfiles WHERE tth = root)", DBQ_END);
+  // For small databases, sqlite is clever enough to create a temporary
+  // in-memory index on hashfiles(tth). But sometimes it doesn't, and then this
+  // query takes an hour or longer to run. To be on the safe side, explicitely
+  // create an index. This requires some extra disk space and makes a /gc run
+  // longer on average, but it should guarantee that a /gc actually finishes
+  // within a matter of minutes rather than hours.
+  db_queue_lock();
+  db_queue_push_unlocked(DBF_NEXT, "CREATE UNIQUE INDEX hashfiles_tth_gc ON hashfiles (tth)", DBQ_END);
+  db_queue_push_unlocked(DBF_NEXT, "DELETE FROM hashdata WHERE NOT EXISTS(SELECT 1 FROM hashfiles WHERE tth = root)", DBQ_END);
+  db_queue_push_unlocked(0, "DROP INDEX hashfiles_tth_gc", DBQ_END);
+  db_queue_unlock();
 }
 
 
