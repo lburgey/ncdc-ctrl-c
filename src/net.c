@@ -408,8 +408,14 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
     } else if(errno == EAGAIN || errno == EINTR) {
       continue;
     } else if(errno == ENOTSUP || errno == ENOSYS || errno == EINVAL || errno == EOVERFLOW) {
-      g_message("sendfile() failed with `%s', using fallback.", g_strerror(errno));
       // Don't set s->err here, let the fallback handle the rest
+      g_message("sendfile() failed with `%s', using fallback.", g_strerror(errno));
+      // The fallback code continues from the fd position, so make sure to
+      // update it in case sendfile() didn't do so.
+      if(lseek(s->fd, off, SEEK_SET) == (off_t)-1) {
+        g_message("Can't switch to fallback, seek failed: %d (%s)", errno, g_strerror(errno));
+        s->err = g_strdup(g_strerror(errno));
+      }
       return;
     } else {
       if(errno != EPIPE && errno != ECONNRESET)
