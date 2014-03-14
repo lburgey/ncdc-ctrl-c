@@ -643,7 +643,7 @@ void db_fl_purgedata() {
   // longer on average, but it should guarantee that a /gc actually finishes
   // within a matter of minutes rather than hours.
   db_queue_lock();
-  db_queue_push_unlocked(DBF_NEXT, "CREATE UNIQUE INDEX hashfiles_tth_gc ON hashfiles (tth)", DBQ_END);
+  db_queue_push_unlocked(DBF_NEXT, "CREATE INDEX hashfiles_tth_gc ON hashfiles (tth)", DBQ_END);
   db_queue_push_unlocked(DBF_NEXT, "DELETE FROM hashdata WHERE NOT EXISTS(SELECT 1 FROM hashfiles WHERE tth = root)", DBQ_END);
   db_queue_push_unlocked(0, "DROP INDEX hashfiles_tth_gc", DBQ_END);
   db_queue_unlock();
