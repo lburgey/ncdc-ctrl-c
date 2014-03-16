@@ -379,10 +379,9 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
     // are thread-safe. To some extent at least.
 #ifdef HAVE_LINUX_SENDFILE
     // XXX: On 32bit Linux with musl, sendfile() may fail with EOVERFLOW when
-    // off is larger than UINT32_MAX. We're currently handling that by
-    // switching to the fallback code, but it may be worth to try passing a
-    // NULL offset and let sendfile() do the seeking.
-    ssize_t r = sendfile(sock, s->fd, &off, MIN(b, s->left));
+    // an offset argument is given and is larger than UINT32_MAX, so we're
+    // passing NULL instead to use the fd's internal file offset.
+    ssize_t r = sendfile(sock, s->fd, NULL, MIN(b, s->left));
 #elif HAVE_BSD_SENDFILE
     off_t len = 0;
     gint64 r = sendfile(s->fd, sock, off, (size_t)MIN(b, s->left), NULL, &len, 0);
@@ -411,7 +410,7 @@ static void syn_upload_sendfile(synfer_t *s, int sock, fadv_t *adv) {
       // Don't set s->err here, let the fallback handle the rest
       g_message("sendfile() failed with `%s', using fallback.", g_strerror(errno));
       // The fallback code continues from the fd position, so make sure to
-      // update it in case sendfile() didn't do so.
+      // update it in case (FreeBSD's) sendfile() didn't do so.
       if(lseek(s->fd, off, SEEK_SET) == (off_t)-1) {
         g_message("Can't switch to fallback, seek failed: %d (%s)", errno, g_strerror(errno));
         s->err = g_strdup(g_strerror(errno));
