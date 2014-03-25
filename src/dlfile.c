@@ -121,11 +121,11 @@ static gboolean dlfile_save_bitmap_timeout(gpointer dat) {
   dl_t *dl = dat;
   g_static_mutex_lock(&dl->lock);
   dl->bitmap_src = 0;
-  if(dl->incfd >= 0 && !dlfile_save_bitmap(dl, dl->incfd)) {
+  if(dl->incfd > 0 && !dlfile_save_bitmap(dl, dl->incfd)) {
     g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
     dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
   }
-  if(dl->incfd >= 0 && !dl->active_threads) {
+  if(dl->incfd > 0 && !dl->active_threads) {
     close(dl->incfd);
     dl->incfd = 0;
   }
@@ -290,6 +290,18 @@ static gboolean dlfile_load_threads(dl_t *dl, int fd) {
 
 
 void dlfile_load(dl_t *dl) {
+  /* If moving to the destination failed in a previous run, assume that the
+   * incoming file is complete and all that's left to do is resume the
+   * finalization (which the user has to initiate by clearing the error). This
+   * needs to be handled as a special case because the incoming file will not
+   * contain the bitmap anymore at this point, and the loading process below
+   * will fail. */
+  if(dl->prio == DLP_ERR && dl->error == DLE_IO_DEST) {
+    g_message("Download for `%s' in IO_DEST error state, assuming `%s' contains the finished download.", dl->dest, dl->inc);
+    dl->have = dl->size;
+    return;
+  }
+
   dl->have = 0;
   int fd = open(dl->inc, O_RDWR);
   if(fd < 0) {
@@ -352,8 +364,8 @@ static gboolean dlfile_open(dl_t *dl) {
     return FALSE;
   }
 
-  /* Everything else has already been initialized if we have a thread */
-  if(dl->threads)
+  /* Everything else has already been initialized if we have a thread or bitmap */
+  if(dl->threads || dl->bitmap)
     return TRUE;
 
   if(!dl->islist) {
@@ -387,10 +399,18 @@ void dlfile_finished(dl_t *dl) {
   /* Regular files: Remove bitmap from the file
    * File lists: Ensure that the file size is correct after we've downloaded a
    *   longer file list before that got interrupted. */
-  /* TODO: Error handling */
-  ftruncate(dl->incfd, dl->size);
-  close(dl->incfd);
+  if(ftruncate(dl->incfd, dl->size) < 0) {
+    g_warning("Error truncating the incoming file for `%s': %s.", dl->dest, g_strerror(errno));
+    dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
+    return;
+  }
+  int r = close(dl->incfd);
   dl->incfd = 0;
+  if(r < 0) {
+    g_warning("Error closing the incoming file for `%s': %s.", dl->dest, g_strerror(errno));
+    dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
+    return;
+  }
 
   char *fdest = g_filename_from_utf8(dl->dest, -1, NULL, NULL, NULL);
   if(!fdest)
@@ -398,9 +418,14 @@ void dlfile_finished(dl_t *dl) {
 
   /* Create destination directory, if it does not exist yet. */
   char *parent = g_path_get_dirname(fdest);
-  g_mkdir_with_parents(parent, 0755);
-  /* TODO: Error handling */
+  r = g_mkdir_with_parents(parent, 0755);
   g_free(parent);
+  if(r < 0) {
+    g_warning("Error creating directory for `%s': %s.", dl->dest, g_strerror(errno));
+    dl_queue_seterr(dl, DLE_IO_DEST, g_strerror(errno));
+    g_free(fdest);
+    return;
+  }
 
   /* Prevent overwiting other files by appending a prefix to the destination if
    * it already exists. It is assumed that fn + any dupe-prevention-extension
@@ -412,16 +437,17 @@ void dlfile_finished(dl_t *dl) {
     g_free(dest);
     dest = g_strdup_printf("%s.%d", fdest, num++);
   }
+  g_free(fdest);
 
   GError *err = NULL;
   file_move(dl->inc, dest, dl->islist, &err);
-  if(err) {
-    /* TODO: Error handling. */
-    g_error_free(err);
-  }
-
   g_free(dest);
-  g_free(fdest);
+  if(err) {
+    g_warning("Error moving file to destination `%s': %s.", dl->dest, err->message);
+    dl_queue_seterr(dl, DLE_IO_DEST, err->message);
+    g_error_free(err);
+    return;
+  }
 
   dl_finished(dl);
 }
