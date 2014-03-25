@@ -586,6 +586,9 @@ static gboolean dl_queue_addfile(guint64 uid, char *hash, guint64 size, char *fn
   dl_queue_insert(dl, FALSE);
   dl_user_add(dl, uid, 0, NULL);
   db_dl_adduser(dl->hash, uid, 0, NULL);
+  // Empty files get a shortcut here
+  if(!size)
+    dlfile_finished(dl);
   return TRUE;
 }
 
@@ -715,9 +718,13 @@ void dl_queue_setprio(dl_t *dl, signed char prio) {
   int i;
   for(i=0; i<dl->u->len; i++)
     g_sequence_sort_changed(g_ptr_array_index(dl->u, i), dl_user_dl_sort, NULL);
-  // Start the download if it is enabled
-  if(enabled)
-    dl_queue_start();
+  // Start downloading or re-attempt finalization if it is enabled
+  if(enabled) {
+    if(!dl->active_threads && (dl->hassize || !dl->islist) && dl->have == dl->size)
+      dlfile_finished(dl);
+    else
+      dl_queue_start();
+  }
   /* TODO: Disconnect active users if the dl item is disabled */
 }
 

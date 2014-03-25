@@ -341,8 +341,49 @@ void dlfile_rm(dl_t *dl) {
 }
 
 
+/* Create the inc file and initialize the necessary structs to prepare for
+ * handling downloaded data. */
+static gboolean dlfile_open(dl_t *dl) {
+  if(dl->incfd <= 0)
+    dl->incfd = open(dl->inc, O_WRONLY|O_CREAT, 0666);
+  if(dl->incfd < 0) {
+    g_warning("Error opening %s: %s", dl->inc, g_strerror(errno));
+    dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
+    return FALSE;
+  }
+
+  /* Everything else has already been initialized if we have a thread */
+  if(dl->threads)
+    return TRUE;
+
+  if(!dl->islist) {
+    dl->bitmap = bita_new(dlfile_chunks(dl->size));
+    if(!dlfile_save_bitmap(dl, dl->incfd)) {
+      g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
+      dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
+      free(dl->bitmap);
+      dl->bitmap = NULL;
+      return FALSE;
+    }
+  }
+
+  dlfile_thread_t *t = g_slice_new0(dlfile_thread_t);
+  t->dl = dl;
+  t->chunk = 0;
+  t->allocated = 0;
+  if(!dl->islist)
+    t->avail = dlfile_chunks(dl->size);
+  tth_init(&t->hash_tth);
+  dl->threads = g_slist_prepend(dl->threads, t);
+  return TRUE;
+}
+
+
 /* XXX: This function may block in the main thread for a while. Perhaps do it in a threadpool? */
-static void dlfile_finished(dl_t *dl) {
+void dlfile_finished(dl_t *dl) {
+  if(dl->incfd <= 0 && !dlfile_open(dl))
+    return;
+
   /* Regular files: Remove bitmap from the file
    * File lists: Ensure that the file size is correct after we've downloaded a
    *   longer file list before that got interrupted. */
@@ -383,44 +424,6 @@ static void dlfile_finished(dl_t *dl) {
   g_free(fdest);
 
   dl_finished(dl);
-}
-
-
-/* Create the inc file and initialize the necessary structs to prepare for
- * handling downloaded data. */
-static gboolean dlfile_open(dl_t *dl) {
-  if(dl->incfd <= 0)
-    dl->incfd = open(dl->inc, O_WRONLY|O_CREAT, 0666);
-  if(dl->incfd < 0) {
-    g_warning("Error opening %s: %s", dl->inc, g_strerror(errno));
-    dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
-    return FALSE;
-  }
-
-  /* Everything else has already been initialized if we have a thread */
-  if(dl->threads)
-    return TRUE;
-
-  if(!dl->islist) {
-    dl->bitmap = bita_new(dlfile_chunks(dl->size));
-    if(!dlfile_save_bitmap(dl, dl->incfd)) {
-      g_warning("Error writing bitmap for `%s': %s.", dl->dest, g_strerror(errno));
-      dl_queue_seterr(dl, DLE_IO_INC, g_strerror(errno));
-      free(dl->bitmap);
-      dl->bitmap = NULL;
-      return FALSE;
-    }
-  }
-
-  dlfile_thread_t *t = g_slice_new0(dlfile_thread_t);
-  t->dl = dl;
-  t->chunk = 0;
-  t->allocated = 0;
-  if(!dl->islist)
-    t->avail = dlfile_chunks(dl->size);
-  tth_init(&t->hash_tth);
-  dl->threads = g_slist_prepend(dl->threads, t);
-  return TRUE;
 }
 
 
