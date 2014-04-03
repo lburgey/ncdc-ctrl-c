@@ -70,7 +70,10 @@ ncdc_SOURCES=\
 	src/uit_msg.c\
 	src/uit_search.c\
 	src/uit_userlist.c\
-	src/ui_util.c\
+	src/ui_colors.c\
+	src/ui_listing.c\
+	src/ui_logwindow.c\
+	src/ui_textinput.c\
 	src/util.c\
 	src/vars.c
 
@@ -134,6 +137,9 @@ src/uit_main.$(OBJEXT): src/uit_main.h
 src/uit_msg.$(OBJEXT): src/uit_msg.h
 src/uit_search.$(OBJEXT): src/uit_search.h
 src/uit_userlist.$(OBJEXT): src/uit_userlist.h
-src/ui_util.$(OBJEXT): src/ui_util.h
+src/ui_colors.$(OBJEXT): src/ui_colors.h
+src/ui_listing.$(OBJEXT): src/ui_listing.h
+src/ui_logwindow.$(OBJEXT): src/ui_logwindow.h
+src/ui_textinput.$(OBJEXT): src/ui_textinput.h
 src/util.$(OBJEXT): src/util.h
 src/vars.$(OBJEXT): src/vars.h
