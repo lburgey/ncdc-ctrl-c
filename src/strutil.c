@@ -159,7 +159,8 @@ int str_offset_from_columns(const char *str, int col) {
   int w = 0;
   while(*str && w < col) {
     w += gunichar_width(g_utf8_get_char(str));
-    str = g_utf8_next_char(str);
+    if(w <= col)
+      str = g_utf8_next_char(str);
   }
   return str-ostr;
 }
