@@ -122,7 +122,13 @@ static void result(search_r_t *r, void *dat) {
 }
 
 
-// Performs a seach and opens a new tab for the results.
+static const char *search_r_get_file(GSequenceIter *iter) {
+  search_r_t *r = g_sequence_get(iter);
+  return r->file;
+}
+
+
+// Performs a search and opens a new tab for the results.
 // May return NULL on error, behaves similarly to search_add() w.r.t *err.
 // Ownership of q is passed to the tab, and will be freed on error or close.
 ui_tab_t *uit_search_create(hub_t *hub, search_q_t *q, GError **err) {
@@ -157,7 +163,7 @@ ui_tab_t *uit_search_create(hub_t *hub, search_q_t *q, GError **err) {
   while(t->tab.name[strlen(t->tab.name)-1] == ' ')
     t->tab.name[strlen(t->tab.name)-1] = 0;
 
-  t->list = ui_listing_create(g_sequence_new(search_r_free), NULL, t, NULL);
+  t->list = ui_listing_create(g_sequence_new(search_r_free), NULL, t, search_r_get_file);
   return (ui_tab_t *)t;
 }
 
