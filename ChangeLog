@@ -1,3 +1,13 @@
+1.19.1 - 2014-04-23
+	- Fix remote null pointer dereference
+	- Searching now works in the search results list
+	- Fix possible file corruption when moving file to destination
+	- Fix error handling when finalizing a file download
+	- Fix downloading of 0-byte files
+	- Fix extremely slow /gc
+	- Fix sendfile() with large files on 32-bit Linux
+	- Fix minor display issue with multicolumn characters
+
 1.19 - 2014-02-11
 	- Add search functionality to the file browser and user list (/,. keys)
 	- Add geoip support (requires --with-geoip at configure)
