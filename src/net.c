@@ -1307,7 +1307,8 @@ void net_disconnect(net_t *n) {
   case NETST_ASY:
   case NETST_DIS:
     n->rd_cb = NULL;
-    if(n->syn) {
+    s = n->syn;
+    if(s) {
       syn_cancel(n);
       syn_free(s);
     }

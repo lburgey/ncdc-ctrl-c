@@ -847,7 +847,7 @@ static void adc_handle(net_t *net, char *msg, int _len) {
   }
 
   if(cmd.type != 'C') {
-    g_message("CC:%s: Not a client command: %s. --> %s", net_remoteaddr(cc->net), err->message, msg);
+    g_message("CC:%s: Not a client command: %s", net_remoteaddr(cc->net), msg);
     g_strfreev(cmd.argv);
     return;
   }

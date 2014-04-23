@@ -537,7 +537,7 @@ gboolean search_handle_udp(const char *addr, char *pack, int len) {
   }
 
   // handle message
-  char *next = msg;
+  char *next;
   while((next = strchr(msg, adc ? '\n' : '|')) != NULL) {
     *(next++) = 0;
     g_debug("%s:%s< %s", sudp ? "SUDP" : "UDP", addr, msg);

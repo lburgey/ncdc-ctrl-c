@@ -280,7 +280,7 @@ fl_list_t *fl_list_from_path(fl_list_t *root, const char *path) {
 void fl_list_suggest(fl_list_t *root, char *opath, char **sug) {
   fl_list_t *parent = root;
   char *path = g_strdup(opath);
-  char *name = path;
+  char *name;
   char *sep = strrchr(path, '/');
   if(sep) {
     *sep = 0;

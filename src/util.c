@@ -467,8 +467,8 @@ gboolean file_move(const char *from, const char *to, gboolean overwrite, GError 
     if(r <= 0)
       break;
 
+    char *p = buf;
     while(r > 0) {
-      char *p = buf;
       int w = write(tofd, p, r);
       if(w < 0 && errno == EINTR)
         continue;

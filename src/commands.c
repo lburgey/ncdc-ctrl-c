@@ -56,7 +56,7 @@ static cmd_t *getcmd(const char *name) {
 // Get documentation for a command. May be slow at first, but caches the doc
 // structure later on.
 static doc_cmd_t *getdoc(cmd_t *cmd) {
-  doc_cmd_t empty = { "", NULL, "No documentation available." };
+  static doc_cmd_t empty = { "", NULL, "No documentation available." };
   if(cmd->doc)
     return cmd->doc;
   doc_cmd_t *i = (doc_cmd_t *)doc_cmds;
@@ -416,7 +416,6 @@ static void c_open(char *args) {
     return;
   }
 
-  ui_tab_t *tab = ui_tab_cur->data;
   gboolean conn = TRUE;
   if(strncmp(args, "-n ", 3) == 0) {
     conn = FALSE;
@@ -444,16 +443,13 @@ static void c_open(char *args) {
     }
     // Open or select tab
     if(!n) {
-      tab = uit_hub_create(name, addr ? FALSE : conn);
+      ui_tab_t *tab = uit_hub_create(name, addr ? FALSE : conn);
       ui_tab_open(tab, TRUE, NULL);
       listen_refresh();
-    } else if(n != ui_tab_cur) {
+    } else if(n != ui_tab_cur)
       ui_tab_cur = n;
-      tab = n->data;
-    } else {
+    else
       ui_m(NULL, 0, addr ? "Tab already selected, saving new address instead." : "Tab already selected.");
-      tab = n->data;
-    }
     // Save address and (re)connect when necessary
     if(addr && c_connect_set_hubaddr(addr) && conn)
       c_reconnect("");
