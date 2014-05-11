@@ -245,6 +245,21 @@ void ui_tab_incprio(ui_tab_t *tab, int prio) {
 }
 
 
+// Based on gui_window_set_bracketed_paste_mode() in weechat's gui/curses/gui-curses-window.c
+void ui_set_bracketed_paste(int enable) {
+  char *env = getenv("TMUX");
+  int tmux = env && *env;
+  env = getenv("TERM");
+  int screen = env && (strncmp(env, "screen", 6) == 0) && !tmux;
+
+  fprintf(stderr, "%s\033[?2004%c%s",
+      screen ? "\033P" : "",
+      enable ? 'h' : 'l',
+      screen ? "\033\\" : "");
+  fflush(stderr);
+}
+
+
 void ui_init() {
   // init curses
   initscr();
@@ -257,9 +272,7 @@ void ui_init() {
   // ensure curses is init'd before event-keys defined before events happen
   define_key("\x1b[200~", KEY_BRACKETED_PASTE_START);
   define_key("\x1b[201~", KEY_BRACKETED_PASTE_END);
-
-  const char paste_mode[] = "\x1b[?2004h";
-  write(STDOUT_FILENO, paste_mode, sizeof(paste_mode)-1);
+  ui_set_bracketed_paste(1);
 
   // global textinput field
   ui_global_textinput = ui_textinput_create(TRUE, cmd_suggest);

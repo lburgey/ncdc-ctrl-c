@@ -504,9 +504,7 @@ int main(int argc, char **argv) {
     erase();
     refresh();
     endwin();
-
-    // reset bracketed paste mode
-    printf("\x1b[?2004l"); // http://www.xfree86.org/current/ctlseqs.html#C1%20%288-Bit%29%20Control%20Characters
+    ui_set_bracketed_paste(0);
 
     printf("Flushing unsaved data to disk...");
     fflush(stdout);
