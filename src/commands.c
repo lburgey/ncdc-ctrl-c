@@ -1313,6 +1313,13 @@ void cmd_handle(char *ostr) {
   // it is a command, extract cmd and args
   } else {
     cmd++;
+
+    if(strchr(cmd, '\n')) {
+      g_free(str);
+      ui_m(NULL, 0, "Commands cannot contain newlines");
+      return;
+    }
+
     char *sep = strchr(cmd, ' ');
     if(sep)
       *sep = 0;

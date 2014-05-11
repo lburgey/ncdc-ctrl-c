@@ -50,7 +50,9 @@ GMainLoop *main_loop;
 #define INPT_CODE(key)  ((gunichar)((key)&G_GUINT64_CONSTANT(0xFFFFFFFF)))
 #define INPT_TYPE(key)  ((char)((key)>>32))
 
-#define KEY_ESCAPE (KEY_MAX+1)
+#define KEY_ESCAPE                (KEY_MAX+1)
+#define KEY_BRACKETED_PASTE_START (KEY_ESCAPE+1)
+#define KEY_BRACKETED_PASTE_END   (KEY_BRACKETED_PASTE_START+1)
 
 #endif
 
@@ -126,7 +128,7 @@ static void handle_input() {
       if(INPT_TYPE(key) != 1)
         continue;
       if(INPT_CODE(key) == '[') {
-        curignore = 0;
+        curignore = 1;
         continue;
       }
       key |= (guint64)3<<32; // a not very nice way of saying "turn this key into a INPT_ALT"
@@ -502,6 +504,9 @@ int main(int argc, char **argv) {
     erase();
     refresh();
     endwin();
+
+    // reset bracketed paste mode
+    printf("\x1b[?2004l"); // http://www.xfree86.org/current/ctlseqs.html#C1%20%288-Bit%29%20Control%20Characters
 
     printf("Flushing unsaved data to disk...");
     fflush(stdout);

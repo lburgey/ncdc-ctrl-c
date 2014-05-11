@@ -152,6 +152,7 @@ struct ui_textinput_t {
   void (*complete)(char *, char **);
   char *c_q, *c_last, **c_sug;
   int c_cur;
+  gboolean bracketed_paste;
 };
 
 #endif
@@ -163,6 +164,7 @@ ui_textinput_t *ui_textinput_create(gboolean usehist, void (*complete)(char *, c
   ti->usehist = usehist;
   ti->s_pos = -1;
   ti->complete = complete;
+  ti->bracketed_paste = FALSE;
   return ti;
 }
 
@@ -284,7 +286,9 @@ void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col, ui_cursor_t *c
     if(f <= -col)
       break;
     if(f < 0) {
-      addnstr(ostr, str-ostr);
+      // Don't display control characters
+      if(*ostr >= 32)
+        addnstr(ostr, str-ostr);
       if(i < ti->pos)
         pos += l;
     }
@@ -426,11 +430,46 @@ gboolean ui_textinput_key(ui_textinput_t *ti, guint64 key, char **str) {
       return FALSE;
     break;
   case INPT_CTRL('i'):     // tab   - autocomplete
-    ui_textinput_complete(ti);
-    completereset = FALSE;
+    if(ti->bracketed_paste) {
+      g_string_insert_unichar(ti->str, g_utf8_offset_to_pointer(ti->str->str, ti->pos)-ti->str->str, ' ');
+      ti->pos++;
+      return FALSE;
+    } else {
+      ui_textinput_complete(ti);
+      completereset = FALSE;
+    }
     break;
   case INPT_CTRL('j'):     // newline - accept & clear
+    if(ti->bracketed_paste) {
+      g_string_insert_unichar(ti->str, g_utf8_offset_to_pointer(ti->str->str, ti->pos)-ti->str->str, '\n');
+      ti->pos++;
+      return FALSE;
+    }
+
+    // if not responded to, input simply keeps buffering; avoids modality
+    // reappearing after each (non-bracketed) newline avoids user confusion
+    // UTF-8: <32 always 1 byte from trusted input
+    {
+      int num_lines = 1;
+      char *c;
+      for(c=ti->str->str; *c; c++)
+        num_lines += *c == '\n';
+      if(num_lines > 1) {
+        ui_mf(NULL, UIM_NOLOG, "Press Ctrl-y to accept %d-line paste", num_lines);
+        break;
+      }
+    }
+
     *str = ui_textinput_reset(ti);
+    break;
+  case INPT_CTRL('y'):     // C-y   - accept bracketed paste
+    *str = ui_textinput_reset(ti);
+    break;
+  case KEY_BRACKETED_PASTE_START:
+    ti->bracketed_paste = TRUE;
+    break;
+  case KEY_BRACKETED_PASTE_END:
+    ti->bracketed_paste = FALSE;
     break;
   default:
     if(INPT_TYPE(key) == 1) { // char

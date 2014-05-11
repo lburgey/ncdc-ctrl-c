@@ -254,6 +254,13 @@ void ui_init() {
   keypad(stdscr, 1);
   nodelay(stdscr, 1);
 
+  // ensure curses is init'd before event-keys defined before events happen
+  define_key("\x1b[200~", KEY_BRACKETED_PASTE_START);
+  define_key("\x1b[201~", KEY_BRACKETED_PASTE_END);
+
+  const char paste_mode[] = "\x1b[?2004h";
+  write(STDOUT_FILENO, paste_mode, sizeof(paste_mode)-1);
+
   // global textinput field
   ui_global_textinput = ui_textinput_create(TRUE, cmd_suggest);
 
