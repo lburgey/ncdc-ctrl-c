@@ -236,15 +236,15 @@ char *ncdc_version() {
 }
 
 
-static gboolean stderr_redir = FALSE;
+static FILE *stderrlog;
 
-// redirect all non-fatal errors to stderr (NOT stdout!)
+// redirect all non-fatal errors to the log
 static void log_redirect(const gchar *dom, GLogLevelFlags level, const gchar *msg, gpointer dat) {
-  if(!(level & (G_LOG_LEVEL_INFO|G_LOG_LEVEL_DEBUG)) || (stderr_redir && var_log_debug)) {
+  if(!(level & (G_LOG_LEVEL_INFO|G_LOG_LEVEL_DEBUG)) || (stderrlog != stderr && var_log_debug)) {
     char *ts = localtime_fmt("[%F %H:%M:%S %Z]");
-    fprintf(stderr, "%s *%s* %s\n", ts, loglevel_to_str(level), msg);
+    fprintf(stderrlog, "%s *%s* %s\n", ts, loglevel_to_str(level), msg);
     g_free(ts);
-    fflush(stderr);
+    fflush(stderrlog);
   }
 }
 
@@ -252,10 +252,10 @@ static void log_redirect(const gchar *dom, GLogLevelFlags level, const gchar *ms
 // clean-up our ncurses window before throwing a fatal error
 static void log_fatal(const gchar *dom, GLogLevelFlags level, const gchar *msg, gpointer dat) {
   endwin();
-  // print to both stderr (log file) and stdout
-  if(stderr_redir) {
-    fprintf(stderr, "\n\n*%s* %s\n", loglevel_to_str(level), msg);
-    fflush(stderr);
+  // print to both log file and stdout
+  if(stderrlog != stderr) {
+    fprintf(stderrlog, "\n\n*%s* %s\n", loglevel_to_str(level), msg);
+    fflush(stderrlog);
   }
   printf("\n\n*%s* %s\n", loglevel_to_str(level), msg);
 }
@@ -398,6 +398,8 @@ static void init_crypt() {
 
 int main(int argc, char **argv) {
   setlocale(LC_ALL, "");
+  // Early logging goes to stderr
+  stderrlog = stderr;
 
   // parse commandline options
   GOptionContext *optx = g_option_context_new("- NCurses Direct Connect");
@@ -432,14 +434,13 @@ int main(int argc, char **argv) {
   db_init();
   vars_init();
 
-  // redirect stderr to a log file
+  // open log file
   char *errlog = g_build_filename(db_dir, "stderr.log", NULL);
-  if(!freopen(errlog, "w", stderr)) {
+  if(!(stderrlog = fopen(errlog, "w"))) {
     fprintf(stderr, "ERROR: Couldn't open %s for writing: %s\n", errlog, strerror(errno));
     exit(1);
   }
   g_free(errlog);
-  stderr_redir = TRUE;
 
   // Init more stuff
   hub_init_global();
