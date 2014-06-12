@@ -287,7 +287,7 @@ void ui_textinput_draw(ui_textinput_t *ti, int y, int x, int col, ui_cursor_t *c
       break;
     if(f < 0) {
       // Don't display control characters
-      if(*ostr >= 32)
+      if((unsigned char)*ostr >= 32)
         addnstr(ostr, str-ostr);
       if(i < ti->pos)
         pos += l;
