@@ -35,33 +35,37 @@ static GeoIP *geoip6;
 #endif
 
 
-void geoip_reinit() {
+void geoip_reinit(int v) {
 #ifdef USE_GEOIP
-  if(geoip4)
-    GeoIP_delete(geoip4);
-  if(geoip6)
-    GeoIP_delete(geoip6);
-  /* Get the file paths directly, so that we can offer more useful diagnostic
-   * messages in case we fail to open it. Calling GeoIP_db_avail() ensures that
-   * the GeoIPDBFileName variable has been initialized. */
-  if(!GeoIPDBFileName)
-      GeoIP_db_avail(GEOIP_COUNTRY_EDITION);
-  const char *f4 = GeoIPDBFileName[GEOIP_COUNTRY_EDITION];
-  const char *f6 = GeoIPDBFileName[GEOIP_COUNTRY_EDITION_V6];
+  GeoIP **var = v == 4 ? &geoip4 : &geoip6;
+  if(*var) {
+    GeoIP_delete(*var);
+    *var = NULL;
+  }
 
-  /* The '16' flag is GEOIP_SILENCE, but it's a fairly new option and not
-   * defined in older versions. Just pass it along directly, ABI compatibility
-   * should ensure this works with both old and new versions.
-   * Also perform a g_file_test() first to ensure we're not opening
-   * non-existing files. GeoIP versions that do not support GEOIP_SILENCE will
-   * throw error messages on stdout, which screws up our ncurses UI, so
-   * catching the most common error here is worth it. */
-  geoip4 = g_file_test(f4, G_FILE_TEST_EXISTS) ? GeoIP_open(f4, 16 | GEOIP_MEMORY_CACHE) : NULL;
-  geoip6 = g_file_test(f6, G_FILE_TEST_EXISTS) ? GeoIP_open(f6, 16 | GEOIP_MEMORY_CACHE) : NULL;
-  if(!geoip4)
-    ui_mf(uit_main_tab, 0, "Unable to open '%s', no country codes will be displayed for IPv4 addresses.", f4);
-  if(!geoip6)
-    ui_mf(uit_main_tab, 0, "Unable to open '%s', no country codes will be displayed for IPv6 addresses.", f6);
+  const char *fn = var_get(0, v == 4 ? VAR_geoip_cc4 : VAR_geoip_cc6);
+  if(!fn) {
+    /* Get the file paths directly, so that we can offer more useful diagnostic
+     * messages in case we fail to open it. Calling GeoIP_db_avail() ensures that
+     * the GeoIPDBFileName variable has been initialized. */
+    if(!GeoIPDBFileName)
+        GeoIP_db_avail(GEOIP_COUNTRY_EDITION);
+    fn = GeoIPDBFileName[v == 4 ? GEOIP_COUNTRY_EDITION : GEOIP_COUNTRY_EDITION_V6];
+  }
+
+  if(strcmp(fn, "disabled") != 0) {
+    /* The '16' flag is GEOIP_SILENCE, but it's a fairly new option and not
+     * defined in older versions. Just pass it along directly, ABI compatibility
+     * should ensure this works with both old and new versions.
+     * Also perform a g_file_test() first to ensure we're not opening
+     * non-existing files. GeoIP versions that do not support GEOIP_SILENCE
+     * will throw error messages on stdout/stderr, which screws up our ncurses
+     * UI, so catching the most common error here is worth it. */
+    *var = g_file_test(fn, G_FILE_TEST_EXISTS) ? GeoIP_open(fn, 16 | GEOIP_MEMORY_CACHE) : NULL;
+    if(!*var)
+      ui_mf(NULL, 0, "Can't open '%s', no country codes will be displayed for IPv%d addresses.", fn, v);
+  }
+
   geoip_available = geoip4 || geoip6;
 #endif
 }

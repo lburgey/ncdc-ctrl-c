@@ -453,7 +453,8 @@ int main(int argc, char **argv) {
   dl_init_global();
   ui_cmdhist_init("history");
   ui_init(bracketed_paste);
-  geoip_reinit();
+  geoip_reinit(4);
+  geoip_reinit(6);
 
   // setup SIGWINCH
   struct sigaction act;
