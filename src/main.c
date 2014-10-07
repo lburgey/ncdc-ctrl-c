@@ -451,9 +451,9 @@ int main(int argc, char **argv) {
   listen_global_init();
   cc_global_init();
   dl_init_global();
-  geoip_reinit();
   ui_cmdhist_init("history");
   ui_init(bracketed_paste);
+  geoip_reinit();
 
   // setup SIGWINCH
   struct sigaction act;

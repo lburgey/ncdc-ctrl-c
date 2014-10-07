@@ -167,9 +167,10 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
     mvaddch(row, 4, 't');
 
   int j = 6;
-  DRAW_COL(row, j, t->cw_country,
-      !ip4_isany(user->ip4) ? geoip_country4(ip4_unpack(user->ip4)) :
-      !ip6_isany(user->ip6) ? geoip_country6(ip6_unpack(user->ip6)) : "");
+  const char *cc =
+    !ip4_isany(user->ip4) ? geoip_country4(ip4_unpack(user->ip4)) :
+    !ip6_isany(user->ip6) ? geoip_country6(ip6_unpack(user->ip6)) : NULL;
+  DRAW_COL(row, j, t->cw_country, cc?cc:"");
   if(t->cw_user > 1)
     ui_listing_draw_match(list, iter, row, j, str_offset_from_columns(user->name, t->cw_user-1));
   j += t->cw_user;
