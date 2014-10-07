@@ -53,6 +53,7 @@ ncdc_SOURCES=\
 	src/fl_local.c\
 	src/fl_save.c\
 	src/fl_util.c\
+	src/geoip.c\
 	src/hub.c\
 	src/listen.c\
 	src/main.c\
@@ -62,6 +63,10 @@ ncdc_SOURCES=\
 	src/strutil.c\
 	src/tth.c\
 	src/ui.c\
+	src/ui_colors.c\
+	src/ui_listing.c\
+	src/ui_logwindow.c\
+	src/ui_textinput.c\
 	src/uit_conn.c\
 	src/uit_dl.c\
 	src/uit_fl.c\
@@ -70,10 +75,6 @@ ncdc_SOURCES=\
 	src/uit_msg.c\
 	src/uit_search.c\
 	src/uit_userlist.c\
-	src/ui_colors.c\
-	src/ui_listing.c\
-	src/ui_logwindow.c\
-	src/ui_textinput.c\
 	src/util.c\
 	src/vars.c
 
@@ -120,6 +121,7 @@ src/fl_load.$(OBJEXT): src/fl_load.h
 src/fl_local.$(OBJEXT): src/fl_local.h
 src/fl_save.$(OBJEXT): src/fl_save.h
 src/fl_util.$(OBJEXT): src/fl_util.h
+src/geoip.$(OBJEXT): src/geoip.h
 src/hub.$(OBJEXT): src/hub.h
 src/listen.$(OBJEXT): src/listen.h
 src/main.$(OBJEXT): src/main.h
@@ -129,6 +131,10 @@ src/search.$(OBJEXT): src/search.h
 src/strutil.$(OBJEXT): src/strutil.h
 src/tth.$(OBJEXT): src/tth.h
 src/ui.$(OBJEXT): src/ui.h
+src/ui_colors.$(OBJEXT): src/ui_colors.h
+src/ui_listing.$(OBJEXT): src/ui_listing.h
+src/ui_logwindow.$(OBJEXT): src/ui_logwindow.h
+src/ui_textinput.$(OBJEXT): src/ui_textinput.h
 src/uit_conn.$(OBJEXT): src/uit_conn.h
 src/uit_dl.$(OBJEXT): src/uit_dl.h
 src/uit_fl.$(OBJEXT): src/uit_fl.h
@@ -137,9 +143,5 @@ src/uit_main.$(OBJEXT): src/uit_main.h
 src/uit_msg.$(OBJEXT): src/uit_msg.h
 src/uit_search.$(OBJEXT): src/uit_search.h
 src/uit_userlist.$(OBJEXT): src/uit_userlist.h
-src/ui_colors.$(OBJEXT): src/ui_colors.h
-src/ui_listing.$(OBJEXT): src/ui_listing.h
-src/ui_logwindow.$(OBJEXT): src/ui_logwindow.h
-src/ui_textinput.$(OBJEXT): src/ui_textinput.h
 src/util.$(OBJEXT): src/util.h
 src/vars.$(OBJEXT): src/vars.h
