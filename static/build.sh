@@ -32,6 +32,7 @@ NETTLE_VERSION=2.7.1
 GNUTLS_VERSION=3.3.4
 NCURSES_VERSION=5.9
 GLIB_VERSION=2.40.0
+GEOIP_VERSION=1.6.2
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -238,12 +239,21 @@ getglib() {
 }
 
 
+getgeoip() {
+  fem https://github.com/maxmind/geoip-api-c/releases/download/v${GEOIP_VERSION}/ GeoIP-${GEOIP_VERSION}.tar.gz geoip
+  prebuild geoip || return
+  $srcdir/configure --prefix=$PREFIX --host=$HOST --disable-shared --disable-datafiles || exit
+  make -C libGeoIP datadir=/usr/share install || exit
+  postbuild
+}
+
+
 getncdc() {
   prebuild ncdc || return
   srcdir=../../..
-  $srcdir/configure --host=$HOST --disable-silent-rules\
+  $srcdir/configure --host=$HOST --disable-silent-rules --with-geoip\
     CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -L$PREFIX/lib64 -lz -lbz2"\
-    SQLITE_LIBS=-lsqlite3 GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp"\
+    SQLITE_LIBS=-lsqlite3 GEOIP_LIBS=-lGeoIP GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp"\
     GLIB_LIBS="-pthread -lglib-2.0 -lgthread-2.0"\
     GLIB_CFLAGS="-I$PREFIX/include/glib-2.0 -I$PREFIX/lib/glib-2.0/include" || exit
   # Make sure that the Makefile dependencies for makeheaders and gendoc are "up-to-date"
@@ -272,6 +282,7 @@ allncdc() {
   getgnutls
   getncurses
   getglib
+  getgeoip
   getncdc
 }
 
