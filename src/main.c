@@ -359,6 +359,7 @@ static gboolean print_version(const gchar *name, const gchar *val, gpointer dat,
 
 
 static gboolean auto_open = TRUE;
+static gboolean bracketed_paste = TRUE;
 
 static GOptionEntry cli_options[] = {
   { "version", 'v', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, print_version,
@@ -367,6 +368,8 @@ static GOptionEntry cli_options[] = {
       "Use a different session directory. Default: `$NCDC_DIR' or `$HOME/.ncdc'.", "<dir>" },
   { "no-autoconnect", 'n', G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &auto_open,
       "Don't automatically connect to hubs with the `autoconnect' option set.", NULL },
+  { "no-bracketed-paste", 0, G_OPTION_FLAG_REVERSE, G_OPTION_ARG_NONE, &bracketed_paste,
+      "Disable bracketed pasting.", NULL },
   { NULL }
 };
 
@@ -449,7 +452,7 @@ int main(int argc, char **argv) {
   cc_global_init();
   dl_init_global();
   ui_cmdhist_init("history");
-  ui_init();
+  ui_init(bracketed_paste);
 
   // setup SIGWINCH
   struct sigaction act;
@@ -505,7 +508,8 @@ int main(int argc, char **argv) {
     erase();
     refresh();
     endwin();
-    ui_set_bracketed_paste(0);
+    if(bracketed_paste)
+      ui_set_bracketed_paste(0);
 
     printf("Flushing unsaved data to disk...");
     fflush(stdout);

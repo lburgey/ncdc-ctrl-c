@@ -81,6 +81,10 @@ Display summary of options.
 
 Don't automatically connect to hubs with the C<autoconnect> option set.
 
+=item B<--no-bracketed-paste>
+
+Disable bracketed pasting.
+
 =item B<-v, --version>
 
 Display ncdc version.

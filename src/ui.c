@@ -260,7 +260,7 @@ void ui_set_bracketed_paste(int enable) {
 }
 
 
-void ui_init() {
+void ui_init(gboolean bracketed_paste) {
   // init curses
   initscr();
   raw();
@@ -270,9 +270,11 @@ void ui_init() {
   nodelay(stdscr, 1);
 
   // ensure curses is init'd before event-keys defined before events happen
-  define_key("\x1b[200~", KEY_BRACKETED_PASTE_START);
-  define_key("\x1b[201~", KEY_BRACKETED_PASTE_END);
-  ui_set_bracketed_paste(1);
+  if(bracketed_paste) {
+    define_key("\x1b[200~", KEY_BRACKETED_PASTE_START);
+    define_key("\x1b[201~", KEY_BRACKETED_PASTE_END);
+    ui_set_bracketed_paste(1);
+  }
 
   // global textinput field
   ui_global_textinput = ui_textinput_create(TRUE, cmd_suggest);
@@ -281,8 +283,6 @@ void ui_init() {
   ui_tab_open(uit_main_create(), TRUE, NULL);
 
   ui_colors_init();
-
-  // draw
   ui_draw();
 }
 
