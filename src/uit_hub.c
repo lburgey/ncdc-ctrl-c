@@ -70,7 +70,9 @@ ui_tab_t *uit_hub_create(const char *name, gboolean conn) {
   t->tab.name = g_strdup_printf("#%s", name);
   t->tab.type = uit_hub;
   t->tab.hub = hub_create((ui_tab_t *)t);
-  t->tab.log = ui_logwindow_create(t->tab.name, var_get_int(t->tab.hub->id, VAR_backlog));
+  t->tab.log = ui_logwindow_create(
+      var_get_bool(t->tab.hub->id, VAR_log_hubchat) ? t->tab.name : NULL,
+      var_get_int(t->tab.hub->id, VAR_backlog));
   t->tab.log->handle = t;
   t->tab.log->checkchat = uit_hub_log_checkchat;
 

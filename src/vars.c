@@ -972,6 +972,7 @@ struct var_t {
   V(local_address,    1,1, f_id,           p_ip,            su_old,        NULL,         s_active_conf,   db_vars_get(0, "active_bind"))\
   V(log_debug,        1,0, f_bool,         p_bool,          su_bool,       NULL,         s_log_debug,     i_log_debug())\
   V(log_downloads,    1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "true")\
+  V(log_hubchat,      1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "true")\
   V(log_uploads,      1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "true")\
   V(minislots,        1,0, f_int,          p_int_ge1,       NULL,          NULL,         NULL,            "3")\
   V(minislot_size,    1,0, f_minislot_size,p_minislot_size, NULL,          NULL,         NULL,            "65536")\

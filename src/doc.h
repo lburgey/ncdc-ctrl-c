@@ -479,6 +479,10 @@ static const doc_set_t doc_sets[] = {
 { "log_downloads", 0, "<boolean>",
   "Log downloaded files to transfers.log."
 },
+{ "log_hubchat", 1, "<boolean>",
+  "Log the main hub chat. Note that changing this requires any affected hub"
+  " tabs to be closed and reopened before the change is effective."
+},
 { "log_uploads", 0, "<boolean>",
   "Log file uploads to transfers.log."
 },
