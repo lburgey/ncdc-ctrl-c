@@ -23,16 +23,16 @@
 # - Cross-compile to platforms other than Linux?
 
 
-MUSL_VERSION=1.1.1
+MUSL_VERSION=1.1.5
 ZLIB_VERSION=1.2.8
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3080403
+SQLITE_VERSION=3080702
 GMP_VERSION=6.0.0
 NETTLE_VERSION=2.7.1
-GNUTLS_VERSION=3.3.4
+GNUTLS_VERSION=3.3.10
 NCURSES_VERSION=5.9
-GLIB_VERSION=2.40.0
-GEOIP_VERSION=1.6.2
+GLIB_VERSION=2.43.1
+GEOIP_VERSION=1.6.3
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -242,7 +242,11 @@ getglib() {
 getgeoip() {
   fem https://github.com/maxmind/geoip-api-c/releases/download/v${GEOIP_VERSION}/ GeoIP-${GEOIP_VERSION}.tar.gz geoip
   prebuild geoip || return
-  $srcdir/configure --prefix=$PREFIX --host=$HOST --disable-shared --disable-datafiles || exit
+  # Build fails on ARM without this check, because autoconf can't figure this
+  # out when cross-compiling.
+  export ac_cv_func_malloc_0_nonnull=yes
+  export ac_cv_func_realloc_0_nonnull=yes
+  $srcdir/configure --prefix=$PREFIX --host=$HOST --disable-shared || exit
   make -C libGeoIP datadir=/usr/share install || exit
   postbuild
 }
