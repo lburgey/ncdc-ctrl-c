@@ -990,7 +990,7 @@ struct var_t {
   V(slots,            1,0, f_int,          p_int_ge1,       NULL,          NULL,         s_hubinfo,       "10")\
   V(sudp_policy,      1,0, f_sudp_policy,  p_sudp_policy,   su_sudp_policy,g_sudp_policy,s_sudp_policy,   G_STRINGIFY(VAR_SUDPP_PREFER))\
   V(tls_policy,       1,1, f_tls_policy,   p_tls_policy,    su_tls_policy, g_tls_policy, s_tls_policy,    G_STRINGIFY(VAR_TLSP_PREFER))\
-  V(tls_priority,     1,0, f_id,           p_tls_priority,  su_old,        NULL,         NULL,            "NORMAL")\
+  V(tls_priority,     1,0, f_id,           p_tls_priority,  su_old,        NULL,         NULL,            "NORMAL:-ARCFOUR-40:-ARCFOUR-128")\
   V(ui_time_format,   1,0, f_id,           p_id,            su_old,        NULL,         NULL,            "[%H:%M:%S]")\
   V(upload_rate,      1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)
 
