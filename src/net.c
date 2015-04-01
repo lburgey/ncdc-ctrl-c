@@ -1048,7 +1048,8 @@ static void dnscon_free(dnscon_t *r) {
   g_free(r->err);
   g_free(r->addr);
   g_free(r->laddr);
-  freeaddrinfo(r->nfo);
+  if(r->nfo)
+    freeaddrinfo(r->nfo);
   g_slice_free(dnscon_t, r);
 }
 
