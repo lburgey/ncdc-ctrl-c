@@ -292,7 +292,7 @@ static const doc_set_t doc_sets[] = {
 },
 { "active_udp_port", 1, "<integer>",
   "The listen port for incoming UDP connections in active mode. Defaults to the"
-  " `active_port' setting, or to a random number of `active_port' is not set."
+  " `active_port' setting, or to a random number if `active_port' is not set."
 },
 { "adc_blom", 1, "<boolean>",
   "Whether to support the BLOM extension on ADC hubs. This may decrease the"
