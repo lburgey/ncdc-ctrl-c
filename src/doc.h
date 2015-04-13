@@ -281,7 +281,11 @@ static const doc_set_t doc_sets[] = {
   " separated with a comma. When unset, '0.0.0.0,::' is assumed. Only the IP"
   " version used to connect to the hub is used. That is, if you connect to an"
   " IPv6 hub, then the configured IPv6 address is used and the IPv4 address is"
-  " ignored."
+  " ignored.\n\n"
+  "When set to the special value `local', ncdc will automatically get your IP"
+  " address from the local network interface that is used to connect to the"
+  " hub. This option should only be used if there is no NAT between you and"
+  " the hub, because this will give the wrong IP if you are behind a NAT."
 },
 { "active_port", 1, "<integer>",
   "The listen port for incoming connections in active mode. Set to `0' to"

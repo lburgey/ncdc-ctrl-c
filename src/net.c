@@ -69,7 +69,8 @@ struct net_t {
   dnscon_t *dnscon; // state DNS,CON. Setting ->net to NULL 'cancels' DNS resolving.
   int sock; // state CON,ASY,SYN,DIS
   int socksrc; // state CON,ASY,DIS. Glib event source on 'sock'.
-  char addr[64]; // state ASY,SYN,DIS
+  char addr[56]; // state ASY,SYN,DIS, ip:port
+  char laddr[40]; // state ASY,SYN,DIS, ip only
 
   gnutls_session_t tls; // state ASY,SYN,DIS (only if tls is enabled)
   void (*cb_handshake)(net_t *, const char *); // state ASY, called after complete handshake.
@@ -1011,6 +1012,18 @@ void net_connected(net_t *n, int sock, const char *addr, gboolean v6) {
   n->wbuf = g_string_sized_new(1024);
   n->rbuf = g_string_sized_new(1024);
 
+  if(v6) {
+    struct sockaddr_in6 a;
+    socklen_t l = sizeof(a);
+    getsockname(sock, (void *)&a, &l);
+    strcpy(n->laddr, ip6_unpack(a.sin6_addr));
+  } else {
+    struct sockaddr_in a;
+    socklen_t l = sizeof(a);
+    getsockname(sock, (void *)&a, &l);
+    strcpy(n->laddr, ip4_unpack(a.sin_addr));
+  }
+
   ratecalc_reset(&n->rate_in);
   ratecalc_reset(&n->rate_out);
   ratecalc_register(&n->rate_in, RCC_DOWN);
@@ -1211,6 +1224,7 @@ void net_set_keepalive(net_t *n, const char *msg) {
 
 
 const char *net_remoteaddr(net_t *n) { return n->addr; }
+const char *net_localaddr(net_t *n)  { return n->laddr; }
 ratecalc_t *net_rate_in(net_t *n)    { return &n->rate_in; }
 ratecalc_t *net_rate_out(net_t *n)   { return &n->rate_out; }
 void       *net_handle(net_t *n)     { return n->handle; }

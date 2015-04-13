@@ -143,6 +143,12 @@ static char *p_ip(const char *val, GError **err) {
   return g_strdup_printf("%s,%s", ip4_unpack(i4), ip6_unpack(i6));
 }
 
+static char *p_active_ip(const char *val, GError **err) {
+  if(strcmp(val, "local") == 0)
+    return g_strdup(val);
+  return p_ip(val, err);
+}
+
 static char *p_regex(const char *val, GError **err) {
   GRegex *r = g_regex_new(val, 0, 0, err);
   if(!r)
@@ -939,7 +945,7 @@ struct var_t {
 // name               g h  format          parse            suggest        getraw        setraw           default/init
 #define VARS\
   V(active,           1,1, f_bool,         p_bool,          su_bool,       NULL,         s_active_conf,   "false")\
-  V(active_ip,        1,1, f_id,           p_ip,            su_old,        NULL,         s_active_conf,   NULL)\
+  V(active_ip,        1,1, f_id,           p_active_ip,     su_old,        NULL,         s_active_conf,   NULL)\
   V(active_port,      1,1, f_int,          p_active_port,   NULL,          NULL,         s_active_conf,   NULL)\
   V(active_udp_port,  1,1, f_int,          p_active_port,   NULL,          g_active_udp, s_active_conf,   NULL)\
   V(adc_blom,         1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\

@@ -510,9 +510,10 @@ char *hub_ip(hub_t *hub) {
   if(!net_is_connected(hub->net))
     return NULL;
 
-  // Somewhat roundabout way of obtaining the IP for the correct version
   char *ip = var_get(hub->id, VAR_active_ip);
-  if(!net_is_ipv6(hub->net)) {
+  if(ip && strcmp(ip, "local") == 0) {
+    ip = (char *)net_localaddr(hub->net);
+  } else if(!net_is_ipv6(hub->net)) {
     struct in_addr ip4 = var_parse_ip4(ip);
     ip = ip4_isany(ip4) ? NULL : (char *)ip4_unpack(ip4);
   } else {
