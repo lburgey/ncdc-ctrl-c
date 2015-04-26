@@ -28,8 +28,9 @@ ZLIB_VERSION=1.2.8
 BZIP2_VERSION=1.0.6
 SQLITE_VERSION=3080702
 GMP_VERSION=6.0.0
-NETTLE_VERSION=2.7.1
-GNUTLS_VERSION=3.3.10
+NETTLE_VERSION=3.1.1
+IDN_VERSION=1.30
+GNUTLS_VERSION=3.4.0
 NCURSES_VERSION=5.9
 GLIB_VERSION=2.43.1
 GEOIP_VERSION=1.6.3
@@ -175,6 +176,16 @@ getnettle() {
 }
 
 
+getidn() {
+  fem http://ftp.gnu.org/gnu/libidn/ libidn-$IDN_VERSION.tar.gz idn
+  prebuild idn || return
+  $srcdir/configure --prefix=$PREFIX --disable-nls --disable-valgrind-tests --disable-shared\
+    --enable-static --host=$HOST CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" || exit
+  make install || exit
+  postbuild
+}
+
+
 getgnutls() {
   fem ftp://ftp.gnutls.org/gcrypt/gnutls/v${GNUTLS_VERSION%.*}/ gnutls-$GNUTLS_VERSION.tar.xz gnutls
   prebuild gnutls || return
@@ -187,8 +198,9 @@ getgnutls() {
   fi
   $srcdir/configure --prefix=$PREFIX --disable-gtk-doc-html --disable-shared --disable-silent-rules\
     --enable-static --disable-cxx --disable-srp-authentication --disable-openssl-compatibility\
-    --disable-guile --disable-crywrap --with-included-libtasn1 --without-p11-kit\
+    --disable-guile --disable-crywrap --with-included-libtasn1 --without-p11-kit --with-nettle-mini\
     --host=$HOST CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" || exit
+  make || exit
   make -C gl install || exit
   make -C lib install || exit
   postbuild
@@ -283,6 +295,7 @@ allncdc() {
   getsqlite
   getgmp
   getnettle
+  getidn
   getgnutls
   getncurses
   getglib
