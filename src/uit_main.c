@@ -53,7 +53,7 @@ ui_tab_t *uit_main_create() {
 
 
 static void t_close(ui_tab_t *tab) {
-  ui_m(tab, 0, "Main tab cannot be closed.");
+  ui_m(NULL, UIM_NOLOG, "Type /quit to exit ncdc.");
 }
 
 
