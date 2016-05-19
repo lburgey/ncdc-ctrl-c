@@ -418,7 +418,7 @@ void dlfile_finished(dl_t *dl) {
 
   /* Create destination directory, if it does not exist yet. */
   char *parent = g_path_get_dirname(fdest);
-  r = g_mkdir_with_parents(parent, 0755);
+  r = g_mkdir_with_parents(parent, 0777);
   g_free(parent);
   if(r < 0) {
     g_warning("Error creating directory for `%s': %s.", dl->dest, g_strerror(errno));
