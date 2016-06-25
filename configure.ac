@@ -105,9 +105,6 @@ AC_CHECK_LIB([ncursesw], [get_wch], [
   ]
 )
 
-AC_SEARCH_LIBS([curs_set], [tinfow tinfo],, AC_MSG_ERROR(could not find a library providing curs_set))
-
-
 # Check for zlib
 AC_CHECK_LIB([z],
              [deflate],
