@@ -13,27 +13,28 @@
 #   (Anything else I forgot)
 # - A checkout of the ncdc git repo can be found in "..", and the configure
 #   script exists (i.e. autoreconf has been run).
-# - This script is run on an x86 machine
+# - You have musl-cross binaries available in MUSL_CROSS_PATH
 #
 # Usage:
 #   ./build.sh $arch
-#   Where $arch = 'arm', 'mipsel', 'ppc', 'i486' or 'x86_64'
+#   Where $arch = 'arm', 'i486' or 'x86_64'
 #
 # TODO:
 # - Cross-compile to platforms other than Linux?
+# - Automatically fetch & build musl-cross?
 
 
-MUSL_VERSION=1.1.5
+MUSL_CROSS_PATH=/opt/cross
 ZLIB_VERSION=1.2.8
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3080702
-GMP_VERSION=6.0.0
-NETTLE_VERSION=3.1.1
-IDN_VERSION=1.30
-GNUTLS_VERSION=3.4.0
-NCURSES_VERSION=5.9
-GLIB_VERSION=2.43.1
-GEOIP_VERSION=1.6.3
+SQLITE_VERSION=3150200
+GMP_VERSION=6.1.2
+NETTLE_VERSION=3.3
+IDN_VERSION=1.33
+GNUTLS_VERSION=3.5.7
+NCURSES_VERSION=6.0
+GLIB_VERSION=2.50.2
+GEOIP_VERSION=1.6.9
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -49,7 +50,7 @@ export HOST_CC=gcc
 # (The variables below are automatically set by the functions, they're defined
 # here to make sure they have global scope and for documentation purposes.)
 
-# This is the arch we're compiling for, e.g. arm/mipsel.
+# This is the arch we're compiling for, e.g. arm.
 TARGET=
 # This is the name of the toolchain we're using, and thus the value we should
 # pass to autoconf's --host argument.
@@ -102,24 +103,6 @@ postbuild() {
 }
 
 
-# Pre-built cross-compilation binaries for musl. Handy. :)
-getmusl() {
-  # Order of $HOST is different than the tar/dir names, so we need this case.
-  case $TARGET in
-    ppc)    DIR=powerpc-linux-musl ;;
-    arm)    DIR=arm-linux-musleabi ;;
-    mipsel) DIR=mipsel-sf-linux-musl ;;
-    i486)   DIR=i486-linux-musl ;;
-    x86_64) DIR=x86_64-linux-musl ;;
-  esac
-  fem https://googledrive.com/host/0BwnS5DMB0YQ6bDhPZkpOYVFhbk0/musl-$MUSL_VERSION/ crossx86-$DIR-$MUSL_VERSION.tar.xz "musl-$TARGET" $DIR
-
-  # Configure scripts don't like 'mipsel-sf-musl-linux', so rename the links in
-  # the bin/ dir to remove the '-sf' flag.
-  find tarballs/musl-mipsel/bin -name '*-sf-*' -type l -execdir sh -c 'mv $0 `echo $0 | sed "s/mipsel-sf/mipsel/"`' {} +
-}
-
-
 getzlib() {
   fem http://zlib.net/ zlib-$ZLIB_VERSION.tar.gz zlib
   prebuild zlib || return
@@ -144,7 +127,7 @@ getbzip2() {
 
 
 getsqlite() {
-  fem http://sqlite.org/2014/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
+  fem http://sqlite.org/2016/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
   prebuild sqlite || return
   $srcdir/configure --prefix=$PREFIX --disable-readline --disable-dynamic-extensions\
     --disable-shared --enable-static --host=$HOST || exit
@@ -189,17 +172,11 @@ getidn() {
 getgnutls() {
   fem ftp://ftp.gnutls.org/gcrypt/gnutls/v${GNUTLS_VERSION%.*}/ gnutls-$GNUTLS_VERSION.tar.xz gnutls
   prebuild gnutls || return
-  # Patch some gnulib stuff to fix building against musl
-  if [ ! -e "$srcdir/patched" ]; then
-    for i in "$srcdir/gl/"{printf,fprintf,freadahead,closein,fseterr,vfprintf}.c ; do echo ''>$i; done
-    echo "#define __printf__ printf" >> "$srcdir/config.h.in"
-    echo "#define rpl_fprintf fprintf" >> "$srcdir/config.h.in"
-    touch "$srcdir/patched"
-  fi
   $srcdir/configure --prefix=$PREFIX --disable-gtk-doc-html --disable-shared --disable-silent-rules\
     --enable-static --disable-cxx --disable-srp-authentication --disable-openssl-compatibility\
-    --disable-guile --disable-crywrap --with-included-libtasn1 --without-p11-kit --with-nettle-mini\
-    --host=$HOST CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" || exit
+    --disable-guile --disable-tools --with-included-libtasn1 --without-p11-kit\
+    --with-included-unistring --host=$HOST\
+    CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib -lnettle -lhogweed -lgmp -lidn" || exit
   make || exit
   make -C gl install || exit
   make -C lib install || exit
@@ -269,7 +246,7 @@ getncdc() {
   srcdir=../../..
   $srcdir/configure --host=$HOST --disable-silent-rules --with-geoip\
     CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -L$PREFIX/lib64 -lz -lbz2"\
-    SQLITE_LIBS=-lsqlite3 GEOIP_LIBS=-lGeoIP GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp"\
+    SQLITE_LIBS=-lsqlite3 GEOIP_LIBS=-lGeoIP GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp -lidn"\
     GLIB_LIBS="-pthread -lglib-2.0 -lgthread-2.0"\
     GLIB_CFLAGS="-I$PREFIX/include/glib-2.0 -I$PREFIX/lib/glib-2.0/include" || exit
   # Make sure that the Makefile dependencies for makeheaders and gendoc are "up-to-date"
@@ -307,24 +284,20 @@ allncdc() {
 buildarch() {
   TARGET=$1
   case $TARGET in
-    ppc)    HOST=powerpc-musl-linux ;;
-    arm)    HOST=arm-musl-linuxeabi ;;
-    mipsel) HOST=mipsel-musl-linux ;;
-    i486)   HOST=i486-musl-linux ;;
-    x86_64) HOST=x86_64-musl-linux ;;
+    arm)    HOST=arm-musl-linuxeabi DIR=arm-linux-musleabi   ;;
+    i486)   HOST=i486-musl-linux    DIR=i486-linux-musl      ;;
+    x86_64) HOST=x86_64-musl-linux  DIR=x86_64-linux-musl    ;;
     *)      echo "Unknown target: $TARGET" ;;
   esac
   PREFIX="`pwd`/$TARGET/inst"
   mkdir -p $TARGET $PREFIX
+  ln -s lib $PREFIX/lib64
 
-  getmusl
-  MBIN="`pwd`/tarballs/musl-$TARGET/bin"
   OLDPATH="$PATH"
-  PATH="$PATH:$MBIN"
+  PATH="$PATH:$MUSL_CROSS_PATH/$DIR/bin"
   allncdc
   PATH="$OLDPATH"
 }
 
 
 buildarch $1
-
