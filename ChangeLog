@@ -1,3 +1,13 @@
+1.20 - 2016-12-30
+	- Support bracketed paste mode in input handling (cologic)
+	- Add 'geoip_cc4' and 'geoip_cc6' settings
+	- Add 'log_hubchat' setting
+	- Add 'local' option to 'active_ip' setting
+	- Add support for multistream bzip2 filelists
+	- Disable RC4 ciphers by default from tls_priority
+	- Fix potential null pointer deference
+	- Fix chmod of destination directories (Johannes Beisswenger)
+
 1.19.1 - 2014-04-23
 	- Fix remote null pointer dereference
 	- Searching now works in the search results list
