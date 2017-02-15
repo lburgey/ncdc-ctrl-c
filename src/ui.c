@@ -495,7 +495,7 @@ void ui_input(guint64 key) {
 
   switch(key) {
   case INPT_CTRL('c'): // ctrl+c
-    ui_m(NULL, UIM_NOLOG, "Type /quit to exit ncdc.");
+    cmd_handle("/close");
     break;
   case INPT_ALT('j'): // alt+j (previous tab)
     ui_tab_cur = ui_tab_cur->prev ? ui_tab_cur->prev : g_list_last(ui_tabs);
