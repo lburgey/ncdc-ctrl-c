@@ -137,7 +137,7 @@ AC_ARG_WITH([geoip],
             [AS_HELP_STRING([--with-geoip], [support for IP-to-country lookups @<:@default=no@:>@])],
             [],
             [with_geoip=no])
-AS_IF([test "x$with_geoip" == xyes],
+AS_IF([test "x$with_geoip" = xyes],
       [PKG_CHECK_MODULES([GEOIP],
                          [geoip >= 1.2.0],
                          [AC_DEFINE(USE_GEOIP, 1, [Use libgeoip for IP-to-country lookups])])])
