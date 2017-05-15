@@ -106,7 +106,7 @@ void certificate_sha256(gnutls_datum_t cert, char *digest) {
 // at least one character.
 char *localtime_fmt(const char *fmt) {
 #if GLIB_CHECK_VERSION(2,26,0)
-    GDateTime *tm = g_date_time_new_now_local();
+    GDateTime *tm = g_date_time_new_now_utc();
     char *ts = g_date_time_format(tm, fmt);
     g_date_time_unref(tm);
     return ts;
