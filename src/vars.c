@@ -962,6 +962,7 @@ struct var_t {
   V(download_exclude, 1,0, f_id,           p_regex,         su_old,        NULL,         NULL,            NULL)\
   V(download_rate,    1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)\
   V(download_segment, 1,0, f_download_segment,p_download_segment,NULL,     NULL,         NULL,            g_strdup_printf("%"G_GUINT64_FORMAT, (guint64)DLFILE_CHUNKSIZE))\
+  V(download_shared,  1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "true")\
   V(download_slots,   1,0, f_int,          p_int,           NULL,          NULL,         s_download_slots,"3")\
   V(email,            1,1, f_id,           p_id,            su_old,        NULL,         s_hubinfo,       NULL)\
   V(encoding,         1,1, f_id,           p_encoding,      su_encoding,   NULL,         NULL,            "UTF-8")\

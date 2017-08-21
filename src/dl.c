@@ -602,6 +602,16 @@ void dl_queue_add_fl(guint64 uid, fl_list_t *fl, char *base, GRegex *excl) {
     ui_mf(NULL, 0, "Ignoring `%s': excluded by regex.", fl->name);
     return;
   }
+  {
+    // don't download already shared files if download_shared is set to false.
+    GSList *localfl = fl_local_from_tth(fl->tth);
+    if(!var_get_bool(0, VAR_download_shared) && fl->hastth && localfl && localfl->data) {
+      fl_list_t *localf = localfl->data;
+      ui_mf(NULL, 0, "Ignoring `%s' : already shared as `%s'", fl->name, localf->name);
+      return;
+    }
+  }
+
 
   char *name = base ? g_build_filename(base, fl->name, NULL) : g_strdup(fl->name);
   if(fl->isfile) {

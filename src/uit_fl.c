@@ -336,11 +336,12 @@ static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat
     mvaddstr(row, 0, ">");
 
   mvaddch(row, 2, fl->isfile && !fl->hastth ? 'H' :' ');
+  mvaddch(row, 3, fl_local_from_tth(fl->tth) ? 'S' : ' ');
 
-  mvaddstr(row, 4, str_formatsize(fl->size));
+  mvaddstr(row, 5, str_formatsize(fl->size));
   if(!fl->isfile)
-    mvaddch(row, 17, '/');
-  ui_listing_draw_match(list, iter, row, 18, str_offset_from_columns(fl->name, wincols-19));
+    mvaddch(row, 18, '/');
+  ui_listing_draw_match(list, iter, row, 19, str_offset_from_columns(fl->name, wincols-20));
 
   attroff(iter == list->sel ? UIC(list_select) : UIC(list_default));
 }

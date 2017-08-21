@@ -404,6 +404,12 @@ static const doc_set_t doc_sets[] = {
   "Minimum segment size to use when requesting file data from another user."
   " Set to 0 to disable segmented downloading."
 },
+{
+  "download_shared", 0, "<boolean>",
+  "Whether to download files which are already present in your share. When this"
+  " is set to `false', adding already shared files results in a UI message"
+  " instead of adding the file to the download queue."
+},
 { "download_slots", 0, "<integer>",
   "Maximum number of simultaneous downloads."
 },
