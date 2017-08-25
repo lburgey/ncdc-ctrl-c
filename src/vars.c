@@ -993,6 +993,7 @@ struct var_t {
   V(share_exclude,    1,0, f_id,           p_regex,         su_old,        NULL,         NULL,            NULL)\
   V(share_hidden,     1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(share_symlinks,   1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
+  V(show_free_slots,  1,1, f_bool,         p_bool,          su_bool,       NULL,         s_hubinfo,       "false")\
   V(show_joinquit,    1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "false")\
   V(slots,            1,0, f_int,          p_int_ge1,       NULL,          NULL,         s_hubinfo,       "10")\
   V(sudp_policy,      1,0, f_sudp_policy,  p_sudp_policy,   su_sudp_policy,g_sudp_policy,s_sudp_policy,   G_STRINGIFY(VAR_SUDPP_PREFER))\

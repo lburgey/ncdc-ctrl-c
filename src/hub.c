@@ -106,7 +106,7 @@ struct hub_t {
 
   // last info we sent to the hub
   char *nfo_desc, *nfo_conn, *nfo_mail, *nfo_ip;
-  unsigned char nfo_slots, nfo_h_norm, nfo_h_reg, nfo_h_op;
+  unsigned char nfo_slots, nfo_free_slots, nfo_h_norm, nfo_h_reg, nfo_h_op;
   guint64 nfo_share;
   guint16 nfo_udp_port;
   gboolean nfo_sup_tls, nfo_sup_sudp;
@@ -668,19 +668,42 @@ void hub_search(hub_t *hub, search_q_t *q) {
 #define eq(a) (a == hub->nfo_##a)
 #define beq(a) (!!a == !!hub->nfo_##a)
 
+static unsigned char num_free_slots(unsigned char hub_slots) {
+  int rv = hub_slots - cc_slots_in_use(NULL);
+  return rv > 0 ? rv : 0;
+}
+
+static GString* format_desc(hub_t *hub, unsigned char free_slots) {
+  GString *desc;
+  const char *static_desc = var_get(hub->id, VAR_description);
+  if(var_get_bool(hub->id, VAR_show_free_slots)) {
+    desc = g_string_sized_new(128);
+    if(static_desc)
+      g_string_printf(desc, "[%d sl] %s", free_slots, static_desc);
+    else
+      g_string_printf(desc, "[%d sl]", free_slots);
+  } else
+    desc = g_string_new(static_desc);
+  return desc;
+}
+
 void hub_send_nfo(hub_t *hub) {
   if(!net_is_connected(hub->net))
     return;
 
   // get info, to be compared with hub->nfo_
   char *desc, *conn = NULL, *mail, *ip;
-  unsigned char slots, h_norm, h_reg, h_op;
+  unsigned char slots, free_slots, h_norm, h_reg, h_op;
   guint64 share;
   guint16 udp_port;
   gboolean sup_tls, sup_sudp;
+  GString *fmt_desc;
 
-  desc = var_get(hub->id, VAR_description);
   mail = var_get(hub->id, VAR_email);
+  slots = var_get_int(0, VAR_slots);
+  free_slots = num_free_slots(slots);
+  fmt_desc = format_desc(hub, free_slots);
+  desc = fmt_desc->str;
 
   char buf[50] = {};
   if(var_get_int(0, VAR_upload_rate)) {
@@ -703,7 +726,6 @@ void hub_send_nfo(hub_t *hub) {
     else
       h_norm++;
   }
-  slots = var_get_int(0, VAR_slots);
   ip = listen_hub_active(hub->id) ? hub_ip(hub) : NULL;
   udp_port = listen_hub_udp(hub->id);
   share = fl_local_list_size;
@@ -711,9 +733,11 @@ void hub_send_nfo(hub_t *hub) {
   sup_sudp = hub->tls && var_get_int(0, VAR_sudp_policy) != VAR_SUDPP_DISABLE ? TRUE : FALSE;
 
   // check whether we need to make any further effort
-  if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots) && streq(ip)
-      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp))
+  if(hub->nick_valid && streq(desc) && streq(conn) && streq(mail) && eq(slots) && eq(free_slots) && streq(ip)
+      && eq(h_norm) && eq(h_reg) && eq(h_op) && eq(share) && eq(udp_port) && beq(sup_tls) && beq(sup_sudp)) {
+    g_string_free(fmt_desc, TRUE);
     return;
+  }
 
   char *nfo;
   // ADC
@@ -753,6 +777,8 @@ void hub_send_nfo(hub_t *hub) {
       g_string_append_printf(cmd, " SS%"G_GUINT64_FORMAT" SF%d", share, fl_local_list_length);
     if(f || !eq(slots))
       g_string_append_printf(cmd, " SL%d", slots);
+    if(f || !eq(free_slots))
+      g_string_append_printf(cmd, " FS%d", free_slots);
     if(f || !eq(h_norm))
       g_string_append_printf(cmd, " HN%d", h_norm);
     if(f || !eq(h_reg))
@@ -786,11 +812,12 @@ void hub_send_nfo(hub_t *hub) {
   g_free(nfo);
 
   // update
-  g_free(hub->nfo_desc); hub->nfo_desc = g_strdup(desc);
+  g_free(hub->nfo_desc); hub->nfo_desc = g_string_free(fmt_desc, FALSE);
   g_free(hub->nfo_conn); hub->nfo_conn = g_strdup(conn);
   g_free(hub->nfo_mail); hub->nfo_mail = g_strdup(mail);
   g_free(hub->nfo_ip);   hub->nfo_ip   = g_strdup(ip);
   hub->nfo_slots = slots;
+  hub->nfo_free_slots = free_slots;
   hub->nfo_h_norm = h_norm;
   hub->nfo_h_reg = h_reg;
   hub->nfo_h_op = h_op;

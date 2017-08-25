@@ -565,6 +565,11 @@ static const doc_set_t doc_sets[] = {
   " enabled, any symlinks in your shared directories will be followed, even"
   " when they point to a directory outside your share."
 },
+{
+  "show_free_slots", 1, "<boolean>",
+  "When set to true, [n sl] will be prepended to your description, where n is"
+  " the number of currently available upload slots."
+},
 { "show_joinquit", 1, "<boolean>",
   "Whether to display join/quit messages in the hub chat."
 },
