@@ -481,6 +481,14 @@ void ui_daychange(const char *day) {
   g_free(msg);
 }
 
+// Get the extra flag used to annotate files which are present in the download
+// queue (Q) or already shared (S). Currently used in file list and search tabs.
+char ui_file_flag(const char *tth) {
+  return
+    fl_local_from_tth(tth)             ? 'S' :
+    g_hash_table_lookup(dl_queue, tth) ? 'Q' :
+                                         ' ';
+}
 
 void ui_input(guint64 key) {
   ui_tab_t *curtab = ui_tab_cur->data;

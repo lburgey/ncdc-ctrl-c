@@ -91,7 +91,7 @@ static void setdir(tab_t *t, fl_list_t *fl, fl_list_t *sel) {
     if(sel == g_ptr_array_index(fl->sub, i))
       seli = iter;
   }
-  t->list = ui_listing_create(seq, NULL, NULL, get_name);
+  t->list = ui_listing_create(seq, NULL, t, get_name);
   if(seli)
     t->list->sel = seli;
 }
@@ -329,19 +329,22 @@ static char *t_title(ui_tab_t *tab) {
 
 static void draw_row(ui_listing_t *list, GSequenceIter *iter, int row, void *dat) {
   fl_list_t *fl = g_sequence_get(iter);
+  tab_t *t = dat;
 
   attron(iter == list->sel ? UIC(list_select) : UIC(list_default));
   mvhline(row, 0, ' ', wincols);
   if(iter == list->sel)
     mvaddstr(row, 0, ">");
 
-  mvaddch(row, 2, fl->isfile && !fl->hastth ? 'H' :' ');
-  mvaddch(row, 3, fl_local_from_tth(fl->tth) ? 'S' : ' ');
+  if(t->uid) // add shared/queued flags only while browsing others' lists.
+    mvaddch(row, 2, ui_file_flag(fl->tth));
+  else
+    mvaddch(row, 2, fl->isfile && !fl->hastth ? 'H' :' ');
 
-  mvaddstr(row, 5, str_formatsize(fl->size));
+  mvaddstr(row, 4, str_formatsize(fl->size));
   if(!fl->isfile)
-    mvaddch(row, 18, '/');
-  ui_listing_draw_match(list, iter, row, 19, str_offset_from_columns(fl->name, wincols-20));
+    mvaddch(row, 17, '/');
+  ui_listing_draw_match(list, iter, row, 18, str_offset_from_columns(fl->name, wincols-19));
 
   attroff(iter == list->sel ? UIC(list_select) : UIC(list_default));
 }
