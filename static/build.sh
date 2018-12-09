@@ -25,16 +25,16 @@
 
 
 MUSL_CROSS_PATH=/opt/cross
-ZLIB_VERSION=1.2.8
+ZLIB_VERSION=1.2.11
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3150200
+SQLITE_VERSION=3260000
 GMP_VERSION=6.1.2
-NETTLE_VERSION=3.3
-IDN_VERSION=1.33
-GNUTLS_VERSION=3.5.7
-NCURSES_VERSION=6.0
-GLIB_VERSION=2.50.2
-GEOIP_VERSION=1.6.9
+NETTLE_VERSION=3.4.1
+IDN_VERSION=2.0.5
+GNUTLS_VERSION=3.6.5
+NCURSES_VERSION=6.1
+GLIB_VERSION=2.58.1
+GEOIP_VERSION=1.6.12
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -115,7 +115,7 @@ getzlib() {
 
 
 getbzip2() {
-  fem http://bzip.org/$BZIP2_VERSION/ bzip2-$BZIP2_VERSION.tar.gz bzip2
+  fem https://sources.archlinux.org/other/packages/bzip2/ bzip2-$BZIP2_VERSION.tar.gz bzip2
   prebuild bzip2 || return
   cp -R $srcdir/* .
   make CC=$HOST-gcc AR=$HOST-ar RANLIB=$HOST-ranlib libbz2.a || exit
@@ -127,7 +127,7 @@ getbzip2() {
 
 
 getsqlite() {
-  fem http://sqlite.org/2016/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
+  fem http://sqlite.org/2018/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
   prebuild sqlite || return
   $srcdir/configure --prefix=$PREFIX --disable-readline --disable-dynamic-extensions\
     --disable-shared --enable-static --host=$HOST || exit
@@ -152,7 +152,7 @@ getgmp() {
 getnettle() {
   fem http://www.lysator.liu.se/~nisse/archive/ nettle-$NETTLE_VERSION.tar.gz nettle
   prebuild nettle || return
-  $srcdir/configure --prefix=$PREFIX --disable-shared --host=$HOST\
+  $srcdir/configure --prefix=$PREFIX --enable-public-key --disable-shared --host=$HOST\
     CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" || exit
   make install-headers install-static || exit
   postbuild
@@ -160,7 +160,7 @@ getnettle() {
 
 
 getidn() {
-  fem http://ftp.gnu.org/gnu/libidn/ libidn-$IDN_VERSION.tar.gz idn
+  fem http://ftp.gnu.org/gnu/libidn/ libidn2-$IDN_VERSION.tar.gz idn
   prebuild idn || return
   $srcdir/configure --prefix=$PREFIX --disable-nls --disable-valgrind-tests --disable-shared\
     --enable-static --host=$HOST CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" || exit
@@ -176,7 +176,7 @@ getgnutls() {
     --enable-static --disable-cxx --disable-srp-authentication --disable-openssl-compatibility\
     --disable-guile --disable-tools --with-included-libtasn1 --without-p11-kit\
     --with-included-unistring --host=$HOST\
-    CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib -lnettle -lhogweed -lgmp -lidn" || exit
+    CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib -Wl,--start-group -lnettle -lhogweed -lgmp -lidn2" || exit
   make || exit
   make -C gl install || exit
   make -C lib install || exit
@@ -246,7 +246,7 @@ getncdc() {
   srcdir=../../..
   $srcdir/configure --host=$HOST --disable-silent-rules --with-geoip\
     CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -L$PREFIX/lib64 -lz -lbz2"\
-    SQLITE_LIBS=-lsqlite3 GEOIP_LIBS=-lGeoIP GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp -lidn"\
+    SQLITE_LIBS=-lsqlite3 GEOIP_LIBS=-lGeoIP GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp -lidn2"\
     GLIB_LIBS="-pthread -lglib-2.0 -lgthread-2.0"\
     GLIB_CFLAGS="-I$PREFIX/include/glib-2.0 -I$PREFIX/lib/glib-2.0/include" || exit
   # Make sure that the Makefile dependencies for makeheaders and gendoc are "up-to-date"
@@ -287,7 +287,7 @@ buildarch() {
     arm)    HOST=arm-musl-linuxeabi DIR=arm-linux-musleabi   ;;
     i486)   HOST=i486-musl-linux    DIR=i486-linux-musl      ;;
     x86_64) HOST=x86_64-musl-linux  DIR=x86_64-linux-musl    ;;
-    *)      echo "Unknown target: $TARGET" ;;
+    *)      echo "Unknown target: $TARGET"; exit ;;
   esac
   PREFIX="`pwd`/$TARGET/inst"
   mkdir -p $TARGET $PREFIX
