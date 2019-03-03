@@ -613,9 +613,8 @@ static char *i_ffc() {
 
 static gboolean s_geoip_cc(guint64 hub, const char *key, const char *val, GError **err) {
 #ifdef USE_GEOIP
-  int v = strcmp(key, "geoip_cc4") == 0 ? 4 : 6;
   db_vars_set(hub, key, val);
-  geoip_reinit(v);
+  geoip_reinit();
   return TRUE;
 #else
   g_set_error(err, 1, 0, "This option can't be modified: %s.", "Ncdc has not been compiled with GeoIP support");
@@ -969,8 +968,7 @@ struct var_t {
   V(filelist_maxage,  1,0, f_interval,     p_interval,      su_old,        NULL,         NULL,            "604800")\
   V(fl_done,          0,0, NULL,           NULL,            NULL,          NULL,         NULL,            "false")\
   V(flush_file_cache, 1,0, f_ffc,          p_ffc,           su_ffc,        g_ffc,        s_ffc,           i_ffc())\
-  V(geoip_cc4,        1,0, f_id,           p_id,            su_path,       NULL,         s_geoip_cc,      NULL)\
-  V(geoip_cc6,        1,0, f_id,           p_id,            su_path,       NULL,         s_geoip_cc,      NULL)\
+  V(geoip_cc,         1,0, f_id,           p_id,            su_path,       NULL,         s_geoip_cc,      NULL)\
   V(hash_rate,        1,0, f_speed,        p_speed,         NULL,          NULL,         NULL,            NULL)\
   V(hubaddr,          0,0, NULL,           NULL,            NULL,          NULL,         NULL,            NULL)\
   V(hubkp,            0,0, NULL,           NULL,            NULL,          NULL,         NULL,            NULL)\

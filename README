@@ -20,7 +20,7 @@ REQUIREMENTS
   sqlite  >= 3.3.9
   glib    >= 2.24.0
   gnutls  >= 2.4.0
-  geoip   >= 1.2.0 (optional)
+  libmaxminddb (optional)
 
   If your gnutls is older than 3.0, you also need libgcrypt.
 

@@ -445,13 +445,10 @@ static const doc_set_t doc_sets[] = {
   " your system for other things besides ncdc, you share large files (>100MB)"
   " and people are not constantly downloading the same file from you."
 },
-{ "geoip_cc4", 0, "<path>|disabled",
-  "Path to the GeoIP Country database file for IPv4, or 'disabled' to disable"
-  " GeoIP lookup for IPv4 addresses."
-},
-{ "geoip_cc6", 0, "<path>|disabled",
-  "Path to the GeoIP Country database file for IPv6, or 'disabled' to disable"
-  " GeoIP lookup for IPv6 addresses."
+{ "geoip_cc", 0, "<path>|disabled",
+  "Path to the GeoIP2 Country database file (GeoLite2-Country.mmdb), or"
+  " 'disabled' to disable GeoIP lookups. The database can be downloaded "
+  " from https://dev.maxmind.com/geoip/geoip2/geolite2/."
 },
 { "hash_rate", 0, "<speed>",
   "Maximum file hashing speed. See the `download_rate' setting for allowed"
