@@ -27,14 +27,14 @@
 MUSL_CROSS_PATH=/opt/cross
 ZLIB_VERSION=1.2.11
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3260000
+SQLITE_VERSION=3270200
 GMP_VERSION=6.1.2
 NETTLE_VERSION=3.4.1
-IDN_VERSION=2.0.5
-GNUTLS_VERSION=3.6.5
+IDN_VERSION=2.1.1
+GNUTLS_VERSION=3.6.6
 NCURSES_VERSION=6.1
-GLIB_VERSION=2.58.1
-GEOIP_VERSION=1.6.12
+GLIB_VERSION=2.60.0
+MAXMIND_VERSION=1.3.2
 
 
 # We don't actually use pkg-config at all. Setting this variable to 'true'
@@ -127,9 +127,10 @@ getbzip2() {
 
 
 getsqlite() {
-  fem http://sqlite.org/2018/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
+  fem http://sqlite.org/2019/ sqlite-autoconf-$SQLITE_VERSION.tar.gz sqlite
   prebuild sqlite || return
   $srcdir/configure --prefix=$PREFIX --disable-readline --disable-dynamic-extensions\
+    --disable-fts4 --disable-fts5 --disable-json1 --disable-rtree\
     --disable-shared --enable-static --host=$HOST || exit
   make install-includeHEADERS install-libLTLIBRARIES || exit
   postbuild
@@ -228,15 +229,12 @@ getglib() {
 }
 
 
-getgeoip() {
-  fem https://github.com/maxmind/geoip-api-c/releases/download/v${GEOIP_VERSION}/ GeoIP-${GEOIP_VERSION}.tar.gz geoip
-  prebuild geoip || return
-  # Build fails on ARM without this check, because autoconf can't figure this
-  # out when cross-compiling.
-  export ac_cv_func_malloc_0_nonnull=yes
-  export ac_cv_func_realloc_0_nonnull=yes
-  $srcdir/configure --prefix=$PREFIX --host=$HOST --disable-shared || exit
-  make -C libGeoIP datadir=/usr/share install || exit
+getmaxmind() {
+  fem https://github.com/maxmind/libmaxminddb/releases/download/${MAXMIND_VERSION}/ libmaxminddb-${MAXMIND_VERSION}.tar.gz maxmind
+  prebuild maxmind || return
+  cp -Rp $srcdir/* .
+  ./configure --prefix=$PREFIX --host=$HOST --disable-shared || exit
+  make install || exit
   postbuild
 }
 
@@ -246,7 +244,7 @@ getncdc() {
   srcdir=../../..
   $srcdir/configure --host=$HOST --disable-silent-rules --with-geoip\
     CPPFLAGS="-I$PREFIX/include -D_GNU_SOURCE" LDFLAGS="-static -L$PREFIX/lib -L$PREFIX/lib64 -lz -lbz2"\
-    SQLITE_LIBS=-lsqlite3 GEOIP_LIBS=-lGeoIP GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp -lidn2"\
+    SQLITE_LIBS=-lsqlite3 GEOIP_LIBS=-lmaxminddb GNUTLS_LIBS="-lgnutls -lz -lhogweed -lnettle -lgmp -lidn2"\
     GLIB_LIBS="-pthread -lglib-2.0 -lgthread-2.0"\
     GLIB_CFLAGS="-I$PREFIX/include/glib-2.0 -I$PREFIX/lib/glib-2.0/include" || exit
   # Make sure that the Makefile dependencies for makeheaders and gendoc are "up-to-date"
@@ -276,7 +274,7 @@ allncdc() {
   getgnutls
   getncurses
   getglib
-  getgeoip
+  getmaxmind
   getncdc
 }
 
