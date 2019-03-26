@@ -45,7 +45,7 @@ ui_tab_t *uit_main_create() {
   ui_mf(tab, 0, "Welcome to ncdc %s!", main_version);
   ui_m(tab, 0,
     "Check out the manual page for a general introduction to ncdc.\n"
-    "Make sure you always run the latest version available from http://dev.yorhel.nl/ncdc\n");
+    "Make sure you always run the latest version available from https://dev.yorhel.nl/ncdc\n");
   ui_mf(tab, 0, "Using working directory: %s", db_dir);
 
   return tab;

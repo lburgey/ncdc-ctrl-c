@@ -396,7 +396,7 @@ more information.
 =head1 BUGS
 
 Please report bugs or feature requests to the bug tracker or the mailing list.
-Both can be found on the ncdc homepage at L<http://dev.yorhel.nl/ncdc>. There
+Both can be found on the ncdc homepage at L<https://dev.yorhel.nl/ncdc>. There
 is also an ADC hub available at C<adc://dc.blicky.net:2780/> for general
 support and discussions.
 
@@ -404,4 +404,4 @@ support and discussions.
 
 ncdc is written by Yoran Heling <projects@yorhel.nl>
 
-Web: L<http://dev.yorhel.nl/ncdc>
+Web: L<https://dev.yorhel.nl/ncdc>
