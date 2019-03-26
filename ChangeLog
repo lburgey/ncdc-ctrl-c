@@ -1,3 +1,11 @@
+1.21 - 2019-03-26
+	- Switch to libmaxminddb for GeoIP lookups
+	- Replaced 'geoip_cc4' and 'geoip_cc6' settings with a single 'geoip_cc'
+	- Mark already queued or shared files in search and file browser (Daniel Kamil Kozar)
+	- Add 'download_shared' setting (Daniel Kamil Kozar)
+	- Add 'show_free_slots' setting (Daniel Kamil Kozar)
+	- Add support for the "Free Slots" ADC extension
+
 1.20 - 2016-12-30
 	- Support bracketed paste mode in input handling (cologic)
 	- Add 'geoip_cc4' and 'geoip_cc6' settings

@@ -388,7 +388,7 @@ see the same uploaded file several times with a different file offset.
 
 =head1 LICENSE
 
-Copyright (C) 2011-2013 Yoran Heling <projects@yorhel.nl>
+Copyright (C) 2011-2019 Yoran Heling <projects@yorhel.nl>
 
 ncdc is distributed under the MIT license, please read the COPYING file for
 more information.
