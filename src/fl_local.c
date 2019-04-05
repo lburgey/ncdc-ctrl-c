@@ -134,9 +134,10 @@ gboolean fl_flush(gpointer dat) {
   return TRUE;
 }
 
-
-
-
+// are we currently refreshing the share?
+gboolean fl_is_refreshing(void) {
+  return fl_refresh_queue && fl_refresh_queue->head;
+}
 
 // Hash index interface. These operate on fl_hash_index and make sure
 // fl_local_list_size and _length stay correct.
@@ -984,7 +985,7 @@ static void fl_init_list(fl_list_t *fl) {
 static gboolean fl_init_autorefresh(gpointer dat) {
   int r = var_get_int(0, VAR_autorefresh);
   time_t t = time(NULL);
-  if(r && fl_refresh_last+r < t)
+  if(r && fl_refresh_last+r < t && !fl_is_refreshing() && fl_hash_queue_size == 0)
     fl_refresh(NULL);
   return TRUE;
 }

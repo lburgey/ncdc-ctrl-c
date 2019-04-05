@@ -288,7 +288,7 @@ void ui_init(gboolean bracketed_paste) {
 
 
 static void ui_draw_status() {
-  if(fl_refresh_queue && fl_refresh_queue->head)
+  if(fl_is_refreshing())
     mvaddstr(winrows-1, 0, "[Refreshing share]");
   else if(fl_hash_queue && g_hash_table_size(fl_hash_queue))
     mvprintw(winrows-1, 0, "[Hashing: %d / %s / %.2f MiB/s]",
