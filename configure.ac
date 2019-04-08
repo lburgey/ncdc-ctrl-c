@@ -30,12 +30,6 @@ AM_CONDITIONAL([HAVE_MH], [test "x$have_mh" = "xyes"])
 # Check for header files.
 AC_CHECK_HEADERS([zlib.h bzlib.h],[], AC_MSG_ERROR([Required header file not found]))
 
-have_nch=no
-AC_CHECK_HEADERS([ncursesw/ncurses.h ncurses/ncurses.h ncurses.h],[have_nch=yes])
-if test "x$have_nch" = "xno"; then
-  AC_MSG_ERROR([Could not find a header files for ncurses.])
-fi
-
 
 # Check for posix_fadvise()
 AC_CHECK_FUNCS([posix_fadvise])
@@ -95,15 +89,11 @@ esac
 
 
 # Check for ncurses
-AC_CHECK_LIB([ncursesw], [get_wch], [
-    AC_SUBST([NCURSES_LIBS],[-lncursesw])
-  ], [
-    AC_CHECK_LIB([ncurses],
-                 [get_wch],
-                 [AC_SUBST([NCURSES_LIBS],[-lncurses])],
-                 [AC_MSG_ERROR(ncursesw library is required)])
-  ]
-)
+PKG_CHECK_MODULES(NCURSES, ncursesw,,[
+    PKG_CHECK_MODULES(NCURSES, ncurses,,[
+	AC_MSG_ERROR(ncurses library is required)
+    ])
+])
 
 # Check for zlib
 AC_CHECK_LIB([z],
