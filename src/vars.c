@@ -979,6 +979,7 @@ struct var_t {
   V(log_downloads,    1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "true")\
   V(log_hubchat,      1,1, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "true")\
   V(log_uploads,      1,0, f_bool,         p_bool,          su_bool,       NULL,         NULL,            "true")\
+  V(max_ul_per_user,  1,1, f_int,          p_int_ge1,       NULL,          NULL,         NULL,            "1")\
   V(minislots,        1,0, f_int,          p_int_ge1,       NULL,          NULL,         NULL,            "3")\
   V(minislot_size,    1,0, f_minislot_size,p_minislot_size, NULL,          NULL,         NULL,            "65536")\
   V(nick,             1,1, f_id,           p_nick,          su_old,        NULL,         s_nick,          i_nick())\

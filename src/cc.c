@@ -470,15 +470,20 @@ static void xfer_log_add(cc_t *cc) {
 }
 
 
-// Returns the cc object of a connection with the same user, if there is one.
-static cc_t *cc_check_dupe(cc_t *cc) {
+// Returns true if the connection doesn't exceed maximum per-user connection limits.
+static gboolean cc_should_allow_connection(cc_t *cc) {
   GSequenceIter *i = g_sequence_get_begin_iter(cc_list);
+  int current_conns = 0;
+  const int max_conns = cc->dl ? 1 : var_get_int(cc->hub->id, VAR_max_ul_per_user);
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
     cc_t *c = g_sequence_get(i);
-    if(cc != c && c->state != CCS_DISCONN && !!c->adc == !!cc->adc && c->uid == cc->uid)
-      return c;
+    if(cc != c && c->state != CCS_DISCONN && !!c->adc == !!cc->adc && !!c->dl == !!cc->dl
+       && ((!c->adc && c->uid == cc->uid) || (c->adc && strcmp(c->cid, cc->cid) == 0)))
+      ++current_conns;
+    if(current_conns >= max_conns)
+      return false;
   }
-  return NULL;
+  return true;
 }
 
 
@@ -812,16 +817,13 @@ static void handle_id(cc_t *cc, hub_user_t *u) {
     }
   }
 
-  // Don't allow multiple connections with the same user for the same purpose
+  // Check the number of connections with the same user for the same purpose
   // (up/down).  For NMDC, the purpose of this connection is determined when we
   // receive a $Direction, so it's only checked here for ADC.
-  if(cc->adc) {
-    cc_t *dup = cc_check_dupe(cc);
-    if(dup && !!cc->dl == !!dup->dl) {
-      g_set_error_literal(&(cc->err), 1, 0, "too many open connections with this user");
-      cc_disconnect(cc, FALSE);
-      return;
-    }
+  if(cc->adc && !cc_should_allow_connection(cc)) {
+    g_set_error_literal(&(cc->err), 1, 0, "too many open connections with this user");
+    cc_disconnect(cc, FALSE);
+    return;
   }
 
   cc->slot_granted = db_users_get(u->hub->id, u->name) & DB_USERFLAG_GRANT ? TRUE : FALSE;
@@ -1123,9 +1125,8 @@ static void nmdc_direction(cc_t *cc, gboolean down, int num) {
   } else
     cc->dl = cc->dir > num;
 
-  // Now that this connection has a purpose, make sure it's the only connection with that purpose.
-  cc_t *dup = cc_check_dupe(cc);
-  if(dup && !!cc->dl == !!dup->dl) {
+  // Now that this connection has a purpose, check the connection number limit.
+  if(!cc_should_allow_connection(cc)) {
     g_set_error_literal(&cc->err, 1, 0, "Too many open connections with this user");
     cc_disconnect(cc, FALSE);
     return;

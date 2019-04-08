@@ -493,6 +493,10 @@ static const doc_set_t doc_sets[] = {
 { "log_uploads", 0, "<boolean>",
   "Log file uploads to transfers.log."
 },
+{
+  "max_ul_per_user", 0, "<integer>",
+  "The maximum number of simultaneous upload connections to one user."
+},
 { "minislots", 0, "<integer>",
   "Set the number of available minislots. A `minislot' is a special slot that"
   " is used when all regular upload slots are in use and someone is requesting"
