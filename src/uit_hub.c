@@ -127,8 +127,10 @@ static void t_draw(ui_tab_t *tab) {
     char *addr = var_get(tab->hub->id, VAR_hubaddr);
     char *conn = !listen_hub_active(tab->hub->id) ? g_strdup("[passive]")
       : g_strdup_printf("[active: %s]", hub_ip(tab->hub));
-    char *tmp = g_strdup_printf("%s @ %s%s %s", tab->hub->nick, addr,
-      tab->hub->isop ? " (operator)" : tab->hub->isreg ? " (registered)" : "", conn);
+    char *proto = tab->hub->adc ? "[adc]" : "[nmdc]";
+    char *tmp = g_strdup_printf("%s @ %s%s %s %s", tab->hub->nick, addr,
+      tab->hub->isop ? " (operator)" : tab->hub->isreg ? " (registered)" : "",
+      conn, proto);
     g_free(conn);
     mvaddstr(winrows-4, 0, tmp);
     g_free(tmp);
