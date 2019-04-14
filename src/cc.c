@@ -1351,7 +1351,7 @@ cc_t *cc_create(hub_t *hub) {
 
 // Simply stores the keyprint of the certificate in cc->kp_real, it will be
 // checked when receiving CINF.
-static void handle_handshake(net_t *n, const char *kpr) {
+static void handle_handshake(net_t *n, const char *kpr, int proto) {
   cc_t *c = net_handle(n);
   if(kpr) {
     if(!c->kp_real)
@@ -1375,7 +1375,7 @@ static void handle_connect(net_t *n, const char *addr) {
   }
 
   if(cc->tls)
-    net_settls(cc->net, FALSE, handle_handshake);
+    net_settls(cc->net, FALSE, FALSE, handle_handshake);
   if(!net_is_connected(cc->net))
     return;
 
@@ -1445,7 +1445,7 @@ static void handle_detectprotocol(net_t *net, char *dat, int len) {
   // Enable TLS
   if(!cc->tls && *dat >= 0x14 && *dat <= 0x17) {
     cc->tls = TRUE;
-    net_settls(cc->net, TRUE, handle_handshake);
+    net_settls(cc->net, TRUE, FALSE, handle_handshake);
     if(net_is_connected(cc->net))
       net_peekbytes(cc->net, 1, handle_detectprotocol); // Queue another detectprotocol to detect NMDC/ADC
     return;

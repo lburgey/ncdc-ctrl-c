@@ -1854,10 +1854,18 @@ hub_t *hub_create(ui_tab_t *tab) {
 }
 
 
-static void handle_handshake(net_t *n, const char *kpr) {
+static void handle_handshake(net_t *n, const char *kpr, int proto) {
   g_return_if_fail(kpr != NULL);
   hub_t *hub = net_handle(n);
   g_return_if_fail(!hub->kp);
+
+  if(proto == ALPN_NMDC) {
+    hub->adc = FALSE;
+    ui_mf(hub->tab, 0, "ALPN: negotiated NMDC.");
+  } else if(proto == ALPN_ADC) {
+    hub->adc = TRUE;
+    ui_mf(hub->tab, 0, "ALPN: negotiated ADC.");
+  }
 
   char kpf[53] = {};
   base32_encode_dat(kpr, kpf, 32);
@@ -1903,7 +1911,7 @@ static void handle_connect(net_t *n, const char *addr) {
   ui_mf(hub->tab, 0, "Connected to %s.", net_remoteaddr(n));
 
   if(hub->tls)
-    net_settls(hub->net, FALSE, handle_handshake);
+    net_settls(hub->net, FALSE, TRUE, handle_handshake);
   if(!net_is_connected(hub->net))
     return;
 
