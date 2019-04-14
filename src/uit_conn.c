@@ -336,6 +336,18 @@ static void t_key(ui_tab_t *tab, guint64 key) {
     }
     break;
 
+  case INPT_CHAR('b'): // b (/browse userlist)
+  case INPT_CHAR('B'): // B (force /browse userlist)
+    if(!cc)
+      ui_m(NULL, 0, "Nothing selected.");
+    else if(!cc->hub || !cc->uid)
+      ui_m(NULL, 0, "User or hub unknown.");
+    else if(!g_hash_table_lookup(hub_uids, &cc->uid))
+      ui_m(NULL, 0, "User is not online.");
+    else
+      uit_fl_queue(cc->uid, key == INPT_CHAR('B'), NULL, tab, TRUE, FALSE);
+    break;
+
 #define S(num, name)\
   case INPT_CHAR('0'+num):\
     t->s_##name = !t->s_##name;\
