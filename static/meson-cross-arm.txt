@@ -1,0 +1,15 @@
+[binaries]
+c = 'arm-linux-musleabi-gcc'
+cpp = 'arm-linux-musleabi-g++'
+ar = 'arm-linux-musleabi-ar'
+strip = 'arm-linux-musleabi-strip'
+pkgconfig = 'pkg-config'
+
+[properties]
+needs_exe_wrapper = true
+
+[host_machine]
+system = 'linux'
+cpu_family = 'arm'
+cpu = 'armv7-a'
+endian = 'little'

@@ -1,0 +1,12 @@
+[binaries]
+c = 'i486-linux-musl-gcc'
+cpp = 'i486-linux-musl-g++'
+ar = 'i486-linux-musl-ar'
+strip = 'i486-linux-musl-strip'
+pkgconfig = 'pkg-config'
+
+[host_machine]
+system = 'linux'
+cpu_family = 'i486'
+cpu = 'i486'
+endian = 'little'
