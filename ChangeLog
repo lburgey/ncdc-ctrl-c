@@ -1,3 +1,9 @@
+1.22 - 2019-04-30
+	- Add 'b' and 'B' keys to connections tab (Daniel Kamil Kozar)
+	- Add 'max_ul_per_user' setting to support multiple upload slots per user (Daniel Kamil Kozar)
+	- Add support for TLS ALPN (Denys Smirnov)
+	- Fix build against ncurses with separate libtinfo (Lars Wendler)
+
 1.21 - 2019-03-26
 	- Switch to libmaxminddb for GeoIP lookups
 	- Replaced 'geoip_cc4' and 'geoip_cc6' settings with a single 'geoip_cc'
