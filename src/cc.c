@@ -478,7 +478,7 @@ static gboolean cc_should_allow_connection(cc_t *cc) {
   for(; !g_sequence_iter_is_end(i); i=g_sequence_iter_next(i)) {
     cc_t *c = g_sequence_get(i);
     if(cc != c && c->state != CCS_DISCONN && !!c->adc == !!cc->adc && !!c->dl == !!cc->dl
-       && ((!c->adc && c->uid == cc->uid) || (c->adc && strcmp(c->cid, cc->cid) == 0)))
+       && (c->cid && cc->cid ? strcmp(c->cid, cc->cid) == 0 : c->uid == cc->uid))
       ++current_conns;
     if(current_conns >= max_conns)
       return false;
@@ -791,9 +791,11 @@ static void handle_adcget(cc_t *cc, char *type, char *id, guint64 start, gint64 
 }
 
 
-// To be called when we know with which user and on which hub this connection is.
+// To be called when we know with which user and on which hub this connection
+// is. May be called multiple times for the same connection.
 static void handle_id(cc_t *cc, hub_user_t *u) {
-  cc->nick = g_strdup(u->name);
+  if(!cc->nick)
+    cc->nick = g_strdup(u->name);
   cc->isop = u->isop;
   cc->uid = u->uid;
 
@@ -899,20 +901,21 @@ static void adc_handle(net_t *net, char *msg, int _len) {
         g_message("CC:%s: Incorrect CID: %s", net_remoteaddr(cc->net), msg);
         cc_disconnect(cc, TRUE);
         break;
-      } else if(cc->active) {
-        cc->token = g_strdup(token);
+      } else {
         cc->cid = g_strdup(id);
-        cc_expect_adc_rm(cc, 0);
+        if(cc->active) {
+          cc_expect_adc_rm(cc, 0);
+          cc->token = g_strdup(token);
+        }
         hub_user_t *u = cc->uid ? g_hash_table_lookup(hub_uids, &cc->uid) : NULL;
         if(!u) {
           g_set_error_literal(&cc->err, 1, 0, "Protocol error.");
           g_message("CC:%s: Unexpected ADC connection: %s", net_remoteaddr(cc->net), msg);
           cc_disconnect(cc, TRUE);
           break;
-        } else
-          handle_id(cc, u);
-      } else
-        cc->cid = g_strdup(id);
+        }
+        handle_id(cc, u);
+      }
       // Perform keyprint validation
       // TODO: Throw an error if kp_user is set but we've not received a kp_real?
       if(cc->kp_real && cc->kp_user && memcmp(cc->kp_real, cc->kp_user, 32) != 0) {
