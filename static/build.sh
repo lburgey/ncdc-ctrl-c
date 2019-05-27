@@ -19,7 +19,7 @@
 #
 # Usage:
 #   ./build.sh $arch
-#   Where $arch = 'arm', 'i486' or 'x86_64'
+#   Where $arch = 'arm', 'aarch64', 'i486' or 'x86_64'
 #
 # TODO:
 # - Cross-compile to platforms other than Linux?
@@ -29,13 +29,13 @@
 MUSL_CROSS_PATH=/opt/cross
 ZLIB_VERSION=1.2.11
 BZIP2_VERSION=1.0.6
-SQLITE_VERSION=3270200
+SQLITE_VERSION=3280000
 GMP_VERSION=6.1.2
 NETTLE_VERSION=3.4.1
 IDN_VERSION=2.1.1
 GNUTLS_VERSION=3.6.7
 NCURSES_VERSION=6.1
-GLIB_VERSION=2.60.1
+GLIB_VERSION=2.60.3
 MAXMIND_VERSION=1.3.2
 
 
@@ -142,11 +142,7 @@ getsqlite() {
 getgmp() {
   fem ftp://ftp.gmplib.org/pub/gmp-$GMP_VERSION/ gmp-$GMP_VERSION.tar.xz gmp
   prebuild gmp || return
-  case $TARGET in
-    mipsel) ABI=o32 ;;
-    i486)   ABI=32 ;;
-  esac
-  $srcdir/configure --host=$HOST ABI=$ABI --disable-shared --without-readline --enable-static --prefix=$PREFIX || exit
+  $srcdir/configure --host=$HOST --disable-shared --without-readline --enable-static --prefix=$PREFIX || exit
   make install || exit
   postbuild
 }
@@ -275,20 +271,23 @@ allncdc() {
 buildarch() {
   TARGET=$1
   case $TARGET in
-    arm)    HOST=arm-musl-linuxeabi DIR=arm-linux-musleabi   ;;
-    i486)   HOST=i486-musl-linux    DIR=i486-linux-musl      ;;
-    x86_64) HOST=x86_64-musl-linux  DIR=x86_64-linux-musl    ;;
-    *)      echo "Unknown target: $TARGET"; exit ;;
+    arm)     HOST=arm-linux-musleabi ;;
+    aarch64) HOST=aarch64-linux-musl ;;
+    i486)    HOST=i486-linux-musl    ;;
+    x86_64)  HOST=x86_64-linux-musl  ;;
+    *)       echo "Unknown target: $TARGET"; exit ;;
   esac
   PREFIX="`pwd`/$TARGET/inst"
   mkdir -p $TARGET $PREFIX
   ln -s lib $PREFIX/lib64
 
   OLDPATH="$PATH"
-  PATH="$PATH:$MUSL_CROSS_PATH/$DIR/bin"
+  PATH="$PATH:$MUSL_CROSS_PATH/$HOST/bin"
   allncdc
   PATH="$OLDPATH"
 }
 
-
-buildarch $1
+[ -z "$@" ] && set -- arm aarch64 i486 x86_64
+for a in "$@"; do
+  buildarch $a
+done
