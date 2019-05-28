@@ -904,8 +904,8 @@ static void adc_handle(net_t *net, char *msg, int _len) {
       } else {
         cc->cid = g_strdup(id);
         if(cc->active) {
-          cc_expect_adc_rm(cc, 0);
           cc->token = g_strdup(token);
+          cc_expect_adc_rm(cc, 0);
         }
         hub_user_t *u = cc->uid ? g_hash_table_lookup(hub_uids, &cc->uid) : NULL;
         if(!u) {
