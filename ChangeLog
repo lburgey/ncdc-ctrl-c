@@ -1,3 +1,6 @@
+1.22.1 - 2019-06-03
+	- Fix segfault with ADC client connections
+
 1.22 - 2019-04-30
 	- Add 'b' and 'B' keys to connections tab (Daniel Kamil Kozar)
 	- Add 'max_ul_per_user' setting to support multiple upload slots per user (Daniel Kamil Kozar)
