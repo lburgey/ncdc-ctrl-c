@@ -1,5 +1,5 @@
-ncdc 1.21
-=========
+ncdc 1.22.1
+===========
 
 DESCRIPTION
 
@@ -7,7 +7,7 @@ DESCRIPTION
   ncurses interface.
 
   Always make sure you run the latest version. You can check for updates and
-  find more information at http://dev.yorhel.nl/ncdc
+  find more information at https://dev.yorhel.nl/ncdc
 
 
 

@@ -1853,11 +1853,37 @@ hub_t *hub_create(ui_tab_t *tab) {
   return hub;
 }
 
+static void handle_fully_connected(hub_t *hub) {
+  net_set_keepalive(hub->net, hub->adc ? "\n" : "|");
 
-static void handle_handshake(net_t *n, const char *kpr) {
+  /* If we have a pre-configured active IP, make sure to enable active mode
+   * immediately. */
+  if(hub_ip(hub))
+    listen_refresh();
+
+  if(hub->adc)
+    net_writef(hub->net, "HSUP ADBASE ADTIGR%s\n", var_get_bool(hub->id, VAR_adc_blom) ? " ADBLO0 ADBLOM" : "");
+
+  // In the case that the joincomplete detection fails, consider the join to be
+  // complete anyway after a 2-minute timeout.
+  hub->joincomplete_timer = g_timeout_add_seconds(120, joincomplete_timer, hub);
+
+  // Start handling incoming messages
+  net_readmsg(hub->net, hub->adc ? '\n' : '|', hub->adc ? adc_handle : nmdc_handle);
+}
+
+static void handle_handshake(net_t *n, const char *kpr, int proto) {
   g_return_if_fail(kpr != NULL);
   hub_t *hub = net_handle(n);
   g_return_if_fail(!hub->kp);
+
+  if(proto == ALPN_NMDC) {
+    hub->adc = FALSE;
+    ui_mf(hub->tab, 0, "ALPN: negotiated NMDC.");
+  } else if(proto == ALPN_ADC) {
+    hub->adc = TRUE;
+    ui_mf(hub->tab, 0, "ALPN: negotiated ADC.");
+  }
 
   char kpf[53] = {};
   base32_encode_dat(kpr, kpf, 32);
@@ -1869,12 +1895,15 @@ static void handle_handshake(net_t *n, const char *kpr) {
   if(!old) {
     ui_mf(hub->tab, 0, "No previous TLS keyprint known. Storing `%s' for future validation.", kpf);
     var_set(hub->id, VAR_hubkp, kpf, NULL);
+    handle_fully_connected(hub);
     return;
   }
 
   // Keyprint matches? no problems!
-  if(strcmp(old, kpf) == 0)
+  if(strcmp(old, kpf) == 0) {
+    handle_fully_connected(hub);
     return;
+  }
 
   // Keyprint doesn't match... now we have a problem!
   ui_mf(hub->tab, UIP_HIGH,
@@ -1899,28 +1928,19 @@ static void handle_connect(net_t *n, const char *addr) {
     return;
   }
 
-  net_set_keepalive(n, hub->adc ? "\n" : "|");
   ui_mf(hub->tab, 0, "Connected to %s.", net_remoteaddr(n));
 
   if(hub->tls)
-    net_settls(hub->net, FALSE, handle_handshake);
+    net_settls(hub->net, FALSE, TRUE, handle_handshake);
   if(!net_is_connected(hub->net))
     return;
 
-  /* If we have a pre-configured active IP, make sure to enable active mode
-   * immediately. */
-  if(hub_ip(hub))
-    listen_refresh();
+  // TLS may negotiate a different protocol, and handle_handshake
+  // will eventually call handle_fully_connected as well.
+  if(hub->tls)
+    return;
 
-  if(hub->adc)
-    net_writef(hub->net, "HSUP ADBASE ADTIGR%s\n", var_get_bool(hub->id, VAR_adc_blom) ? " ADBLO0 ADBLOM" : "");
-
-  // In the case that the joincomplete detection fails, consider the join to be
-  // complete anyway after a 2-minute timeout.
-  hub->joincomplete_timer = g_timeout_add_seconds(120, joincomplete_timer, hub);
-
-  // Start handling incoming messages
-  net_readmsg(hub->net, hub->adc ? '\n' : '|', hub->adc ? adc_handle : nmdc_handle);
+  handle_fully_connected(hub);
 }
 
 

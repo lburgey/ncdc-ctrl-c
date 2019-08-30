@@ -46,6 +46,11 @@ ratecalc_t net_in, net_out;
 
 typedef struct net_t net_t;
 
+// ALPN protocols
+#define ALPN_DEFAULT 0 // default, no ALPN
+#define ALPN_NMDC 1
+#define ALPN_ADC 2
+
 #endif
 
 
@@ -73,7 +78,7 @@ struct net_t {
   char laddr[40]; // state ASY,SYN,DIS, ip only
 
   gnutls_session_t tls; // state ASY,SYN,DIS (only if tls is enabled)
-  void (*cb_handshake)(net_t *, const char *); // state ASY, called after complete handshake.
+  void (*cb_handshake)(net_t *, const char *, int); // state ASY, called after complete handshake.
   void (*cb_shutdown)(net_t *); // state DIS, called after complete disconnect.
 
   gboolean v6 : 4; // state ASY,SYN, whether we're on IPv6
@@ -753,7 +758,6 @@ static gboolean asy_write(net_t *n) {
   return TRUE;
 }
 
-
 static gboolean asy_handshake(net_t *n) {
   if(!n->tls_handshake)
     return TRUE;
@@ -772,9 +776,24 @@ static gboolean asy_handshake(net_t *n) {
     g_debug("%s: TLS Handshake successful, KP=SHA256/%s", net_remoteaddr(n), kpf);
     n->tls_handshake = FALSE;
     gboolean ret = TRUE;
+
+    int alpn_selected = ALPN_DEFAULT;
+
+#if GNUTLS_VERSION_NUMBER >= 0x030200
+    gnutls_datum_t neg;
+    if(gnutls_alpn_get_selected_protocol(n->tls, &neg) == GNUTLS_E_SUCCESS) {
+      g_debug("%s: ALPN negotiated: %.*s", net_remoteaddr(n), (int)neg.size, neg.data);
+      if (neg.size == 3 && !memcmp(neg.data, "adc", neg.size)) {
+        alpn_selected = ALPN_ADC;
+      } else if (neg.size == 4 && !memcmp(neg.data, "nmdc", neg.size)) {
+        alpn_selected = ALPN_NMDC;
+      }
+    }
+#endif
+
     if(n->cb_handshake) {
       net_ref(n);
-      n->cb_handshake(n, *kpf ? kpr : NULL);
+      n->cb_handshake(n, *kpf ? kpr : NULL, alpn_selected);
       n->cb_handshake = NULL;
       ret = n->state == NETST_ASY;
       net_unref(n);
@@ -969,6 +988,12 @@ void net_shutdown(net_t *n, void(*cb)(net_t *)) {
     dis_shutdown(n);
 }
 
+#if GNUTLS_VERSION_NUMBER >= 0x030200
+static const gnutls_datum_t alpn_protos[2] = {
+  { (unsigned char *)"adc",  3 },
+  { (unsigned char *)"nmdc", 4 }
+};
+#endif
 
 // Enables TLS-mode and initates the handshake. May not be called when there's
 // something in the write buffer. If the read buffer is not empty, its contents
@@ -978,7 +1003,7 @@ void net_shutdown(net_t *n, void(*cb)(net_t *)) {
 // be sent as first argument. NULL otherwise.
 // Once TLS is enabled, it's not possible to switch back to a raw connection
 // again.
-void net_settls(net_t *n, gboolean serv, void (*cb)(net_t *, const char *)) {
+void net_settls(net_t *n, gboolean serv, gboolean negotiate, void (*cb)(net_t *, const char *, int)) {
   g_return_if_fail(n->state == NETST_ASY);
   g_return_if_fail(!n->wbuf->len);
   g_return_if_fail(!n->tls);
@@ -994,6 +1019,12 @@ void net_settls(net_t *n, gboolean serv, void (*cb)(net_t *, const char *)) {
   gnutls_transport_set_ptr(n->tls, n);
   gnutls_transport_set_push_function(n->tls, tls_push);
   gnutls_transport_set_pull_function(n->tls, tls_pull);
+
+#if GNUTLS_VERSION_NUMBER >= 0x030200
+  if(negotiate) {
+    gnutls_alpn_set_protocols(n->tls, alpn_protos, 2, 0);
+  }
+#endif
 
   n->cb_handshake = cb;
   n->tls_handshake = TRUE;

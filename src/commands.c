@@ -585,7 +585,7 @@ static void c_unshare(char *args) {
     listshares();
     return;
   // otherwise we may crash
-  } else if(fl_refresh_queue && fl_refresh_queue->head) {
+  } else if(fl_is_refreshing()) {
     ui_m(NULL, 0, "Sorry, can't remove directories from the share while refreshing.");
     return;
   }

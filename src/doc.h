@@ -493,6 +493,10 @@ static const doc_set_t doc_sets[] = {
 { "log_uploads", 0, "<boolean>",
   "Log file uploads to transfers.log."
 },
+{
+  "max_ul_per_user", 0, "<integer>",
+  "The maximum number of simultaneous upload connections to one user."
+},
 { "minislots", 0, "<integer>",
   "Set the number of available minislots. A `minislot' is a special slot that"
   " is used when all regular upload slots are in use and someone is requesting"
@@ -703,7 +707,8 @@ static const doc_key_t doc_keys[] = {
   "i/Return     Toggle information box.\n"
   "f            Find user in user list.\n"
   "m            Send a PM to the selected user.\n"
-  "q            Find file in download queue."
+  "q            Find file in download queue.\n"
+  "b/B          Browse the selected user's list, B to force a redownload."
 },
 { "queue", "Download queue",
   LISTING_KEYS
@@ -727,7 +732,7 @@ static const doc_key_t doc_keys[] = {
 { "search", "Search results tab",
   LISTING_KEYS
   "f            Find user in user list.\n"
-  "b/B          Browse the selected users' list, B to force a redownload.\n"
+  "b/B          Browse the selected user's list, B to force a redownload.\n"
   "d            Add selected file to the download queue.\n"
   "h            Toggle hub column visibility.\n"
   "u            Order by username.\n"
