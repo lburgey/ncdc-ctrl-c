@@ -500,7 +500,13 @@ void ui_input(guint64 key) {
   case INPT_ALT('j'): // alt+j (previous tab)
     ui_tab_cur = ui_tab_cur->prev ? ui_tab_cur->prev : g_list_last(ui_tabs);
     break;
+  case INPT_CTRL('j'): // ctrl+j (previous tab)
+    ui_tab_cur = ui_tab_cur->prev ? ui_tab_cur->prev : g_list_last(ui_tabs);
+    break;
   case INPT_ALT('k'): // alt+k (next tab)
+    ui_tab_cur = ui_tab_cur->next ? ui_tab_cur->next : ui_tabs;
+    break;
+  case INPT_CTRL('k'): // ctrl+k (next tab)
     ui_tab_cur = ui_tab_cur->next ? ui_tab_cur->next : ui_tabs;
     break;
   case INPT_ALT('h'): ; // alt+h (swap tab with left)
